@@ -1,0 +1,62 @@
+MD Reader - Entwicklungslog
+==========================
+
+2026-03-05 22:20 - Projektstart
+  - Benutzeranforderung: Markdown-Betrachter mit Drag&Drop, Zoom, Portrait/Querformat, Vollbild
+  - Entscheidung: WebView-basiert (echtes HTML/CSS-Rendering, GitHub-ähnlich)
+  - Go 1.24.4 war installiert
+
+2026-03-05 22:21 - Go 1.26.0 installiert
+  - Download von go.dev/dl
+  - Installation nach /usr/local/go
+  - Symlink in /usr/local/bin/go
+
+2026-03-05 22:22 - Projektstruktur angelegt
+  - Verzeichnisse: src/, build/, tests/, dev-log/, debugging/, claude-generated/, research/
+  - src/go.mod erstellt mit webview_go + goldmark Abhängigkeiten
+
+2026-03-05 22:25 - System-Dependencies installiert
+  - libwebkit2gtk-4.1-dev (nicht 4.0, neuere Ubuntu-Version)
+  - libgtk-3-dev
+  - g++-mingw-w64-x86-64 (für Windows Cross-Compilation)
+
+2026-03-05 22:30 - Kern-Implementierung
+  - src/main.go: WebView-Setup, Go-Bindings (processMarkdown, closeApp, nativeFullscreen)
+  - src/renderer/markdown.go: goldmark mit GFM + Syntax-Highlighting
+  - src/ui/template.go: Vollständiges HTML/CSS/JS-Template
+  - src/platform_linux.go: GTK-nativer Vollbild-Modus via CGo
+  - src/platform_windows.go: WinAPI ShowWindow für Vollbild
+
+2026-03-05 22:35 - WebKit-Kompatibilitäts-Shim
+  - Problem: webview_go nutzt webkit2gtk-4.0, System hat nur webkit2gtk-4.1
+  - Lösung: src/pkgconfig/webkit2gtk-4.0.pc → Requires: webkit2gtk-4.1
+
+2026-03-05 22:40 - Tests
+  - src/renderer/markdown_test.go: 12 Tests
+  - Alle Tests bestanden: PASS (0.007s)
+
+2026-03-05 22:50 - Linux-Binary kompiliert
+  - Build: build/md-reader (9.2 MB)
+  - Compile-Fehler behoben: SetHTML→SetHtml
+
+2026-03-05 22:53 - Windows-Binary Cross-compiliert
+  - Problem: EventToken.h fehlte in mingw-w64
+  - Lösung: Minimal-Stub in webview_go Module-Cache erstellt
+  - Build: build/md-reader.exe (13.2 MB)
+
+2026-03-05 22:55 - Build-Nummer auf 2 gesetzt
+  - Dokumentation erstellt: README.md, BUGS.md, FEATURES.md, OPTIMIZE.md
+  - SECURITY_RISKS.md, SECURITY_FIXED.md, MEMORY.md
+
+2026-03-05 23:10 - Cursortasten-Scroll (Build 3)
+  - Pfeiltasten ↑↓←→: 60px vertikal / 80px horizontal
+  - Page Up/Down: 90% Seitenhöhe
+  - Home/End: Dokument-Anfang/-Ende
+
+2026-03-05 23:15 - Windows CMD-Fenster entfernt (Build 4)
+  - -ldflags="-H windowsgui" beim Windows-Build
+
+2026-03-05 23:20 - Dark-Mode & Retro-Dark-Mode (Build 5)
+  - GitHub Dark: #0d1117 Hintergrund, #e6edf3 Text
+  - Retro Dark: #030a03 Hintergrund, #39ff14 Phosphorgrün, CRT-Scanlines
+  - Zyklischer Button ☾ → ▓ → ☀ in der Toolbar

@@ -1,0 +1,20 @@
+# Kompilierte Binaries
+build/md-reader
+build/md-reader.exe
+
+# Go Build-Cache
+src/vendor/
+
+# Betriebssystem-Dateien
+.DS_Store
+Thumbs.db
+
+# Editor-Dateien
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporäre Dateien
+*.tmp
+*.log~

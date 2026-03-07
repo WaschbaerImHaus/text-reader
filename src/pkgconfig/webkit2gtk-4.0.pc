@@ -1,0 +1,6 @@
+Name: webkit2gtk-4.0
+Description: WebKit2 GTK+ compatibility shim for webkit2gtk-4.1
+Version: 4.0.0
+Requires: webkit2gtk-4.1
+Libs:
+Cflags:

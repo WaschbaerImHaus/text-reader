@@ -1,0 +1,30 @@
+2026-03-07 - Neue Formatunterstützung: EPUB, FB2, TXT, HTML
+
+## Neue Dateien
+- src/renderer/text.go     - Parser für .txt
+- src/renderer/epub.go     - Parser für .epub (ZIP+XHTML, EPUB 2/3)
+- src/renderer/fb2.go      - Parser für .fb2 (FictionBook 2, XML)
+- src/renderer/text_test.go
+- src/renderer/epub_test.go
+- src/renderer/fb2_test.go
+- src/renderer/images.go   - Bildpfad-Auflösung (relative → base64 Data-URI)
+- src/renderer/images_test.go
+- src/config.go            - Persistente Konfiguration (lastFile, fontSize, theme, layout)
+
+## Geänderte Dateien
+- src/renderer/markdown.go - IsSupportedFile, ParseContent-Routing, LoadFile
+- src/main.go              - AppState+Config, processEpub, persistState, nativeFullscreen→bool, Startup-Logik
+- src/ui/template.go       - UIConfig, TOC-Sidebar, Suchleiste, Zoom-Shortcuts, Strg+Scroll, State-Restore, Fullscreen-Fix
+
+## Features (Build 7)
+- Bug #002 behoben: toggleFullscreen() nutzt nur noch nativeFullscreen() (kein HTML5 mehr)
+- TOC-Seitenleiste: baut sich aus Überschriften, nur sichtbar wenn Überschriften vorhanden
+- Suchfunktion (Strg+F): TreeWalker-basiert, <mark>-Highlighting, Treffernavigation
+- Zoom per Strg+Scroll und Strg+/-/0
+- Letzte Datei wiederherstellen beim Start
+- Einstellungen persistent (state.json)
+- Lokale Bilder als base64 eingebettet (nur bei known-path Dateien)
+- HTML-Support entfernt (auf Nutzerwunsch)
+
+## Tests: alle bestanden. Build: Linux + Windows OK.
+## Build-Nummer: 7
