@@ -13,7 +13,8 @@ Markdown-Betrachter mit GitHub-ähnlicher Darstellung. WebView-basiert für echt
 - Binaries: `build/md-reader` (Linux), `build/md-reader.exe` (Windows)
 - Quellcode: `src/` (go.mod hier, nicht im Projektroot)
 - Pkg-Config-Shim: `src/pkgconfig/webkit2gtk-4.0.pc`
-- Tests: `src/renderer/*_test.go` + `src/ui/template_test.go` (31 Tests, alle grün)
+- Tests: `src/renderer/*_test.go` + `src/ui/template_test.go` (alle grün)
+- Assets: `src/ui/assets/styles.css`, `src/ui/assets/body.html`, `src/ui/assets/scripts.js` (go:embed)
 
 ## Build-Befehle
 ```bash
@@ -47,3 +48,4 @@ PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 go test ./renderer/... 
 - 2026-03-08 (Build 8): Refactoring: ui/template.go aufgeteilt in styles.go, html_body.go, scripts.go, template.go. 15 UI-Tests hinzugefügt (31 gesamt).
 - 2026-03-08 (Build 9): Bug #003 (letzte Drag-&-Drop-Datei nicht gespeichert) + Bug #004 (Scroll-Position nicht persistent) behoben. persistLastFile-Binding + text/uri-list-Extraktion.
 - 2026-03-08 (Build 10): Linux + Windows Builds erstellt. CLAUDE.md-Pflichten erledigt. RISK-004 identifiziert (path traversal via persistLastFile). README.md vervollständigt (76 Tests).
+- 2026-03-08 (Build 11): Security (RISK-001/002/004 behoben, RISK-003 mitigiert), go:embed (Assets als externe Dateien), bindings.go (aus main.go extrahiert), ARM64-Build, Mermaid.js-Integration. Build-Größe reduziert (-s -w). CSP-Header hinzugefügt.

@@ -2,32 +2,26 @@
 
 ## Offen ⚠️
 
-### RISK-001: HTML-Injection durch Markdown (Mittel)
-**Beschreibung**: goldmark ist mit `html.WithUnsafe()` konfiguriert, was eingebettetes HTML in Markdown erlaubt. Böswillige MD-Dateien könnten JavaScript-Code enthalten.
+(Keine offenen Sicherheitsrisiken)
 
-**Risiko**: Mittel – Betrifft nur lokal geöffnete Dateien, kein Netzwerkzugriff.
+## Mitigiert / Behoben
 
-**Empfehlung**: `html.WithUnsafe()` entfernen wenn HTML-Injection verhindert werden soll. Dann werden `<script>` und ähnliche Tags aus Markdown herausgefiltert.
+### RISK-001: HTML-Injection durch Markdown (BEHOBEN – Build 11)
+**Beschreibung**: goldmark war mit `html.WithUnsafe()` konfiguriert, was eingebettetes HTML in Markdown erlaubt. Böswillige MD-Dateien könnten JavaScript-Code enthalten.
 
-### RISK-002: WebView ohne Content-Security-Policy (Niedrig)
-**Beschreibung**: Der WebView lädt keine externen Ressourcen, aber es gibt keine explizite Content-Security-Policy (CSP).
+**Status**: Behoben. `html.WithUnsafe()` wurde entfernt. `<script>`, `<iframe>` etc. aus Markdown werden jetzt escaped statt gerendert.
 
-**Risiko**: Niedrig – WebView lädt ohnehin keine URLs außer dem initialen HTML.
+### RISK-002: WebView ohne Content-Security-Policy (BEHOBEN – Build 11)
+**Beschreibung**: Der WebView lud keine externen Ressourcen, aber es gab keine explizite Content-Security-Policy (CSP).
 
-**Empfehlung**: CSP-Header über WebView-JavaScript setzen.
+**Status**: Behoben. CSP-Meta-Tag wurde in `htmlDocHead` eingefügt. Erlaubt nur: Inline-Scripts/Styles, CDN-Scripts von cdn.jsdelivr.net (für Mermaid.js), Data-URIs und Blob-URIs für Bilder.
 
-### RISK-003: Plattform-Bindings via JS (Niedrig)
+### RISK-003: Plattform-Bindings via JS (MITIGIERT – Build 11)
 **Beschreibung**: Die Go-Funktionen `closeApp` und `nativeFullscreen` sind als globale JS-Funktionen gebunden und könnten theoretisch von eingebettetem MD-HTML aufgerufen werden.
 
-**Risiko**: Niedrig – `closeApp` schließt nur das Fenster, `nativeFullscreen` wechselt den Vollbild-Modus.
+**Status**: Mitigiert. Durch RISK-001-Fix (html.WithUnsafe() entfernt) kann eingebettetes JavaScript in Markdown diese Bindings nicht mehr aufrufen. Das Risiko ist weiterhin akzeptabel für lokale Markdown-Anzeige, da closeApp nur das Fenster schließt und nativeFullscreen nur den Vollbild-Modus wechselt.
 
-**Empfehlung**: Akzeptabel für lokale Markdown-Anzeige.
+### RISK-004: Path-Traversal via persistLastFile-Binding (BEHOBEN – Build 11)
+**Beschreibung**: Das Go-Binding `persistLastFile(path, scrollPos)` übernahm einen Dateipfad aus JavaScript ohne Validierung.
 
-### RISK-004: Path-Traversal via persistLastFile-Binding (Mittel)
-**Beschreibung**: Das Go-Binding `persistLastFile(path, scrollPos)` übernimmt einen Dateipfad aus JavaScript ohne Validierung. Da goldmark `html.WithUnsafe()` nutzt (RISK-001), kann eingebettetes `<script>` in Markdown `window.persistLastFile("/pfad/zu/datei.txt", 0)` aufrufen. Beim nächsten Start öffnet der Reader diese Datei (sofern sie ein unterstütztes Format hat und existiert) und zeigt ihren Inhalt an.
-
-**Betroffene Datei**: `src/main.go` (persistLastFile-Binding, Zeile ~135)
-
-**Risiko**: Mittel – Betrifft nur lokal geöffnete, manipulierte MD-Dateien. Kein Netzwerkzugriff. Nur .md/.txt/.epub/.fb2/.html-Dateien können über `IsSupportedFile()` geöffnet werden – direkte Binär-Exfiltration ist ausgeschlossen.
-
-**Empfehlung**: Pfad-Validierung im `persistLastFile`-Binding: Nur Pfade akzeptieren die `renderer.IsSupportedFile()` passieren und tatsächlich existieren. Alternativ RISK-001 (Unsafe-HTML) zuerst beheben.
+**Status**: Behoben. Pfad-Validierung im `persistLastFile`-Binding: Nur Pfade die `renderer.IsSupportedFile()` passieren und tatsächlich als existierende Datei (nicht Verzeichnis) bestätigt werden, werden als LastFile akzeptiert.

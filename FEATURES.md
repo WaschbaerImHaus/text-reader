@@ -30,7 +30,9 @@
 - **Dark Mode**: GitHub Dark (☽ → ▓)
 - **Retro Mode**: CRT-Phosphor Grün (▓ → ☀)
 - **Cross-Platform**: Linux (WebKitGTK) und Windows (Edge WebView2)
+- **ARM64-Build**: Linux-ARM64-Binary via Cross-Compilation (aarch64-linux-gnu-gcc)
 - **Tastaturkürzel**: F11 Vollbild, Strg+F Suche, Strg+/- Zoom
+- **Mermaid.js**: Flowcharts, Sequenzdiagramme und andere Diagramme in Markdown (via CDN, fallback auf Code-Block bei fehlender Verbindung)
 
 ## Geplant 📋
 

@@ -1,111 +1,12 @@
 // Package ui – HTML-Grundstruktur der MD-Reader-Oberfläche.
 //
-// Enthält die statische HTML-Struktur: Toolbar, Suchleiste,
-// TOC-Seitenleiste, Haupt-Inhaltsbereich und Drop-Zone.
-//
 // Autor: Kurt Ingwer
 // Letzte Änderung: 2026-03-08
 package ui
 
-// htmlBodyHTML ist die HTML-Struktur zwischen </head> und <script>.
-// Platzhalter (in Reihenfolge der fmt.Sprintf-Argumente):
+import _ "embed"
+
+// htmlBodyHTML enthält die HTML-Grundstruktur (aus assets/body.html).
 //
-//	%s  → CSS-Klasse des <body>-Tags (z.B. "dark", "retro" oder "")
-const htmlBodyHTML = `</head>
-<body class="%s">
-
-<!-- ============================================================
-     Toolbar
-     ============================================================ -->
-<div id="toolbar">
-  <div id="toolbar-center">
-
-    <!-- TOC-Button (nur sichtbar wenn Überschriften vorhanden) -->
-    <button class="toolbar-btn" id="btn-toc" onclick="toggleTOC()"
-            title="Inhaltsverzeichnis" style="display:none">&#9776;</button>
-
-    <div class="toolbar-separator" id="sep-toc" style="display:none"></div>
-
-    <!-- Hochformat / Querformat -->
-    <button class="toolbar-btn" id="btn-layout" onclick="toggleLayout()"
-            title="Hochformat / Querformat umschalten">&#9647;</button>
-
-    <div class="toolbar-separator"></div>
-
-    <!-- Zoom -->
-    <button class="toolbar-btn" id="btn-zoom-out" onclick="zoomOut()"
-            title="Schrift verkleinern (Strg+-)">&#8854;</button>
-    <span id="zoom-label">100%%</span>
-    <button class="toolbar-btn" id="btn-zoom-in" onclick="zoomIn()"
-            title="Schrift vergrößern (Strg++)">&#8853;</button>
-
-    <div class="toolbar-separator"></div>
-
-    <!-- Suche -->
-    <button class="toolbar-btn" id="btn-search" onclick="openSearch()"
-            title="Suchen (Strg+F)">&#128269;</button>
-
-    <div class="toolbar-separator"></div>
-
-    <!-- Theme-Wechsel -->
-    <button class="toolbar-btn" id="btn-theme" onclick="cycleTheme()"
-            title="Dunkelmodus einschalten">&#9790;</button>
-
-    <div class="toolbar-separator"></div>
-
-    <!-- Vollbild -->
-    <button class="toolbar-btn" id="btn-fullscreen" onclick="toggleFullscreen()"
-            title="Vollbild (F11)">&#9634;</button>
-
-  </div>
-  <!-- Schließen-Button rechts -->
-  <button class="toolbar-btn" id="btn-close" onclick="closeApp()"
-          title="Schließen">&#10005;</button>
-</div>
-
-<!-- ============================================================
-     Suchleiste (unter Toolbar)
-     ============================================================ -->
-<div id="search-bar">
-  <input type="text" id="search-input" placeholder="Suchen..."
-         autocomplete="off" oninput="onSearchInput(this.value)"
-         onkeydown="onSearchKeydown(event)">
-  <span id="search-count"></span>
-  <button class="toolbar-btn" onclick="searchPrev()" title="Vorheriges (Umschalt+Enter)">&#8593;</button>
-  <button class="toolbar-btn" onclick="searchNext()" title="N&#228;chstes (Enter)">&#8595;</button>
-  <button class="toolbar-btn" onclick="closeSearch()" title="Suche schlie&#223;en (Esc)">&#10005;</button>
-</div>
-
-<!-- ============================================================
-     TOC-Seitenleiste
-     ============================================================ -->
-<div id="toc-sidebar">
-  <div id="toc-header">
-    <span>Inhalt</span>
-    <button class="toolbar-btn" onclick="closeTOC()" title="Schlie&#223;en"
-            style="min-width:24px;height:24px;font-size:13px;">&#10005;</button>
-  </div>
-  <ul id="toc-list"></ul>
-</div>
-
-<!-- ============================================================
-     Haupt-Inhaltsbereich
-     ============================================================ -->
-<div id="main">
-
-  <!-- Drop-Zone -->
-  <div id="drop-zone">
-    <div class="drop-icon">&#128218;</div>
-    <div class="drop-title">Datei hier ablegen</div>
-    <div class="drop-subtitle">.md &middot; .epub &middot; .txt &middot; .fb2 und weitere</div>
-    <div class="drop-error" id="drop-error"></div>
-  </div>
-
-  <!-- Inhaltsbereich (nach dem Laden sichtbar) -->
-  <div id="content-wrapper">
-    <div id="content"></div>
-  </div>
-
-</div>
-
-`
+//go:embed assets/body.html
+var htmlBodyHTML string

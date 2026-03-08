@@ -79,3 +79,55 @@ Die WebView FileReader API gibt keinen vollen Pfad zurück — nur `file.name` (
 - research/OPTIMIZED_WORKER.md: Stand 2026-03-08 aktualisiert
 - tests/README.md: Testanzahl auf 76 aktualisiert
 - USER.md: Heutige Session dokumentiert
+
+## 2026-03-08 - Build 11: Security, go:embed, Mermaid.js, ARM-Builds
+
+### Aufgabe #1: BUG #001 als behoben markiert
+- BUGS.md: #001 in Behoben-Bereich verschoben mit Build-11-Hinweis
+
+### Aufgabe #2: RISK-001 behoben (war bereits erledigt)
+- renderer/markdown.go: html.WithUnsafe() war bereits entfernt – Kommentar bestätigt Behebung
+
+### Aufgabe #3: RISK-002 – CSP-Meta-Tag hinzugefügt
+- ui/template.go: htmlDocHead um CSP-Meta-Tag erweitert
+- Erlaubt: Inline-Scripts/Styles, cdn.jsdelivr.net (Mermaid), data: und blob: für Bilder
+
+### Aufgabe #4: RISK-003 als mitigiert markiert
+- SECURITY_RISKS.md: RISK-003 mit Hinweis auf RISK-001-Fix als mitigiert dokumentiert
+
+### Aufgabe #5: RISK-004 behoben – Pfad-Validierung in persistLastFile
+- Binding jetzt in bindings.go (Aufgabe #13)
+- Pfad-Validierung: IsSupportedFile() + os.Stat() prüft auf existierende Nicht-Verzeichnis-Datei
+
+### Aufgabe #11: Stripped Binary – -ldflags="-s -w" im Makefile
+- Linux-Build: -ldflags="-s -w" hinzugefügt
+- Windows-Build: -ldflags="-s -w -H windowsgui" kombiniert
+
+### Aufgabe #12: go:embed – CSS/JS/HTML in externe Dateien ausgelagert
+- src/ui/assets/styles.css: CSS aus styles.go (mit echten % statt %%)
+- src/ui/assets/body.html: HTML aus html_body.go ({{THEME_CLASS}} Platzhalter)
+- src/ui/assets/scripts.js: JS aus scripts.go ({{FONT_SIZE}} etc. Platzhalter)
+- styles.go, html_body.go, scripts.go: auf go:embed umgestellt
+- template.go: fmt.Sprintf → strings.NewReplacer, CSP im htmlDocHead
+- Alle 15 UI-Tests bestehen weiterhin
+
+### Aufgabe #13: bindings.go – Bindings aus main.go extrahiert
+- Neue Datei src/bindings.go mit registerBindings() und loadFileOnStartup()
+- main.go: Binding-Block durch registerBindings(w) ersetzt
+- Imports bereinigt (encoding/base64, encoding/json, fmt, path/filepath entfernt aus main.go)
+
+### Aufgabe #14: ARM-Builds im Makefile
+- linux-arm64 Target hinzugefügt (aarch64-linux-gnu-gcc)
+- all: increment-build test linux windows linux-arm64
+
+### Aufgabe #15: Mermaid.js-Integration
+- scripts.js: initMermaid() und renderMermaid() am Ende hinzugefügt
+- showContent(): initMermaid() nach buildTOC() aufgerufen
+- CDN: mermaid@11 von cdn.jsdelivr.net
+- Fallback: bei fehlender Verbindung bleibt Code-Block sichtbar
+
+### Build-Ergebnisse
+- Tests: alle bestanden (renderer + ui)
+- Linux-Build: build/md-reader ✅
+- Windows-Build: build/md-reader.exe ✅
+- src/build.txt: 11

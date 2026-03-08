@@ -8,7 +8,7 @@
 //   - EPUB (.epub)              → ZIP + XHTML-Kapitel-Extraktion
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-07
+// Letzte Änderung: 2026-03-08
 package renderer
 
 import (
@@ -21,7 +21,6 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
 )
 
 // Result enthält das Ergebnis des Markdown-Parsings.
@@ -48,10 +47,8 @@ var md = goldmark.New(
 		// Automatische Anker-IDs für Überschriften
 		parser.WithAutoHeadingID(),
 	),
-	goldmark.WithRendererOptions(
-		// Unsicheres HTML zulassen (für GFM-Kompatibilität)
-		html.WithUnsafe(),
-	),
+	// Sicherheit: Eingebettetes HTML in Markdown wird bewusst nicht zugelassen (RISK-001 behoben)
+	// <script>, <iframe> etc. aus Markdown werden escaped statt gerendert.
 )
 
 // LoadFile lädt eine unterstützte Datei und konvertiert sie zu HTML.

@@ -1,8 +1,8 @@
 # Makefile für MD Reader
-# Cross-Compilation für Linux und Windows
+# Cross-Compilation für Linux, Windows und Linux-ARM64
 #
-# Autor: Reisen macht Spass... mit Pia und Dirk e.Kfm.
-# Letzte Änderung: 2026-03-05
+# Autor: Kurt Ingwer
+# Letzte Änderung: 2026-03-08
 
 PROJECT     := md-reader
 BUILD_DIR   := build
@@ -25,10 +25,10 @@ WIN_CC      := x86_64-w64-mingw32-gcc
 # PKG_CONFIG_PATH für WebKit-Shim
 export PKG_CONFIG_PATH := $(PKG_CONFIG):$(PKG_CONFIG_PATH)
 
-.PHONY: all linux windows test clean increment-build
+.PHONY: all linux windows linux-arm64 test clean increment-build
 
-## all: Kompiliert für Linux und Windows
-all: increment-build test linux windows
+## all: Kompiliert für Linux, Windows und Linux-ARM64
+all: increment-build test linux windows linux-arm64
 
 ## linux: Kompiliert das Linux-Binary
 linux: $(BUILD_DIR)/$(PROJECT)
@@ -36,8 +36,9 @@ linux: $(BUILD_DIR)/$(PROJECT)
 $(BUILD_DIR)/$(PROJECT):
 	@echo "→ Kompiliere für Linux..."
 	@mkdir -p $(BUILD_DIR)
+	# -s -w entfernt Debug-Symbole und DWARF → kleinere Binaries
 	cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=$(GOOS_LINUX) GOARCH=$(ARCH) \
-		$(GO) build -o ../$(BUILD_DIR)/$(PROJECT) .
+		$(GO) build -ldflags="-s -w" -o ../$(BUILD_DIR)/$(PROJECT) .
 	@echo "✓ Linux-Binary: $(BUILD_DIR)/$(PROJECT)"
 
 ## windows: Kompiliert das Windows-Binary (Cross-Compilation)
@@ -49,11 +50,27 @@ $(BUILD_DIR)/$(PROJECT).exe:
 	@if command -v $(WIN_CC) > /dev/null 2>&1; then \
 		cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=$(GOOS_WIN) GOARCH=$(ARCH) \
 			CC=$(WIN_CC) CXX=$(WIN_CXX) \
-			$(GO) build -ldflags="-H windowsgui" -o ../$(BUILD_DIR)/$(PROJECT).exe . && \
+			$(GO) build -ldflags="-s -w -H windowsgui" -o ../$(BUILD_DIR)/$(PROJECT).exe . && \
 		echo "✓ Windows-Binary: $(BUILD_DIR)/$(PROJECT).exe"; \
 	else \
 		echo "⚠ $(WIN_CC) nicht gefunden. Windows-Build übersprungen."; \
 		echo "  Installation: sudo apt-get install gcc-mingw-w64"; \
+	fi
+
+## linux-arm64: Kompiliert das Linux-ARM64-Binary
+linux-arm64: $(BUILD_DIR)/$(PROJECT)-arm64
+$(BUILD_DIR)/$(PROJECT)-arm64:
+	@echo "→ Kompiliere für Linux ARM64..."
+	@mkdir -p $(BUILD_DIR)
+	# -s -w entfernt Debug-Symbole und DWARF → kleinere Binaries
+	@if command -v aarch64-linux-gnu-gcc > /dev/null 2>&1; then \
+		cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
+			CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ \
+			$(GO) build -ldflags="-s -w" -o ../$(BUILD_DIR)/$(PROJECT)-arm64 . && \
+		echo "✓ Linux-ARM64-Binary: $(BUILD_DIR)/$(PROJECT)-arm64"; \
+	else \
+		echo "⚠ aarch64-linux-gnu-gcc nicht gefunden. ARM64-Build übersprungen."; \
+		echo "  Installation: sudo apt-get install gcc-aarch64-linux-gnu"; \
 	fi
 
 ## test: Führt alle Tests aus
