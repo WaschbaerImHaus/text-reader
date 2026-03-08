@@ -1,7 +1,7 @@
 // Package ui stellt die HTML/CSS/JS-Oberfläche der MD-Reader-App bereit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-03-08 (KaTeX offline eingebettet)
 package ui
 
 import (
@@ -21,15 +21,19 @@ type UIConfig struct {
 	IsPortrait bool
 }
 
-// htmlDocHeadTemplate ist der Dokumentkopf mit Platzhalter für das Favicon.
+// htmlDocHeadTemplate ist der Dokumentkopf mit Platzhaltern für Favicon und KaTeX-CSS.
+// font-src data: ist nötig damit die eingebetteten KaTeX-Schriften (base64 data URIs) geladen werden.
 const htmlDocHeadTemplate = `<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none';">
 <link rel="icon" type="image/svg+xml" href="{{FAVICON_URI}}">
 <title>MD Reader</title>
+<style>
+{{KATEX_CSS}}
+</style>
 `
 
 // BuildInitialHTML erstellt das vollständige HTML-Dokument für den WebView.
@@ -65,11 +69,21 @@ func BuildInitialHTML(cfg UIConfig) string {
 		"{{THEME_CLASS}}", themeClass,
 	)
 
-	// Favicon-Platzhalter im Dokumentkopf ersetzen
+	// Favicon und KaTeX-CSS in den Dokumentkopf einsetzen.
+	// KaTeX-CSS wird eingebettet, damit Formeln offline ohne Webserver rendern.
 	head := strings.ReplaceAll(htmlDocHeadTemplate, "{{FAVICON_URI}}", faviconDataURI())
+	head = strings.ReplaceAll(head, "{{KATEX_CSS}}", KaTeXCSS())
+
+	// KaTeX JS + Auto-Render JS als Inline-Skripte (direkt nach den App-Skripten).
+	// Der Platzhalter {{KATEX_SCRIPTS}} wird im htmlJavaScript-Template erwartet.
+	katexScripts := "<script>\n" + KaTeXJS() + "\n</script>\n" +
+		"<script>\n" + KaTeXAutoRenderJS() + "\n</script>"
+
+	mainJS := r.Replace(htmlJavaScript)
+	mainJS = strings.ReplaceAll(mainJS, "{{KATEX_SCRIPTS}}", katexScripts)
 
 	return head +
 		r.Replace(htmlCSS) +
 		r.Replace(htmlBodyHTML) +
-		r.Replace(htmlJavaScript)
+		mainJS
 }

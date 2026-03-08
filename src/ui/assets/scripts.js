@@ -224,6 +224,7 @@ function showContent(html, title, scrollPos, fileHash) {
   mainEl.scrollTop = 0;
   buildTOC(); // TOC nach dem Rendern aufbauen
   initMermaid(); // Mermaid-Diagramme rendern
+  initKaTeX(document.getElementById('content')); // LaTeX-Formeln rendern
   // Gespeicherte Scroll-Position nach kurzem Delay wiederherstellen
   // (Delay nötig damit das DOM vollständig gerendert ist)
   if (scrollPos && scrollPos > 0) {
@@ -797,6 +798,45 @@ function renderMermaid() {
   mermaid.initialize({ startOnLoad: false, theme: theme, securityLevel: 'strict' });
   mermaid.run({ querySelector: '.mermaid' });
 }
+
+// ============================================================
+// KaTeX – LaTeX-Formel-Rendering (offline, eingebettet)
+// ============================================================
+
+/**
+ * Rendert LaTeX-Formeln im aktuellen Inhalt mit KaTeX.
+ *
+ * Erkennt automatisch:
+ *   - Inline-Formeln:  $...$  und  \(...\)
+ *   - Block-Formeln:   $$...$$ und \[...\]
+ *
+ * KaTeX (katex.min.js + auto-render.min.js) ist offline eingebettet –
+ * kein CDN-Zugriff nötig.
+ *
+ * @param {HTMLElement} container Das Element in dem Formeln gesucht werden.
+ */
+function initKaTeX(container) {
+  // KaTeX und Auto-Render müssen geladen sein (werden als inline scripts eingebettet)
+  if (typeof renderMathInElement !== 'function') return;
+  try {
+    renderMathInElement(container, {
+      // Erkannte Trennzeichen für Inline- und Block-Formeln
+      delimiters: [
+        { left: '$$',   right: '$$',   display: true  },
+        { left: '$',    right: '$',    display: false },
+        { left: '\\[',  right: '\\]',  display: true  },
+        { left: '\\(',  right: '\\)',  display: false }
+      ],
+      // Fehler in Formeln ignorieren und Original-Text stehen lassen
+      throwOnError: false,
+      // Trennzeichen innerhalb von Code-Blöcken nicht verarbeiten
+      ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'annotation', 'annotation-xml']
+    });
+  } catch (e) {
+    // KaTeX-Fehler stumm ignorieren (z.B. ungültige Formeln)
+  }
+}
 </script>
+{{KATEX_SCRIPTS}}
 </body>
 </html>

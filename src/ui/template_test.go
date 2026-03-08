@@ -163,6 +163,31 @@ func TestBuildInitialHTML_ClosingTags(t *testing.T) {
 	}
 }
 
+// TestBuildInitialHTML_ContainsKaTeX prüft ob KaTeX-CSS und JS eingebettet werden.
+func TestBuildInitialHTML_ContainsKaTeX(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"})
+	// KaTeX-CSS muss eingebettet sein (enthält typischerweise .katex-Klassen)
+	if !strings.Contains(html, ".katex") {
+		t.Error("KaTeX-CSS fehlt im HTML")
+	}
+	// KaTeX-JS muss eingebettet sein
+	if !strings.Contains(html, "katex") {
+		t.Error("KaTeX-JavaScript fehlt im HTML")
+	}
+	// Auto-Render muss eingebettet sein (renderMathInElement ist der Funktionsname)
+	if !strings.Contains(html, "renderMathInElement") {
+		t.Error("KaTeX Auto-Render (renderMathInElement) fehlt im HTML")
+	}
+	// CSP muss font-src data: erlauben (für eingebettete KaTeX-Schriften)
+	if !strings.Contains(html, "font-src data:") {
+		t.Error("CSP enthält font-src data: nicht – KaTeX-Schriften würden blockiert")
+	}
+	// Fonts müssen als base64 data URIs im CSS eingebettet sein
+	if !strings.Contains(html, "data:font/woff2;base64,") {
+		t.Error("KaTeX-Schriften sind nicht als base64 Data-URIs eingebettet")
+	}
+}
+
 // TestBuildInitialHTML_PercentSigns prüft ob %% korrekt zu % wird.
 //
 // Alle '%%' im Template sollen durch fmt.Sprintf zu einfachem '%' werden,

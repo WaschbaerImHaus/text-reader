@@ -33,6 +33,7 @@
 - **ARM64-Build**: Linux-ARM64-Binary via Cross-Compilation (aarch64-linux-gnu-gcc)
 - **Tastaturkürzel**: F11 Vollbild, Strg+F Suche, Strg+/- Zoom
 - **Mermaid.js**: Flowcharts, Sequenzdiagramme und andere Diagramme in Markdown (via CDN, fallback auf Code-Block bei fehlender Verbindung)
+- **KaTeX LaTeX** (Build 19): Inline-Formeln `$...$`, Block-Formeln `$$...$$`, `\(...\)`, `\[...\]` – vollständig offline eingebettet (keine CDN-Abhängigkeit), alle Schriften als base64-Data-URIs
 - **Scroll-History**: Scroll-Position wird pro Datei (FNV-64a Hash) gespeichert; beim Wiedereröffnen wird automatisch die letzte Leseposition wiederhergestellt (max. 200 Einträge)
 - **Nativer Dateidialog**: 📂-Button / Strg+O öffnet OS-nativen Datei-Öffnen-Dialog (Lösung für WebView2-Einschränkung)
 

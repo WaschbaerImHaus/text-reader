@@ -205,3 +205,39 @@ Bei kleinem Zoom wurde Platz verschwendet.
 - Windows x86_64: md-reader.exe
 - Linux ARM64: md-reader-linux-arm64
 - Linux ARMhf: md-reader-linux-armhf
+
+---
+
+## Build 19 – KaTeX LaTeX-Formelrendering (offline eingebettet)
+
+### 2026-03-08 10:10
+
+**Feature: KaTeX offline eingebettet**
+
+**Heruntergeladene Dateien** (KaTeX v0.16.37):
+- `src/ui/assets/katex/katex.min.js` (264 KB)
+- `src/ui/assets/katex/auto-render.min.js` (3,4 KB)
+- `src/ui/assets/katex/katex.min.css` (24 KB)
+- `src/ui/assets/katex/fonts/` – 20 × .woff2 Schriftdateien (592 KB gesamt)
+
+**Neue Datei: `src/ui/katex.go`**
+- `KaTeXJS()`, `KaTeXAutoRenderJS()`, `KaTeXCSS()` als Go-Funktionen
+- `buildKaTeXCSS()`: patcht CSS zur Laufzeit (einmalig per sync.Once) – ersetzt alle `url(fonts/*.woff2)` durch `data:font/woff2;base64,...`-URIs
+- `go:embed` für alle KaTeX-Dateien
+
+**Änderungen in `template.go`**
+- CSP um `font-src data:` erweitert (für eingebettete KaTeX-Schriften)
+- KaTeX-CSS als `<style>` im `<head>` via `{{KATEX_CSS}}`-Platzhalter
+- KaTeX-JS und Auto-Render-JS als Inline-Scripts via `{{KATEX_SCRIPTS}}`-Platzhalter
+
+**Änderungen in `scripts.js`**
+- `initKaTeX(container)` – ruft `renderMathInElement()` mit allen LaTeX-Trennzeichen auf
+- `showContent()` ruft `initKaTeX()` nach dem DOM-Update auf
+- `{{KATEX_SCRIPTS}}`-Platzhalter vor `</body>`
+
+**Neuer Test: `TestBuildInitialHTML_ContainsKaTeX`**
+- Prüft KaTeX-CSS (`.katex`), JS, `renderMathInElement`, `font-src data:`, `data:font/woff2;base64,`
+
+**ARM-Build-Problem gelöst:** arm64 und armhf WebKit-Pakete ersetzen sich gegenseitig beim apt-Install. Lösung: arm64 zuerst installieren, ARM64 bauen; dann armhf installieren, ARMhf bauen.
+
+**Alle Builds erfolgreich:** Linux x86_64, Windows x86_64, Linux ARM64, Linux ARMhf
