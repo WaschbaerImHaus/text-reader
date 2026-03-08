@@ -241,3 +241,23 @@ Bei kleinem Zoom wurde Platz verschwendet.
 **ARM-Build-Problem gelöst:** arm64 und armhf WebKit-Pakete ersetzen sich gegenseitig beim apt-Install. Lösung: arm64 zuerst installieren, ARM64 bauen; dann armhf installieren, ARMhf bauen.
 
 **Alle Builds erfolgreich:** Linux x86_64, Windows x86_64, Linux ARM64, Linux ARMhf
+
+---
+
+## Build 20 – Windows NSIS Installer (10:40 Uhr)
+
+### 2026-03-08 10:40
+
+**Neue Datei: `installer/md-reader.nsi`**
+
+NSIS-Installer (LZMA-komprimiert) mit:
+- Willkommens-, Verzeichnis-, Komponenten- und Abschlussseite (MUI2)
+- Startmenü-Eintrag (Pflicht): "MD Reader" mit Verknüpfung zu md-reader.exe
+- Desktop-Symbol (optional, wählbare Komponente)
+- Deinstallations-Eintrag in "Programme und Features" (Registry HKLM)
+- Deinstaller entfernt alle Dateien, Verknüpfungen und Registry-Einträge
+- Ausgabe: `build/md-reader-setup.exe` (4 MB, LZMA ~72% Kompression)
+
+Build-Befehl: `makensis installer/md-reader.nsi` (aus Projektroot)
+
+**.gitignore** um ARM-Binaries und Setup-EXE erweitert.

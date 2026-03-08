@@ -1,6 +1,9 @@
 # Kompilierte Binaries
 build/md-reader
 build/md-reader.exe
+build/md-reader-setup.exe
+build/md-reader-linux-arm64
+build/md-reader-linux-armhf
 
 # Go Build-Cache
 src/vendor/

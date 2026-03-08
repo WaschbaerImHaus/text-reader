@@ -30,12 +30,20 @@ PKG_CONFIG=arm-linux-gnueabihf-pkg-config PKG_CONFIG_PATH=$(pwd)/pkgconfig-armhf
   CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ \
   go build -o ../build/md-reader-linux-armhf .
 
-# Windows x86_64
+# Windows x86_64 (kein Konsolenfenster durch -H windowsgui)
 PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-  CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ go build -o ../build/md-reader.exe .
+  CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ \
+  go build -ldflags="-H windowsgui" -o ../build/md-reader.exe .
 
 # Windows ARM64: nicht möglich (kein aarch64-w64-mingw32-gcc in Ubuntu-Repos)
+
+# Windows Installer (NSIS, aus Projektroot ausführen)
+makensis installer/md-reader.nsi
 ```
+
+## ARM Cross-Compilation Hinweis
+Die Pakete `libwebkit2gtk-4.1-dev:arm64` und `libwebkit2gtk-4.1-dev:armhf` kollidieren
+auf diesem System. Reihenfolge: arm64 installieren → ARM64 bauen; dann armhf installieren → ARMhf bauen.
 
 ## ARM Cross-Compilation Voraussetzungen
 ```bash
