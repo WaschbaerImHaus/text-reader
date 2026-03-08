@@ -39,4 +39,10 @@
 
 - **Content Security Policy**: CSP-Header für den WebView-Inhalt setzen
 - **Sandboxing**: Webview-Navigations-Einschränkungen (keine externen URLs laden)
-- **Input-Sanitization**: HTML-Injection aus unsicherem Markdown prüfen
+- **Input-Sanitization**: HTML-Injection aus unsicherem Markdown prüfen (RISK-001, goldmark `html.WithUnsafe()`)
+- **Binding-Validierung**: persistLastFile-Binding Pfad-Validierung gegen path traversal (RISK-004)
+
+## Cross-Platform
+
+- **ARM-Builds**: Linux ARM64 / Windows ARM64 Cross-Compilation (derzeit nur x86_64)
+- **macOS**: WebKit-Support via webview_go bereits vorhanden, Build-Config fehlt

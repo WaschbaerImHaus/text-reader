@@ -22,3 +22,12 @@
 **Risiko**: Niedrig – `closeApp` schließt nur das Fenster, `nativeFullscreen` wechselt den Vollbild-Modus.
 
 **Empfehlung**: Akzeptabel für lokale Markdown-Anzeige.
+
+### RISK-004: Path-Traversal via persistLastFile-Binding (Mittel)
+**Beschreibung**: Das Go-Binding `persistLastFile(path, scrollPos)` übernimmt einen Dateipfad aus JavaScript ohne Validierung. Da goldmark `html.WithUnsafe()` nutzt (RISK-001), kann eingebettetes `<script>` in Markdown `window.persistLastFile("/pfad/zu/datei.txt", 0)` aufrufen. Beim nächsten Start öffnet der Reader diese Datei (sofern sie ein unterstütztes Format hat und existiert) und zeigt ihren Inhalt an.
+
+**Betroffene Datei**: `src/main.go` (persistLastFile-Binding, Zeile ~135)
+
+**Risiko**: Mittel – Betrifft nur lokal geöffnete, manipulierte MD-Dateien. Kein Netzwerkzugriff. Nur .md/.txt/.epub/.fb2/.html-Dateien können über `IsSupportedFile()` geöffnet werden – direkte Binär-Exfiltration ist ausgeschlossen.
+
+**Empfehlung**: Pfad-Validierung im `persistLastFile`-Binding: Nur Pfade akzeptieren die `renderer.IsSupportedFile()` passieren und tatsächlich existieren. Alternativ RISK-001 (Unsafe-HTML) zuerst beheben.

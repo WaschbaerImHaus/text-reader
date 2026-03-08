@@ -7,20 +7,47 @@ Ein einfacher, schneller Betrachter für Markdown, EPUB, FB2, TXT und HTML mit G
 - **Drag & Drop**: Dateien einfach auf das Fenster ziehen
 - **Multi-Format**: Markdown (.md), EPUB (.epub), FictionBook (.fb2), Plaintext (.txt), HTML (.html, .htm)
 - **GitHub-Rendering**: Identische Darstellung wie auf GitHub (Tabellen, Code-Highlighting, GFM)
+- **Syntax-Highlighting**: Code-Blöcke mit Sprachhervorhebung (GitHub-Stil)
 - **Zoom**: Schriftgröße verdoppeln/halbieren (25% bis 400%)
 - **Layouts**: Hochformat (750px Breite) oder Querformat (volle Breite)
-- **Vollbild**: F11 oder Vollbild-Button
-- **Syntax-Highlighting**: Code-Blöcke mit Sprachhervorhebung (GitHub-Stil)
+- **Vollbild**: Nativer Vollbild-Modus (F11 oder Button)
+- **Dark Mode**: GitHub-Dark-Theme (☽ → ▓)
+- **Retro Mode**: CRT-Phosphor-Grün (▓ → ☀)
+- **TOC-Seitenleiste**: Automatisches Inhaltsverzeichnis (☰), nur wenn Überschriften vorhanden
+- **Suche**: Strg+F öffnet Suchleiste mit Treffernavigation und Highlighting
+- **Persistente Einstellungen**: Zoom, Theme und Layout bleiben über Starts erhalten
+- **Letzte Datei**: Zuletzt geöffnete Datei wird beim Start automatisch wiedergeladen
+- **Scroll-Position**: Scroll-Position wird gespeichert und beim nächsten Start wiederhergestellt
+- **Lokale Bilder**: Relative Bildpfade werden als Base64 Data-URI eingebettet
 
 ## Steuerung
 
+### Toolbar-Buttons
+
 | Button | Funktion |
 |--------|----------|
+| `☰`    | Inhaltsverzeichnis (TOC) ein/aus |
 | `▯` / `▭` | Hochformat / Querformat umschalten |
-| `⊖` | Schriftgröße halbieren (min. 25%) |
-| `⊕` | Schriftgröße verdoppeln (max. 400%) |
-| `☐` | Vollbild ein/aus (auch F11) |
-| `✕` | Fenster schließen |
+| `⊖`   | Schriftgröße halbieren (min. 25%) |
+| `100%` | Aktuelle Zoomstufe |
+| `⊕`   | Schriftgröße verdoppeln (max. 400%) |
+| `☽` / `▓` / `☀` | Theme wechseln (Hell → Dark → Retro) |
+| `☐`   | Vollbild ein/aus |
+| `✕`   | Fenster schließen |
+
+### Tastaturkürzel
+
+| Taste | Funktion |
+|-------|----------|
+| `F11`       | Vollbild ein/aus |
+| `Strg+F`    | Suche öffnen/schließen |
+| `Strg++`    | Zoom vergrößern |
+| `Strg+-`    | Zoom verkleinern |
+| `Strg+0`    | Zoom zurücksetzen |
+| `Strg+Scroll` | Zoom per Mausrad |
+| `↑↓`        | Scrollen |
+| `PageUp/Down` | Seitenweise scrollen |
+| `Home/End`  | Anfang/Ende der Seite |
 
 ## Installation
 
@@ -57,12 +84,13 @@ build\md-reader.exe [optionale-datei.md]
 ./build/md-reader /pfad/zu/notizen.txt
 ```
 
+Die zuletzt geöffnete Datei wird beim nächsten Start automatisch wieder geöffnet (inklusive Scroll-Position).
+
 ## Unterstützte Formate
 
 ### Markdown (.md, .markdown)
 
-## Unterstützte Markdown-Elemente
-
+Unterstützte Elemente:
 - Überschriften (H1–H6)
 - Fett, Kursiv, Durchgestrichen
 - Listen (geordnet/ungeordnet)
@@ -72,6 +100,7 @@ build\md-reader.exe [optionale-datei.md]
 - Tabellen (GFM)
 - Links und Bilder
 - Horizontale Linien
+- Autolinks
 
 ### EPUB (.epub)
 EPUB 2 und 3 – Kapitel werden in Spine-Reihenfolge gelesen. Metadaten-Titel wird übernommen.

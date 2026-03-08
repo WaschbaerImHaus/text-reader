@@ -44,4 +44,6 @@ PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 go test ./renderer/... 
 ## Sitzungsverlauf
 - 2026-03-05: Erstversion. Go 1.26 installiert. App implementiert mit WebView.
 - 2026-03-07: Multi-Format (EPUB, FB2, TXT, HTML), Config-Persistenz, TOC, Suche, Dark/Retro-Mode.
-- 2026-03-08: Refactoring: ui/template.go aufgeteilt in styles.go, html_body.go, scripts.go, template.go. 15 UI-Tests hinzugefügt.
+- 2026-03-08 (Build 8): Refactoring: ui/template.go aufgeteilt in styles.go, html_body.go, scripts.go, template.go. 15 UI-Tests hinzugefügt (31 gesamt).
+- 2026-03-08 (Build 9): Bug #003 (letzte Drag-&-Drop-Datei nicht gespeichert) + Bug #004 (Scroll-Position nicht persistent) behoben. persistLastFile-Binding + text/uri-list-Extraktion.
+- 2026-03-08 (Build 10): Linux + Windows Builds erstellt. CLAUDE.md-Pflichten erledigt. RISK-004 identifiziert (path traversal via persistLastFile). README.md vervollständigt (76 Tests).

@@ -1,5 +1,7 @@
 # Research: MD Reader Optimierungen
 
+**Stand: 2026-03-08 (Build 10)**
+
 ## Was wir über das Projekt wissen
 
 ### Kernfunktion
@@ -9,6 +11,14 @@ Markdown-Betrachter für Desktop (Linux/Windows). Zielgruppe: Entwickler und tec
 - WebView: Echter Browser (WebKit/Chromium-basiert) für pixelgenaues Rendering
 - goldmark: Schnellster Go-Markdown-Parser, GFM-kompatibel
 - Syntax-Highlighting: chroma library (selber Autor wie Pygments)
+
+### Aktueller Funktionsstand (Build 10)
+- Multi-Format: MD, EPUB, FB2, TXT, HTML
+- Config-Persistenz: Zoom, Theme (Hell/Dark/Retro), Layout, letzte Datei, Scroll-Position
+- TOC-Seitenleiste, Volltext-Suche
+- Drag & Drop mit Pfad-Extraktion via text/uri-list
+- Plattformbindings: Linux (GTK), Windows (WinAPI)
+- 76 Tests (renderer + ui)
 
 ## Recherche-Ergebnisse
 
@@ -42,21 +52,55 @@ GitHub nutzt "Primer" Design-System. Die wichtigsten CSS-Eigenschaften:
 - **Portable Apps**: Statisch gelinkte Version für USB-Sticks?
 - **Bildschirmschoner**: Markdown als Präsentation/Slideshow?
 - **Git-Integration**: Automatisches Öffnen von README.md aus Git-Repos?
+- **Datei-Watcher**: fsnotify für Auto-Reload bei Dateiänderungen (Autor-Workflow)
+- **Mermaid.js**: Diagramme direkt in Markdown-Dateien rendern
+- **KaTeX**: Mathematische Formeln in Markdown (LaTeX-Syntax)
 
-## Code-Qualität (Stand 2026-03-08)
+## Architektur (Stand Build 10)
 
-### Architektur-Verbesserungen (Build 8)
-- `ui/template.go` aufgeteilt: CSS (styles.go), HTML (html_body.go), JS (scripts.go)
-- 15 neue UI-Tests → 31 Tests gesamt
-- Jede Datei hat klaren Verantwortungsbereich
+### Datei-Aufteilung
+```
+src/
+├── main.go              # WebView-Setup, Go-JS-Bindings, Startup-Logik
+├── config.go            # AppConfig, loadConfig, saveConfig
+├── platform_linux.go    # GTK-Vollbild (CGo, Build-Tag: linux)
+├── platform_windows.go  # WinAPI-Vollbild (Build-Tag: windows)
+├── renderer/
+│   ├── markdown.go      # goldmark MD→HTML, TXT→HTML, HTML-Parsing
+│   ├── epub.go          # EPUB ZIP+XHTML-Parser
+│   ├── fb2.go           # FictionBook XML-Parser
+│   └── images.go        # Lokale Bildpfad → Base64 Data-URI
+└── ui/
+    ├── template.go      # BuildInitialHTML (fügt Teile zusammen)
+    ├── styles.go        # CSS (htmlCSS)
+    ├── html_body.go     # HTML-Grundstruktur (htmlBodyHTML)
+    └── scripts.go       # JavaScript-Logik (htmlJavaScript)
+```
 
 ### Nächste Refactoring-Optionen
-1. `main.go` + Bindings in eigene Datei auslagern (bindings.go)
+1. `main.go` Bindings in eigene Datei auslagern (`bindings.go`)
 2. CSS in externe .css Datei (go:embed) → Syntax-Highlighting im Editor
 3. JS in externe .js Datei (go:embed) → Lint-Unterstützung
+4. Integration Tests für vollständige Go→JS-Bindings
 
-## Verbesserungsideen basierend auf Recherche
-1. GitHub's exakten Primer-CSS direkt einbinden (MIT-Lizenz)
-2. cmark-gfm via CGo für 100% GitHub-Kompatibilität
-3. Datei-Watcher mit `fsnotify` für Auto-Reload
-4. Mermaid.js für Diagramme in Markdown-Dateien
+## Sicherheits-Analyse
+- RISK-001: html.WithUnsafe() in goldmark → eingebettetes HTML erlaubt
+- RISK-002: Kein CSP-Header im WebView
+- RISK-003: Go-Bindings (closeApp, nativeFullscreen) als globale JS-Funktionen
+- **RISK-004 (NEU)**: persistLastFile-Binding akzeptiert beliebige Pfade aus JS → path traversal möglich bei manipulierten MD-Dateien
+
+## Verbesserungsideen (priorisiert)
+
+### Hoch (Sicherheit)
+1. RISK-001 beheben: html.WithUnsafe() deaktivieren oder mit allowlist arbeiten
+2. RISK-004 beheben: Pfad-Validierung in persistLastFile-Binding
+
+### Mittel (Features)
+3. Datei-Watcher mit `fsnotify` für Auto-Reload (produktiv beim Schreiben)
+4. Tab-Leiste für mehrere gleichzeitige Dateien
+5. Verlauf mehrerer zuletzt geöffneter Dateien
+
+### Niedrig (Qualität)
+6. Stripped Binary (`-ldflags="-s -w"`) für kleinere Builds
+7. go:embed für CSS/JS für bessere IDE-Unterstützung
+8. Mermaid.js für Diagramme

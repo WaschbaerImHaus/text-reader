@@ -62,3 +62,20 @@ Die WebView FileReader API gibt keinen vollen Pfad zurück — nur `file.name` (
 - src/main.go: persistLastFile-Binding, _closeAppNative, Scroll-Restore beim Start
 - src/ui/scripts.go: extractFilePathFromDrop, saveLastFile, onScrollDebounced, closeApp-Fix
 - src/build.txt: 9
+
+## 2026-03-08 01:52 - Build 10: Builds erstellt + CLAUDE.md-Pflichten
+
+### Build 10
+- Alle 76 Tests vor dem Build ausgeführt: alle bestanden
+- Linux-Build: build/md-reader ✅
+- Windows Cross-Compilation: build/md-reader.exe ✅
+- src/build.txt: 10
+- Gepusht nach Bitbucket (ae2d97a)
+
+### CLAUDE.md-Wartungsarbeiten
+- Sicherheitsprüfung: RISK-004 (neues Risiko) identifiziert und dokumentiert
+- README.md: Features vervollständigt (Dark/Retro Mode, TOC, Suche, Tastaturkürzel, Themes)
+- MEMORY.md (Projekt): Build 9 + 10 im Sitzungsverlauf ergänzt
+- research/OPTIMIZED_WORKER.md: Stand 2026-03-08 aktualisiert
+- tests/README.md: Testanzahl auf 76 aktualisiert
+- USER.md: Heutige Session dokumentiert
