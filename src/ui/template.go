@@ -19,13 +19,14 @@ type UIConfig struct {
 	IsPortrait bool
 }
 
-// htmlDocHead ist der statische Dokumentkopf.
-const htmlDocHead = `<!DOCTYPE html>
+// htmlDocHeadTemplate ist der Dokumentkopf mit Platzhalter für das Favicon.
+const htmlDocHeadTemplate = `<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none';">
+<link rel="icon" type="image/svg+xml" href="{{FAVICON_URI}}">
 <title>MD Reader</title>
 `
 
@@ -59,7 +60,10 @@ func BuildInitialHTML(cfg UIConfig) string {
 		"{{THEME_CLASS}}", themeClass,
 	)
 
-	return htmlDocHead +
+	// Favicon-Platzhalter im Dokumentkopf ersetzen
+	head := strings.ReplaceAll(htmlDocHeadTemplate, "{{FAVICON_URI}}", faviconDataURI())
+
+	return head +
 		r.Replace(htmlCSS) +
 		r.Replace(htmlBodyHTML) +
 		r.Replace(htmlJavaScript)

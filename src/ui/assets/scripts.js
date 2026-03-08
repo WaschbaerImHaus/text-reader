@@ -276,7 +276,8 @@ function resetZoom() {
 function updatePortraitWidth() {
   if (!isPortrait) return;
   var zoomFactor = fontSize / defaultFontSize;
-  var targetWidth = Math.round(750 * zoomFactor);
+  // Mindestbreite: 750px (auch bei < 100% Zoom); wächst linear ab 100%
+  var targetWidth = Math.max(750, Math.round(750 * zoomFactor));
   var maxAvail = window.innerWidth - 32;
   document.documentElement.style.setProperty(
     '--max-content-width',

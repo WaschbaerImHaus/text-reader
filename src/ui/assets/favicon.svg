@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Hintergrund: abgerundetes Quadrat in GitHub-Blau -->
+  <rect width="32" height="32" rx="6" fill="#0969da"/>
+  <!-- Aufgeschlagenes Buch: linke Seite -->
+  <path d="M5 8 Q5 7 6 7 L15 7 L15 25 Q10 24 6 25 Q5 25 5 24 Z" fill="white" opacity="0.92"/>
+  <!-- Aufgeschlagenes Buch: rechte Seite -->
+  <path d="M27 8 Q27 7 26 7 L17 7 L17 25 Q22 24 26 25 Q27 25 27 24 Z" fill="white" opacity="0.75"/>
+  <!-- Buchfalz (Mitte) -->
+  <line x1="16" y1="7" x2="16" y2="25" stroke="#0969da" stroke-width="1.5"/>
+  <!-- "M↓" Markdown-Symbol auf linker Seite -->
+  <text x="10" y="19" font-family="Arial,sans-serif" font-size="8" font-weight="bold"
+        fill="#0969da" text-anchor="middle">M</text>
+  <!-- Pfeil nach unten auf rechter Seite -->
+  <text x="22" y="19" font-family="Arial,sans-serif" font-size="9" font-weight="bold"
+        fill="#0969da" text-anchor="middle">↓</text>
+</svg>
