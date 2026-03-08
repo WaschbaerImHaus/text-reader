@@ -24,6 +24,9 @@ var isFullscreen = false;
 /** Aktuelles Theme: 'light', 'dark' oder 'retro' */
 var currentTheme = 'light';
 
+/** Hash des aktuell angezeigten Dateiinhalts (FNV-64a, von Go berechnet) */
+var currentFileHash = '';
+
 /** TOC-Seitenleiste geöffnet? */
 var tocOpen = false;
 
@@ -53,7 +56,7 @@ applyFontSize();
 /** Layout wiederherstellen */
 (function initLayout() {
   if (isPortrait) {
-    document.documentElement.style.setProperty('--max-content-width', '750px');
+    updatePortraitWidth();
     var btn = document.getElementById('btn-layout');
     btn.textContent = '\u25AD'; // ▭
     btn.title = 'Querformat anzeigen';
@@ -168,8 +171,8 @@ document.addEventListener('drop', function(e) {
       window.processEpub(arrayBufferToBase64(ev.target.result), file.name)
         .then(function(result) {
           handleRenderResult(result);
-          // Pfad nach erfolgreichem Rendern speichern (Scroll-Position = 0, neue Datei)
-          if (!result || !result.error) saveLastFile(droppedFilePath, 0);
+          // Pfad nach erfolgreichem Rendern speichern
+          if (!result || !result.error) saveLastFile(droppedFilePath);
         }).catch(function(e) { showDropError('Fehler: ' + e); });
     };
     reader.onerror = function() { showDropError('EPUB konnte nicht gelesen werden.'); };
@@ -180,8 +183,8 @@ document.addEventListener('drop', function(e) {
       window.processMarkdown(ev.target.result, file.name)
         .then(function(result) {
           handleRenderResult(result);
-          // Pfad nach erfolgreichem Rendern speichern (Scroll-Position = 0, neue Datei)
-          if (!result || !result.error) saveLastFile(droppedFilePath, 0);
+          // Pfad nach erfolgreichem Rendern speichern
+          if (!result || !result.error) saveLastFile(droppedFilePath);
         }).catch(function(e) { showDropError('Fehler: ' + e); });
     };
     reader.onerror = function() { showDropError('Datei konnte nicht gelesen werden.'); };
@@ -194,7 +197,7 @@ function handleRenderResult(result) {
   if (result && result.error) {
     showDropError('Fehler: ' + result.error);
   } else if (result) {
-    showContent(result.html, result.title);
+    showContent(result.html, result.title, result.scrollPos || 0, result.fileHash || '');
   }
 }
 
@@ -202,9 +205,17 @@ function handleRenderResult(result) {
 // Inhalt anzeigen / verstecken
 // ============================================================
 
-/** Zeigt gerenderten Inhalt an und baut das TOC auf */
-function showContent(html, title) {
+/**
+ * Zeigt gerenderten Inhalt an, baut das TOC auf und stellt die Scroll-Position wieder her.
+ *
+ * @param {string} html      Gerendertes HTML.
+ * @param {string} title     Dokumenttitel.
+ * @param {number} scrollPos Wiederherzustellende Scroll-Position in Pixeln (0 = Anfang).
+ * @param {string} fileHash  FNV-64a-Hash des Dateiinhalts (für Scroll-History).
+ */
+function showContent(html, title, scrollPos, fileHash) {
   closeSearch(); // Suche zurücksetzen
+  currentFileHash = fileHash || '';
   document.getElementById('drop-zone').style.display = 'none';
   var wrapper = document.getElementById('content-wrapper');
   wrapper.style.display = 'block';
@@ -213,6 +224,11 @@ function showContent(html, title) {
   mainEl.scrollTop = 0;
   buildTOC(); // TOC nach dem Rendern aufbauen
   initMermaid(); // Mermaid-Diagramme rendern
+  // Gespeicherte Scroll-Position nach kurzem Delay wiederherstellen
+  // (Delay nötig damit das DOM vollständig gerendert ist)
+  if (scrollPos && scrollPos > 0) {
+    setTimeout(function() { mainEl.scrollTop = scrollPos; }, 80);
+  }
 }
 
 function showDropError(msg) {
@@ -251,9 +267,27 @@ function resetZoom() {
   saveState();
 }
 
+/**
+ * Berechnet und setzt die maximale Inhaltsbreite im Hochformat-Modus.
+ *
+ * Die Breite skaliert linear mit dem Zoom: 750px × Zoom-Faktor,
+ * begrenzt auf Fensterbreite − 32 px. Im Querformat wird nichts geändert.
+ */
+function updatePortraitWidth() {
+  if (!isPortrait) return;
+  var zoomFactor = fontSize / defaultFontSize;
+  var targetWidth = Math.round(750 * zoomFactor);
+  var maxAvail = window.innerWidth - 32;
+  document.documentElement.style.setProperty(
+    '--max-content-width',
+    Math.min(targetWidth, maxAvail) + 'px'
+  );
+}
+
 function applyFontSize() {
   document.documentElement.style.setProperty('--font-size', fontSize + 'px');
   updateZoomLabel();
+  updatePortraitWidth();
 }
 
 function updateZoomLabel() {
@@ -300,7 +334,7 @@ function toggleLayout() {
   isPortrait = !isPortrait;
   var btn = document.getElementById('btn-layout');
   if (isPortrait) {
-    document.documentElement.style.setProperty('--max-content-width', '750px');
+    updatePortraitWidth(); // Breite zoom-abhängig setzen
     btn.textContent = '\u25AD'; btn.title = 'Querformat anzeigen';
   } else {
     document.documentElement.style.setProperty('--max-content-width', '100%');
@@ -557,19 +591,19 @@ function saveState() {
 }
 
 /**
- * Sendet Dateipfad und Scroll-Position an Go zum Speichern.
+ * Sendet den Dateipfad an Go zum Speichern als zuletzt geöffnete Datei.
  *
- * Wird nach Drag & Drop (mit Pfad) und beim Scrollen (nur Scroll-Position)
- * aufgerufen. Ein leerer Pfad lässt den gespeicherten Pfad in Go unverändert.
+ * Wird nach Drag & Drop aufgerufen. Die Scroll-Position wird separat
+ * per saveScrollPos() gespeichert (Hash-basiert).
  *
- * @param {string} path      Vollständiger Dateipfad (leer = nur scrollPos aktualisieren).
- * @param {number} scrollPos Aktuelle Scroll-Position in Pixeln.
+ * @param {string} path Vollständiger Dateipfad.
  */
-function saveLastFile(path, scrollPos) {
+function saveLastFile(path) {
   if (typeof window.persistLastFile === 'function') {
-    window.persistLastFile(path || '', scrollPos || 0);
+    window.persistLastFile(path || '');
   }
 }
+
 
 /** Timer-Handle für debounced Scroll-Speicherung */
 var scrollSaveTimer = null;
@@ -578,14 +612,16 @@ var scrollSaveTimer = null;
  * Speichert die Scroll-Position verzögert (debounced, 500ms nach letztem Scroll).
  *
  * Verhindert zu viele Schreibzugriffe auf die Konfigurationsdatei während
- * des Scrollens. Nur ausgeführt wenn eine Datei geöffnet ist (content-wrapper sichtbar).
+ * des Scrollens. Nutzt den Dateiinhalt-Hash als Schlüssel (Hash-basierte History).
  */
 function onScrollDebounced() {
   if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
   scrollSaveTimer = setTimeout(function() {
     var wrapper = document.getElementById('content-wrapper');
-    if (wrapper && wrapper.style.display !== 'none') {
-      saveLastFile('', mainEl ? mainEl.scrollTop : 0);
+    if (wrapper && wrapper.style.display !== 'none' && currentFileHash) {
+      if (typeof window.saveScrollPos === 'function') {
+        window.saveScrollPos(currentFileHash, mainEl ? mainEl.scrollTop : 0);
+      }
     }
   }, 500);
 }
@@ -612,9 +648,11 @@ function openFile() {
 // ============================================================
 
 function closeApp() {
-  // Scroll-Position vor dem Beenden synchron speichern
-  saveLastFile('', mainEl ? mainEl.scrollTop : 0);
-  // Kurzen Moment warten damit persistLastFile (async Go-Binding) abgeschlossen wird
+  // Scroll-Position vor dem Beenden synchron speichern (Hash-basiert)
+  if (currentFileHash && typeof window.saveScrollPos === 'function') {
+    window.saveScrollPos(currentFileHash, mainEl ? mainEl.scrollTop : 0);
+  }
+  // Kurzen Moment warten damit saveScrollPos (async Go-Binding) abgeschlossen wird
   setTimeout(function() {
     if (typeof window._closeAppNative === 'function') window._closeAppNative();
   }, 80);
@@ -685,6 +723,11 @@ document.addEventListener('wheel', function(e) {
 if (mainEl) {
   mainEl.addEventListener('scroll', onScrollDebounced, { passive: true });
 }
+
+// Fenstergrößenänderung → Portrait-Breite neu berechnen
+window.addEventListener('resize', function() {
+  updatePortraitWidth();
+}, { passive: true });
 
 // ============================================================
 // Mermaid.js – Diagramm-Rendering (Flowcharts, Sequenzdiagramme usw.)

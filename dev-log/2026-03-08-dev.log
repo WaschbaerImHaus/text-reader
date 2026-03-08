@@ -131,3 +131,51 @@ Die WebView FileReader API gibt keinen vollen Pfad zurück — nur `file.name` (
 - Linux-Build: build/md-reader ✅
 - Windows-Build: build/md-reader.exe ✅
 - src/build.txt: 11
+
+---
+
+2026-03-08 08:17:00 - Build 14: Scroll-History + Portrait-Zoom-Skalierung
+
+## Feature 1: Hash-basierte Scroll-History
+
+### Motivation
+Beim Öffnen einer zuvor gelesenen Datei soll die Leseposition automatisch
+wiederhergestellt werden. Bisher wurde nur eine einzige globale Scroll-Position
+gespeichert (lastFileScrollPos).
+
+### Implementierung
+- `config.go`: `ScrollHistory map[string]int` (Hash → scrollTop px), max. 200 Einträge
+- `bindings.go`:
+  - `computeHash([]byte) string` → FNV-64a Hash als Hex-String
+  - `trimScrollHistory(*AppConfig)` → kürzt auf 150 Einträge wenn >200
+  - `scrollPosForHash(hash) int` → Lookup Helper
+  - `processMarkdown` → liefert FileHash + ScrollPos zurück
+  - `processEpub` → liefert FileHash + ScrollPos zurück  
+  - `persistLastFile(path string)` → nur noch Pfad, kein scrollPos
+  - `saveScrollPos` Binding → Hash + scrollPos → ScrollHistory → saveConfig
+  - `loadFileOnStartup` → liest rawBytes, berechnet Hash, schlägt ScrollHistory nach
+- `scripts.js`:
+  - `currentFileHash` global Variable
+  - `showContent(html, title, scrollPos, fileHash)` → setzt currentFileHash, stellt scrollPos wieder her
+  - `handleRenderResult` → übergibt fileHash + scrollPos an showContent
+  - `onScrollDebounced` → ruft `window.saveScrollPos(currentFileHash, scrollTop)` auf
+  - `closeApp` → speichert scrollPos via saveScrollPos vor Beenden
+  - `saveLastFile(path)` → nur noch Pfad-Parameter
+
+## Feature 2: Portrait-Breite skaliert mit Zoom
+
+### Motivation
+Im Hochformat-Modus war die Breite fix 750px. Bei großem Zoom wurde die Zeile zu lang.
+Bei kleinem Zoom wurde Platz verschwendet.
+
+### Implementierung
+- `scripts.js`: `updatePortraitWidth()`:
+  ```
+  breite = min(750 × (fontSize/defaultFontSize), fensterbreite - 32) px
+  ```
+- Wird aufgerufen von: `applyFontSize()`, `toggleLayout()`, `initLayout()`, `window.resize`
+
+## Build
+- Linux: `build/md-reader` ✅
+- Windows: `build/md-reader.exe` ✅
+- Tests: alle 76 bestanden ✅

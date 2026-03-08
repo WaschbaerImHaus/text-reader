@@ -49,6 +49,10 @@ type RenderResult struct {
 	Title string `json:"title"`
 	// Error enthält eine Fehlermeldung falls die Konvertierung fehlschlug.
 	Error string `json:"error,omitempty"`
+	// FileHash ist der FNV-64a-Hash des Dateiinhalts (für Scroll-History).
+	FileHash string `json:"fileHash"`
+	// ScrollPos ist die gespeicherte Scroll-Position für diesen Dateiinhalt.
+	ScrollPos int `json:"scrollPos"`
 }
 
 func main() {

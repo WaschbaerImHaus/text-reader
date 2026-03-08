@@ -15,7 +15,7 @@
 - **Zoom Mausrad**: Strg+Scroll zum Zoomen
 - **Zoom Tastatur**: Strg++, Strg+-, Strg+0 (zurücksetzen)
 - **Zoom-Anzeige**: Prozentwert sichtbar in der Toolbar
-- **Hochformat**: Inhalt auf 750px Breite begrenzt, zentriert
+- **Hochformat**: Inhalt zentriert, Breite skaliert mit Zoom (750px × Zoom-Faktor, max. Fensterbreite − 32 px)
 - **Querformat**: Inhalt in voller Fensterbreite
 - **Vollbild**: Nativer Vollbild-Modus (GTK/WinAPI) via F11 oder Toolbar-Button
 - **Schließen**: Button rechts oben (✕)
@@ -33,6 +33,8 @@
 - **ARM64-Build**: Linux-ARM64-Binary via Cross-Compilation (aarch64-linux-gnu-gcc)
 - **Tastaturkürzel**: F11 Vollbild, Strg+F Suche, Strg+/- Zoom
 - **Mermaid.js**: Flowcharts, Sequenzdiagramme und andere Diagramme in Markdown (via CDN, fallback auf Code-Block bei fehlender Verbindung)
+- **Scroll-History**: Scroll-Position wird pro Datei (FNV-64a Hash) gespeichert; beim Wiedereröffnen wird automatisch die letzte Leseposition wiederhergestellt (max. 200 Einträge)
+- **Nativer Dateidialog**: 📂-Button / Strg+O öffnet OS-nativen Datei-Öffnen-Dialog (Lösung für WebView2-Einschränkung)
 
 ## Geplant 📋
 

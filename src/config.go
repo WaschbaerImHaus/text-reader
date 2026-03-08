@@ -22,14 +22,16 @@ import (
 type AppConfig struct {
 	// LastFile ist der vollständige Pfad der zuletzt geöffneten Datei.
 	LastFile string `json:"lastFile"`
-	// LastFileScrollPos ist die gespeicherte Scroll-Position (scrollTop in px).
-	LastFileScrollPos int `json:"lastFileScrollPos"`
 	// FontSize ist die gespeicherte Schriftgröße in Pixeln.
 	FontSize int `json:"fontSize"`
 	// Theme ist das aktive Farbschema: "light", "dark" oder "retro".
 	Theme string `json:"theme"`
 	// Layout ist die Ausrichtung: "landscape" oder "portrait".
 	Layout string `json:"layout"`
+	// ScrollHistory speichert die Scroll-Position je Dateiinhalt-Hash.
+	// Schlüssel: FNV-64a-Hash des Dateiinhalts, Wert: scrollTop in px.
+	// Begrenzt auf 200 Einträge um die Config-Datei klein zu halten.
+	ScrollHistory map[string]int `json:"scrollHistory,omitempty"`
 }
 
 // defaultConfig erzeugt eine AppConfig mit Standardwerten.
