@@ -84,6 +84,17 @@ func registerBindings(w webview.WebView) {
 		})
 		return newState
 	})
+
+	// openFilePicker: Öffnet den nativen Datei-Öffnen-Dialog (Strg+O).
+	//
+	// Lösung für #005: WebView2 exponiert aus Sicherheitsgründen keine Dateipfade
+	// im DataTransfer. Der native Dialog gibt den vollständigen Pfad zurück.
+	w.Bind("openFilePicker", func() {
+		path := openFilePickerBlocking(w)
+		if path != "" {
+			loadFileOnStartup(w, path)
+		}
+	})
 }
 
 // loadFileOnStartup lädt eine Datei beim Programmstart und zeigt sie an.

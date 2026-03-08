@@ -14,4 +14,4 @@
 
 - **#004** (Build 9): Scroll-Position wurde beim Schließen nicht gespeichert und beim nächsten Start nicht wiederhergestellt. Fix: Scroll-Position wird debounced (500ms) bei jedem Scroll-Event und synchron beim Schließen gespeichert. Beim Start wird sie nach dem Rendern wiederhergestellt.
 
-- **#005** (Build 12): Auf Windows wurde `lastFile` nach Drag & Drop nicht gespeichert – beim nächsten Start war keine Datei zu sehen. Ursache: `extractFilePathFromDrop()` entfernte nur `file://` (2 Slashes), sodass Windows-Pfade als `/C:/...` statt `C:/...` ankamen und Go's `os.Stat()` fehlschlug. Fix: Regex `path.replace(/^\/([A-Za-z]:)/, '$1')` entfernt den führenden Slash vor dem Laufwerksbuchstaben.
+- **#005** (Build 13): Auf Windows wurde `lastFile` nach Drag & Drop nicht gespeichert. Ursache: WebView2 exponiert aus Sicherheitsgründen **keine Dateipfade** im DataTransfer – `text/uri-list` bleibt in WebView2 bewusst leer. Fix: Nativer Datei-Öffnen-Dialog via `GetOpenFileNameW` (Windows) / GTK FileChooser (Linux), aufrufbar per 📂-Button oder Strg+O. Der Drag & Drop zeigt Dateien weiterhin an, aber nur der native Dialog speichert `lastFile` zuverlässig.

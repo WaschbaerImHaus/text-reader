@@ -591,6 +591,23 @@ function onScrollDebounced() {
 }
 
 // ============================================================
+// Datei öffnen (nativer Dialog – Lösung für #005)
+// ============================================================
+
+/**
+ * Öffnet den nativen Datei-Öffnen-Dialog via Go-Binding.
+ *
+ * Hintergrund: WebView2 (Windows) exponiert aus Sicherheitsgründen keine
+ * Dateipfade im DataTransfer. Der native Dialog umgeht dies und liefert
+ * den vollständigen Pfad, der dann in lastFile gespeichert werden kann.
+ */
+function openFile() {
+  if (typeof window.openFilePicker === 'function') {
+    window.openFilePicker();
+  }
+}
+
+// ============================================================
 // Fenster schließen
 // ============================================================
 
@@ -613,6 +630,9 @@ document.addEventListener('keydown', function(e) {
 
   // Vollbild: F11
   if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); return; }
+
+  // Datei öffnen: Strg+O
+  if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openFile(); return; }
 
   // Suche öffnen: Strg+F
   if (e.ctrlKey && e.key === 'f') { e.preventDefault(); openSearch(); return; }
