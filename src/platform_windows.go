@@ -121,3 +121,41 @@ func showOpenFileDialog(parentWindow unsafe.Pointer) string {
 func openFilePickerBlocking(w webview.WebView) string {
 	return showOpenFileDialog(w.Window())
 }
+
+// setAppIcon setzt das Fenster-Icon via WM_SETICON.
+//
+// Das primäre Icon ist bereits über die eingebettete Ressource (rsrc_windows_amd64.syso)
+// in der .exe-Datei enthalten und wird von Windows automatisch für Explorer,
+// Taskleiste und Alt+Tab verwendet. Diese Funktion setzt zusätzlich das
+// Titelleisten-Icon zur Laufzeit.
+//
+// @param w Die WebView-Instanz.
+func setAppIcon(w webview.WebView) {
+	hwnd := w.Window()
+	if hwnd == nil {
+		return
+	}
+	// LoadImage lädt das ICON aus den eingebetteten Ressourcen (IDI_ICON1 = 1)
+	loadImage := user32.MustFindProc("LoadImageW")
+	hInst, _ := syscall.LoadDLL("kernel32.dll")
+	getModuleHandle, _ := hInst.FindProc("GetModuleHandleW")
+	hMod, _, _ := getModuleHandle.Call(0)
+
+	// IDI_ICON1 = 1 (aus app.rc), ICON_BIG = 1, ICON_SMALL = 0
+	const imageIcon = 1
+	const lrDefaultSize = 0x0040
+	hIcon, _, _ := loadImage.Call(
+		hMod,
+		1, // IDI_ICON1
+		imageIcon,
+		0, 0,
+		lrDefaultSize,
+	)
+	if hIcon == 0 {
+		return
+	}
+	// WM_SETICON = 0x0080, ICON_BIG = 1, ICON_SMALL = 0
+	sendMessage := user32.MustFindProc("SendMessageW")
+	sendMessage.Call(uintptr(unsafe.Pointer(hwnd)), 0x0080, 1, hIcon) // ICON_BIG
+	sendMessage.Call(uintptr(unsafe.Pointer(hwnd)), 0x0080, 0, hIcon) // ICON_SMALL
+}

@@ -1,0 +1,2 @@
+// Windows-Ressource: App-Icon für Taskleiste, Explorer und Titelleiste
+IDI_ICON1 ICON "ui/assets/favicon.ico"

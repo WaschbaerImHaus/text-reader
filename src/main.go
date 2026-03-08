@@ -84,6 +84,9 @@ func main() {
 	w.SetTitle("MD Reader")
 	w.SetSize(windowWidth, windowHeight, webview.HintNone)
 
+	// App-Icon setzen (Titelleiste, Taskleiste, Alt+Tab)
+	setAppIcon(w)
+
 	// ----------------------------------------------------------------
 	// Go→JS Bindings registrieren (aus bindings.go)
 	// ----------------------------------------------------------------

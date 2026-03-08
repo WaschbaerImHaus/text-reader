@@ -1,8 +1,9 @@
 // Plattformspezifische Implementierung für Linux (GTK + CGo).
 //
-// Enthält nativen Vollbild-Toggle und nativen Datei-Öffnen-Dialog
-// via GTK-FileChooserDialog. Der Datei-Dialog muss auf dem GTK-Hauptthread
-// ausgeführt werden (GTK ist nicht thread-sicher).
+// Enthält nativen Vollbild-Toggle, nativen Datei-Öffnen-Dialog und
+// Fenster-Icon-Setzung via GTK-Funktionen. Der Datei-Dialog und die
+// Icon-Setzung müssen auf dem GTK-Hauptthread ausgeführt werden
+// (GTK ist nicht thread-sicher).
 //
 // Autor: Kurt Ingwer
 // Letzte Änderung: 2026-03-08
@@ -15,10 +16,11 @@ package main
 #cgo pkg-config: gtk+-3.0
 
 #include <gtk/gtk.h>
+#include <string.h>
 
 // toggleWindowFullscreen wechselt den Vollbild-Modus des GTK-Fensters.
 //
-// @param window  GtkWindow-Zeiger.
+// @param window       GtkWindow-Zeiger.
 // @param isFullscreen 1 = Vollbild verlassen, 0 = Vollbild einschalten.
 void toggleWindowFullscreen(void* window, int isFullscreen) {
     GtkWindow* win = GTK_WINDOW(window);
@@ -27,6 +29,29 @@ void toggleWindowFullscreen(void* window, int isFullscreen) {
     } else {
         gtk_window_fullscreen(win);
     }
+}
+
+// setWindowIconFromPNG setzt das GTK-Fenster-Icon aus PNG-Rohdaten im Speicher.
+//
+// Lädt den PNG-Buffer als GdkPixbuf via InputStream und übergibt ihn an
+// gtk_window_set_icon(). Schlägt die Konvertierung fehl, wird das Icon
+// stillschweigend ignoriert (kein fataler Fehler).
+//
+// @param window  GtkWindow-Zeiger.
+// @param data    PNG-Rohdaten.
+// @param length  Länge der PNG-Rohdaten in Bytes.
+void setWindowIconFromPNG(void* window, const guint8* data, gsize length) {
+    GtkWindow* win = GTK_WINDOW(window);
+    GInputStream* stream = g_memory_input_stream_new_from_data(data, (gssize)length, NULL);
+    GError* err = NULL;
+    GdkPixbuf* pixbuf = gdk_pixbuf_new_from_stream(stream, NULL, &err);
+    g_object_unref(stream);
+    if (pixbuf == NULL) {
+        if (err) g_error_free(err);
+        return;
+    }
+    gtk_window_set_icon(win, pixbuf);
+    g_object_unref(pixbuf);
 }
 
 // showFileDialog öffnet den nativen GTK-Datei-Öffnen-Dialog.
@@ -100,6 +125,29 @@ func toggleNativeFullscreen(w webview.WebView) {
 	}
 	C.toggleWindowFullscreen(unsafe.Pointer(ptr), fullscreenInt)
 	app.isFullscreen = !app.isFullscreen
+}
+
+// setAppIcon setzt das Fenster-Icon aus der eingebetteten PNG-Datei.
+//
+// Muss auf dem GTK-Hauptthread ausgeführt werden (via w.Dispatch).
+//
+// @param w Die WebView-Instanz.
+func setAppIcon(w webview.WebView) {
+	ptr := w.Window()
+	if ptr == nil {
+		return
+	}
+	data := appIconPNG
+	if len(data) == 0 {
+		return
+	}
+	w.Dispatch(func() {
+		C.setWindowIconFromPNG(
+			unsafe.Pointer(ptr),
+			(*C.guint8)(unsafe.Pointer(&data[0])),
+			C.gsize(len(data)),
+		)
+	})
 }
 
 // showOpenFileDialog öffnet den nativen GTK-Datei-Dialog.
