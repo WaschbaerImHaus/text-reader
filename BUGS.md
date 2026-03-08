@@ -13,3 +13,5 @@
 - **#003** (Build 9): Per Drag & Drop geöffnete Dateien wurden beim nächsten Start nicht wiederhergestellt. Fix: Dateipfad wird aus dem `text/uri-list`-DataTransfer-Eintrag des Drop-Events extrahiert (Desktop-WebViews geben `file://`-URIs zurück) und per neuem `persistLastFile`-Binding in der Konfiguration gespeichert.
 
 - **#004** (Build 9): Scroll-Position wurde beim Schließen nicht gespeichert und beim nächsten Start nicht wiederhergestellt. Fix: Scroll-Position wird debounced (500ms) bei jedem Scroll-Event und synchron beim Schließen gespeichert. Beim Start wird sie nach dem Rendern wiederhergestellt.
+
+- **#005** (Build 12): Auf Windows wurde `lastFile` nach Drag & Drop nicht gespeichert – beim nächsten Start war keine Datei zu sehen. Ursache: `extractFilePathFromDrop()` entfernte nur `file://` (2 Slashes), sodass Windows-Pfade als `/C:/...` statt `C:/...` ankamen und Go's `os.Stat()` fehlschlug. Fix: Regex `path.replace(/^\/([A-Za-z]:)/, '$1')` entfernt den führenden Slash vor dem Laufwerksbuchstaben.

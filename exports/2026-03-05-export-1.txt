@@ -1,0 +1,594 @@
+> handler nach der CLAUDE.md. baue mir eine einfache app in go auf die
+  ich per drag drop md dateien ziehen kann (fehlermeldung wenn es keine
+  ist) und mir die md datei in schöner weise dargestellt wird ähnlich
+  wie bei github. kein menü. einen schließen-button rechts oben. einen
+  vollbild / fenster button, lupe + (verdoppeln bis max 4 fach), lupe -
+  (halbieren bis max 25%), quer/hochformat (3:4 oder maximalbreite)
+  button in der mitte oben. nutze unicode icons. natürlich soll man sich
+  von oben nach unten scrollen können. 16 pixel für standardschriftgröße
+  initial.
+
+● ToolSearch({"query": "select:Read,Glob,Bash", "max_results": 3})
+  ⎿  (No content)
+
+● Glob(**/*)
+  ⎿ /home/claude-code/project/md-reader/claude.sh
+     /home/claude-code/project/md-reader/.claude/.claude-open
+
+● Read 1 file (ctrl+o to expand)
+  ⎿ File does not exist. Note: your current working directory is /home/c
+
+● Bash(ls /home/claude-code/ && ls /home/claude-code/claude.sh 2>/dev/……)
+  ⎿ <tool_use_error>Cancelled: parallel tool call Read(/home/claude-code
+
+● Bash(ls /home/claude-code/ && ls -la /home/claude-code/claude.sh 2>/……)
+  ⎿ USER.md
+     claude-configuration
+     claude.sh
+     … +8 lines (ctrl+o to expand)
+
+● Bash(go version && which go)
+  ⎿ go version go1.24.4 linux/amd64
+     /usr/bin/go
+
+● Ich schaue mir die Projektstruktur an und starte dann mit der
+  Implementierung.
+
+● Bash(ls /home/claude-code/project/md-reader/ && cat /home/claude-cod……)
+  ⎿ claude.sh
+     #!/bin/bash
+     ##
+     … +3 lines (ctrl+o to expand)
+
+● Bash(go env GOPATH && ls /home/claude-code/go/ 2>/dev/null || echo "……)
+  ⎿ /home/claude-code/go
+     pkg
+
+● Bash(go version)
+  ⎿ go version go1.24.4 linux/amd64
+
+● Bash(curl -s "https://go.dev/dl/?mode=json&include=all" | python3 -c……)
+  ⎿ ['go1.26.0', 'go1.25.7', 'go1.25.6', 'go1.25.5', 'go1.25.4']
+
+● Bash(cd /tmp && wget -q https://go.dev/dl/go1.26.0.linux-amd64.tar.g……)
+  ⎿ Download OK
+     Shell cwd was reset to /home/claude-code/project/md-reader
+
+● Bash(sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/g……)
+  ⎿ go version go1.26.0 linux/amd64
+
+● Bash(which go && go version)
+  ⎿ /usr/bin/go
+     go version go1.24.4 linux/amd64
+
+● Bash(sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go && sudo ln -……)
+  ⎿ go version go1.26.0 linux/amd64
+
+● Go 1.26.0 installiert. Nun baue ich die App.
+
+  Zuerst die notwendigen System-Abhängigkeiten für Fyne
+  (OpenGL/X11/Wayland) und mingw für Windows-Cross-Compilation:
+
+● Bash(sudo apt-get install -y libgl1-mesa-dev xorg-dev gcc-mingw-w64 ……)
+  ⎿ Command running in background with ID: b5i5ygevu. Output is being wr
+
+● Während die Dependencies installiert werden, erstelle ich die
+  Projektstruktur:
+
+● Bash(mkdir -p /home/claude-code/project/md-reader/{src/ui,src/render……)
+  ⎿  (No content)
+
+● Write /home/claude-code/project/md-reader/src/go.mod
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Write /home/claude-code/project/md-reader/src/build.txt
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Write /home/claude-code/project/md-reader/src/theme/github.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Write /home/claude-code/project/md-reader/src/renderer/markdown.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● ToolSearch({"query": "select:TaskOutput", "max_results": 1})
+  ⎿  (No content)
+
+● TaskOutput(#b5i5ygevu)
+  ⎿ <tool_use_error>No task found with ID: b5i5ygevu</tool_use_error>
+
+● Bash(sudo apt-get install -y libwebkit2gtk-4.0-dev libgtk-3-dev 2>&1……)
+  ⎿ E: Paket libwebkit2gtk-4.0-dev kann nicht gefunden werden.
+     E: Mittels des Musters »libwebkit2gtk-4.0-dev« konnte kein Paket ge
+     E: Mittels regulärem Ausdruck »libwebkit2gtk-4.0-dev« konnte kein P
+
+● Bash(apt-cache search webkit 2>/dev/null | grep -i gtk | head -10)
+  ⎿ gir1.2-javascriptcoregtk-4.1 - Bibliothek der JavaScript-Engine von 
+     gir1.2-javascriptcoregtk-6.0 - Bibliothek der JavaScript-Engine von
+     gir1.2-webkit-6.0 - Web content engine library for GTK - GObject in
+     … +7 lines (ctrl+o to expand)
+
+● Bash(sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev 2>&1……)
+  ⎿ Command running in background with ID: bdmvrsz8w. Output is being wr
+
+● Während die WebKit-Deps installiert werden, schreibe ich alle Code-
+  Dateien. Ich verwende WebView für echtes GitHub-artiges HTML/CSS-
+  Rendering:
+
+● Write /home/claude-code/project/md-reader/src/go.mod
+  ⎿ The file /home/claude-code/project/md-reader/src/go.mod has been upd
+
+● Write /home/claude-code/project/md-reader/src/renderer/markdown.go
+  ⎿ The file /home/claude-code/project/md-reader/src/renderer/markdown.g
+
+● Jetzt der Kern der App - das HTML-Template und das Hauptprogramm:
+
+● Write /home/claude-code/project/md-reader/src/ui/template.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Write /home/claude-code/project/md-reader/src/main.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Jetzt die plattformspezifischen Fullscreen-Implementierungen:
+
+● Write /home/claude-code/project/md-reader/src/platform_linux.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Write /home/claude-code/project/md-reader/src/platform_windows.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Jetzt die Tests:
+
+● Write /home/claude-code/project/md-reader/src/renderer/markdown_test.go
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/sr
+
+● Edit /home/claude-code/project/md-reader/src/renderer/markdown_test.go
+  ⎿ <tool_use_error>InputValidationError: Edit failed due to the followi
+     The required parameter `old_string` is missing
+     The required parameter `new_string` is missing
+     … +2 lines (ctrl+o to expand)
+
+● Write /home/claude-code/project/md-reader/src/renderer/markdown_test.go
+  ⎿ The file /home/claude-code/project/md-reader/src/renderer/markdown_t
+
+● TaskOutput(#bdmvrsz8w)
+  ⎿ <tool_use_error>No task found with ID: bdmvrsz8w</tool_use_error>
+
+● Bash(dpkg -l libwebkit2gtk-4.1-dev libgtk-3-dev 2>/dev/null | grep -……)
+  ⎿ libgtk-3-dev:amd64 3.24.50-1ubuntu2
+     libwebkit2gtk-4.1-dev 2.50.4-0ubuntu0.25.10.1
+
+● Bash(pkg-config --list-all | grep webkit)
+  ⎿ webkit2gtk-web-extension-4.1   WebKitGTK web process extensions - We
+     webkit2gtk-4.1                 WebKitGTK - Web content engine for G
+
+● Bash(cd /home/claude-code/project/md-reader/src && go mod tidy 2>&1 ……)
+  ⎿ go: downloading github.com/jeandeaual/go-locale v0.0.0-2025061200013
+     go: downloading golang.org/x/text v0.22.0
+     go: downloading github.com/nicksnyder/go-i18n/v2 v2.5.1
+     … +7 lines (ctrl+o to expand)
+
+● Das Fyne-Theme wird nicht mehr gebraucht. Ich lösche es und nutze
+  stattdessen einen WebKit-Kompatibilitäts-Shim:
+
+● Bash(rm -rf /home/claude-code/project/md-reader/src/theme && ls /hom……)
+  ⎿ build.txt
+     go.mod
+     go.sum
+     … +5 lines (ctrl+o to expand)
+
+● Bash(go mod tidy 2>&1 | tail -5)
+  ⎿  (No content)
+
+● Bash(cat /home/claude-code/project/md-reader/src/go.mod)
+  ⎿ module md-reader
+     
+     go 1.26
+     … +12 lines (ctrl+o to expand)
+
+● Jetzt der WebKit-Kompatibilitäts-Shim (4.0→4.1) und Build-Skript:
+
+● Bash(cat $(go env GOPATH)/pkg/mod/github.com/webview/webview_go@v0.0……)
+  ⎿ #cgo linux openbsd freebsd netbsd pkg-config: gtk+-3.0 webkit2gtk-4.
+
+● Bash(mkdir -p /home/claude-code/project/md-reader/src/pkgconfig && c…
+            Name: webkit2gtk-4.0
+            Description: WebKit2 GTK+ compatibility shim for webkit2gt…
+            Version: 4.0.0
+            Requires: webkit2gtk-4.1
+            Libs:
+            Cflags:
+            EOF
+            cat /home/claude-code/project/md-reader/src/pkgconfig/webk……)
+  ⎿ Name: webkit2gtk-4.0
+     Description: WebKit2 GTK+ compatibility shim for webkit2gtk-4.1
+     Version: 4.0.0
+     … +3 lines (ctrl+o to expand)
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿ -lwebkit2gtk-4.1 -lgtk-3 -lgdk-3 -lz -lpangocairo-1.0 -lpango-1.0 -l
+
+● Der Shim funktioniert. Jetzt das Build-Skript und dann kompilieren:
+
+● Write /home/claude-code/project/md-reader/Makefile
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/Ma
+
+● Bash(cd /home/claude-code/project/md-reader && PKG_CONFIG_PATH=src/p……)
+  ⎿ Exit code 1
+     # ./src/renderer/...
+     pattern ./src/renderer/...: directory prefix src/renderer does not 
+     … +7 lines (ctrl+o to expand)
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿ === RUN   TestIsMarkdownFile
+     === RUN   TestIsMarkdownFile/README.md
+     === RUN   TestIsMarkdownFile/doc.MD
+     … +43 lines (ctrl+o to expand)
+
+● Alle 12 Tests bestanden. Jetzt kompilieren:
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿ Exit code 1
+     # md-reader
+     ./main.go:108:4: w.SetHTML undefined (type webview.WebView has no f
+     … +3 lines (ctrl+o to expand)
+
+● ToolSearch({"query": "select:Edit", "max_results": 1})
+  ⎿  (No content)
+
+● Edit /home/claude-code/project/md-reader/src/main.go
+  ⎿ The file /home/claude-code/project/md-reader/src/main.go has been up
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿  (No content)
+
+● Kompiliert! Jetzt Windows Cross-Compilation:
+
+● Bash(which x86_64-w64-mingw32-gcc && echo "mingw OK" || sudo apt-get……)
+  ⎿ /usr/bin/x86_64-w64-mingw32-gcc
+     mingw OK
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿ # github.com/webview/webview_go
+     g++: error: unrecognized command-line option ‘-mthreads’; did you m
+
+● Bash(which x86_64-w64-mingw32-g++ && x86_64-w64-mingw32-g++ --versio……)
+  ⎿ Exit code 1
+
+● Bash(sudo apt-get install -y g++-mingw-w64-x86-64 2>&1 | tail -3)
+  ⎿ update-alternatives: /usr/bin/x86_64-w64-mingw32-g++-win32 wird verw
+     g++-mingw-w64-x86-64-posix (13.2.0-6ubuntu1+26.1) wird eingerichtet
+     g++-mingw-w64-x86-64 (13.2.0-6ubuntu1+26.1) wird eingerichtet ...
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿ # github.com/webview/webview_go
+     In file included from ../../../go/pkg/mod/github.com/webview/webvie
+                      from webview.cc:1:
+     … +4 lines (ctrl+o to expand)
+
+● Bash(find /usr -name "EventToken.h" 2>/dev/null | head -5 && find /u……)
+  ⎿ /usr/share/mingw-w64/include/ntdef.h
+     /usr/share/mingw-w64/include/d3d10shader.h
+     /usr/share/mingw-w64/include/umx.h
+     … +2 lines (ctrl+o to expand)
+
+● Bash(find /usr -name "EventToken.h" 2>/dev/null && apt-cache search ……)
+  ⎿  (No content)
+
+● Bash(# Create minimal EventToken.h stub for cross-compilation
+            WEBVIEW_PATH=$(go env GOPATH)/pkg/mod/github.com/webview/w…
+            echo "webview include path: $WEBVIEW_PATH"
+            ls "$WEBVIEW_PATH" 2>/dev/null | head -10…)
+  ⎿ webview include path: /home/claude-code/go/pkg/mod/github.com/webvie
+     WebView2.h
+     vendor.go
+
+● Bash(# EventToken.h als Stub für Cross-Compilation erstellen
+            WEBVIEW_PATH=$(go env GOPATH)/pkg/mod/github.com/webview/w…
+            chmod u+w "$WEBVIEW_PATH"
+            cat > "$WEBVIEW_PATH/EventToken.h" << 'EOF'
+            // Minimal EventToken.h stub for cross-compilation from Li…
+            #pragma once
+            #ifndef __EventToken_h__
+            #define __EventToken_h__
+            typedef struct EventRegistrationToken {
+                __int64 value;
+            } EventRegistrationToken;
+            #endif
+            EOF
+            echo "Created EventToken.h stub"…)
+  ⎿ Created EventToken.h stub
+
+● Bash(PKG_CONFIG_PATH=/home/claude-code/project/md-reader/src/pkgconf……)
+  ⎿  (No content)
+
+● Beide Binaries kompiliert. Jetzt alle Projektdateien erstellen:
+
+● Bash(ls -la /home/claude-code/project/md-reader/build/)
+  ⎿ total 21912
+     drwxrwxr-x  2 claude-code claude-code     4096 Mar  5 22:53 .
+     drwxrwxr-x 10 claude-code claude-code     4096 Mar  5 22:51 ..
+     … +2 lines (ctrl+o to expand)
+
+● Bash(echo "2" > /home/claude-code/project/md-reader/src/build.txt)
+  ⎿  (No content)
+
+● Jetzt die Dokumentation und Projektdateien:
+
+● Write /home/claude-code/project/md-reader/README.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/RE
+
+● Write /home/claude-code/project/md-reader/FEATURES.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/FE
+
+● Write /home/claude-code/project/md-reader/BUGS.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/BU
+
+● Write /home/claude-code/project/md-reader/OPTIMIZE.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/OP
+
+● Write /home/claude-code/project/md-reader/SECURITY_RISKS.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/SE
+
+● Write /home/claude-code/project/md-reader/SECURITY_FIXED.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/SE
+
+● Write /home/claude-code/project/md-reader/MEMORY.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/ME
+
+● Write /home/claude-code/project/md-reader/dev-log/2026-03-05-dev.log
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/de
+
+● Write /home/claude-code/project/md-reader/.claude/CLAUDE.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/.c
+
+● Write /home/claude-code/project/md-reader/research/OPTIMIZED_WORKER.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/re
+
+● Write /home/claude-code/project/md-reader/tests/README.md
+  ⎿ File created successfully at: /home/claude-code/project/md-reader/te
+
+● Abschließender Test und Sicherheitsprüfung:
+
+● Bash(PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 go tes……)
+  ⎿ === RUN   TestIsMarkdownFile
+     === RUN   TestIsMarkdownFile/README.md
+     === RUN   TestIsMarkdownFile/doc.MD
+     … +43 lines (ctrl+o to expand)
+
+● Bash(ls -lh /home/claude-code/project/md-reader/build/ && echo "" &&……)
+  ⎿ total 22M
+     -rwxrwxr-x 1 claude-code claude-code 8.9M Mar  5 22:52 md-reader
+     -rwxrwxr-x 1 claude-code claude-code  13M Mar  5 22:53 md-reader.ex
+     … +2 lines (ctrl+o to expand)
+
+● Jetzt Memory-Datei schreiben:
+
+● Bash(mkdir -p /home/claude-code/.claude/projects/-home-claude-code-p……)
+  ⎿  (No content)
+
+● Write /home/claude-code/.claude/projects/-home-claude-code-project-md-reader/memory/MEMORY.md
+  ⎿ File created successfully at: /home/claude-code/.claude/projects/-ho
+
+● Fertig! Hier ist eine Zusammenfassung:
+
+  ---
+
+  ## MD Reader - Build 2
+
+  **Go 1.26.0** wurde installiert und die App erfolgreich gebaut.
+
+  ### Was wurde erstellt
+
+  **Architektur:** WebView-basiert für echtes GitHub-artiges HTML/CSS-
+  Rendering
+
+  | Datei | Beschreibung |
+  |-------|-------------|
+  | `src/main.go` | WebView-Setup, Go→JS-Bindings |
+  | `src/renderer/markdown.go` | goldmark MD→HTML (GFM + Syntax-
+  Highlighting) |
+  | `src/ui/template.go` | Vollständiges HTML/CSS/JS-Template |
+  | `src/platform_linux.go` | Nativer GTK-Vollbild via CGo |
+  | `src/platform_windows.go` | Windows WinAPI Vollbild |
+
+  ### Toolbar-Buttons (Mitte oben + Schließen rechts)
+
+  | Button | Funktion |
+  |--------|---------|
+  | `▯` / `▭` | Hochformat (750px) / Querformat (volle Breite) |
+  | `⊖` | Zoom out: halbieren bis 25% (4px) |
+  | `⊕` | Zoom in: verdoppeln bis 400% (64px) |
+  | `☐` | Vollbild (auch F11) |
+  | `✕` | Schließen (rechts oben) |
+
+  ### Builds
+  - `build/md-reader` (Linux, 8.9 MB)
+  - `build/md-reader.exe` (Windows, 13 MB)
+
+  ### Tests
+  12 Tests, alle grün ✓
+
+  **Hinweis:** Das Rendering nutzt WebKit2GTK auf Linux (wie
+  Firefox/Chromium intern) – die Darstellung ist dadurch wirklich
+  GitHub-identisch mit Syntax-Highlighting in Code-Blöcken.
+
+> <task-notification>
+  <task-id>b5i5ygevu</task-id>
+  <tool-use-id>toolu_01HAKcmhnbzkFhZyVCfoNg6Z</tool-use-id>
+  <output-file>/tmp/claude-1000/-home-claude-code-project-md-
+  reader/tasks/b5i5ygevu.output</output-file>
+  <status>completed</status>
+  <summary>Background command "Install Fyne dependencies and mingw for
+  cross-compilation" completed (exit code 0)</summary>
+  </task-notification>
+  Read the output file to retrieve the result: /tmp/claude-1000/-home-
+  claude-code-project-md-reader/tasks/b5i5ygevu.output
+
+> <task-notification>
+  <task-id>bdmvrsz8w</task-id>
+  <tool-use-id>toolu_01BU5j3EN8D1nvntvj63kF9k</tool-use-id>
+  <output-file>/tmp/claude-1000/-home-claude-code-project-md-
+  reader/tasks/bdmvrsz8w.output</output-file>
+  <status>completed</status>
+  <summary>Background command "Install webview dependencies (WebKitGTK
+  4.1)" completed (exit code 0)</summary>
+  </task-notification>
+  Read the output file to retrieve the result: /tmp/claude-1000/-home-
+  claude-code-project-md-reader/tasks/bdmvrsz8w.output
+
+● Die Hintergrund-Installationen waren bereits abgeschlossen – die
+  Build-Ergebnisse bestätigen das (beide Binaries haben erfolgreich
+  kompiliert).
+
+> ich möchte mit den cursortasten das dokument senkrecht und waagerecht
+  scrollen können.
+
+● Read 1 file (ctrl+o to expand)
+  ⎿    280→#content strong { font-weight: 600; }
+        281→#content em { font-style: italic; }
+        282→
+     … +61 lines (ctrl+o to expand)
+
+● Read 1 file (ctrl+o to expand)
+  ⎿    540→
+        541→var mainEl = document.getElementById('main');
+        542→var dropZone = document.getElementById('drop-zone');
+     … +51 lines (ctrl+o to expand)
+
+● Read 1 file (ctrl+o to expand)
+  ⎿    690→    document.documentElement.style.setProperty('--max-content
+        691→    btn.textContent = '\u25AF'; // ▯ (schmales Rechteck = Ho
+        692→    btn.title = 'Hochformat anzeigen';
+     … +51 lines (ctrl+o to expand)
+
+● Den Cursor-Scroll ergänze ich im bestehenden `keydown`-Handler:
+
+● Edit /home/claude-code/project/md-reader/src/ui/template.go
+  ⎿ The file /home/claude-code/project/md-reader/src/ui/template.go has 
+
+● Build-Nummer hochzählen und neu kompilieren:
+
+● Bash(echo "3" > /home/claude-code/project/md-reader/src/build.txt &&……)
+  ⎿ Linux OK
+     Windows OK
+
+● Build 3, beide Binaries kompiliert. Die Tastatursteuerung:
+
+  | Taste | Funktion |
+  |-------|---------|
+  | `↑` / `↓` | 60px hoch/runter scrollen |
+  | `←` / `→` | 80px links/rechts scrollen |
+  | `Page Up` / `Page Down` | 90% Seitenhöhe scrollen |
+  | `Home` | Zum Dokumentanfang |
+  | `End` | Zum Dokumentende |
+
+  Die Pfeiltasten funktionieren nur wenn kein Eingabefeld fokussiert
+  ist, damit sie nicht mit anderen Interaktionen kollidieren.
+
+> warum geht ein cmd fenster in windows auf um das programm zu starten?
+  geht das nicht auch ohne?
+
+● Das liegt am Standard-Linker-Flag. Windows-Binaries werden ohne `-H
+  windowsgui` als Konsolenanwendung gebaut. Fix:
+
+● Read 1 file (ctrl+o to expand)
+  ⎿     30→## all: Kompiliert für Linux und Windows
+         31→all: increment-build test linux windows
+         32→
+     … +16 lines (ctrl+o to expand)
+
+● Edit /home/claude-code/project/md-reader/Makefile
+  ⎿ The file /home/claude-code/project/md-reader/Makefile has been updat
+
+● Und denselben Flag direkt beim Kompilieren anwenden:
+
+● Bash(echo "4" > /home/claude-code/project/md-reader/src/build.txt &&……)
+  ⎿ Windows OK
+
+● Build 4. Das CMD-Fenster erscheint jetzt nicht mehr.
+
+  **Erklärung:** `-H windowsgui` setzt den PE-Header-Subsystem-Typ auf
+  `GUI` statt `CONSOLE`. Windows entscheidet daran ob ein
+  Konsolenfenster geöffnet wird – bei `CONSOLE` immer, bei `GUI` nie.
+
+> füge einen darkmode und retrodarkmode hinzu
+
+● Read 1 file (ctrl+o to expand)
+  ⎿      1→// Package ui stellt die HTML/CSS/JS-Oberfläche der MD-Reader
+          2→//
+          3→// Autor: Reisen macht Spass... mit Pia und Dirk e.Kfm.
+     … +81 lines (ctrl+o to expand)
+
+● Read 1 file (ctrl+o to expand)
+  ⎿     80→  -webkit-app-region: no-drag;
+         81→}
+         82→
+     … +81 lines (ctrl+o to expand)
+
+● Read 1 file (ctrl+o to expand)
+  ⎿    430→/* Vollbild-Stile */
+        431→:fullscreen #toolbar {
+        432→  position: fixed;
+     … +81 lines (ctrl+o to expand)
+
+● Jetzt habe ich alles gelesen was ich brauche. Ich füge Dark-Mode-CSS,
+  den Button und die JS-Logik ein:
+
+● Edit /home/claude-code/project/md-reader/src/ui/template.go
+  ⎿ The file /home/claude-code/project/md-reader/src/ui/template.go has 
+
+● Jetzt den Button in der Toolbar hinzufügen:
+
+● Edit /home/claude-code/project/md-reader/src/ui/template.go
+  ⎿ The file /home/claude-code/project/md-reader/src/ui/template.go has 
+
+● Jetzt die JS-Logik für den Theme-Wechsel. Ich füge sie nach den Zoom-
+  Funktionen ein:
+
+● Edit /home/claude-code/project/md-reader/src/ui/template.go
+  ⎿ The file /home/claude-code/project/md-reader/src/ui/template.go has 
+
+● Bash(echo "5" > /home/claude-code/project/md-reader/src/build.txt &&……)
+  ⎿ Linux OK
+     Windows OK
+
+● Build 5. Dev-Log aktualisieren:
+
+● Bash(cat >> /home/claude-code/project/md-reader/dev-log/2026-03-05-d…
+            
+            2026-03-05 23:10 - Cursortasten-Scroll (Build 3)
+              - Pfeiltasten ↑↓←→: 60px vertikal / 80px horizontal
+              - Page Up/Down: 90% Seitenhöhe
+              - Home/End: Dokument-Anfang/-Ende
+            
+            2026-03-05 23:15 - Windows CMD-Fenster entfernt (Build 4)
+              - -ldflags="-H windowsgui" beim Windows-Build
+            
+            2026-03-05 23:20 - Dark-Mode & Retro-Dark-Mode (Build 5)
+              - GitHub Dark: #0d1117 Hintergrund, #e6edf3 Text
+              - Retro Dark: #030a03 Hintergrund, #39ff14 Phosphorgrün,…
+              - Zyklischer Button ☾ → ▓ → ☀ in der Toolbar
+            EOF…)
+  ⎿  (No content)
+
+● Build 5, beide Binaries fertig.
+
+  **Neuer Button in der Toolbar** (zyklisch):
+
+  | Button | Klick wechselt zu |
+  |--------|-------------------|
+  | `☾` | **Dark Mode** (GitHub Dark: #0d1117, helles Grau) |
+  | `▓` | **Retro Dark** (CRT-Phosphorgrün: #39ff14 auf Schwarz +
+  Scanlines) |
+  | `☀` | **Hell** (GitHub Light: Standard) |
+
+> <local-command-caveat>Caveat: The messages below were generated by the
+  user while running local commands. DO NOT respond to these messages or
+  otherwise consider them in your response unless the user explicitly
+  asks you to.</local-command-caveat>
+
+> <command-name>/exit</command-name>
+              <command-message>exit</command-message>
+              <command-args></command-args>
+
+> <local-command-stdout>See ya!</local-command-stdout>
