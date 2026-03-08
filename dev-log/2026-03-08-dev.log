@@ -179,3 +179,29 @@ Bei kleinem Zoom wurde Platz verschwendet.
 - Linux: `build/md-reader` ✅
 - Windows: `build/md-reader.exe` ✅
 - Tests: alle 76 bestanden ✅
+
+---
+
+## Build 18 – 3 Bug-Fixes (09:55 Uhr)
+
+### 2026-03-08 09:55
+
+**Bug #006 – Zoom-Anzeige nach Neustart**
+- Ursache: `ui/template.go` ersetzte `{{DEFAULT_FONT_SIZE}}` mit dem gespeicherten `FontSize` (z.B. 32) statt dem konstanten Default (16)
+- Fix: `UIConfig` um Feld `DefaultFontSize` erweitert; `main.go` übergibt `defaultFontSize = 16` explizit
+- Neuer Test: `TestBuildInitialHTML_DefaultFontSizeUnchanged`
+
+**Bug #007 – Konsolenfenster beim Windows-Start**
+- Ursache: Fehlender Linker-Flag `-H windowsgui`
+- Fix: `go build -ldflags="-H windowsgui"` für Windows-Build
+- Gleichzeitig: `fmt.Printf` Build-Ausgabe und `readBuildNumber()` entfernt (GUI-App braucht keine Konsolenausgabe)
+
+**Bug #008 – App-Icon fehlt im Windows Explorer**
+- Ursache: `favicon.ico` hatte nur 16×16 und 32×32 – Windows Explorer erwartet 256×256 und 48×48
+- Fix: ICO mit ImageMagick auf 4 Größen regeneriert (256, 48, 32, 16px); `rsrc_windows_amd64.syso` neu kompiliert
+
+**Alle Builds erfolgreich:**
+- Linux x86_64: md-reader
+- Windows x86_64: md-reader.exe
+- Linux ARM64: md-reader-linux-arm64
+- Linux ARMhf: md-reader-linux-armhf

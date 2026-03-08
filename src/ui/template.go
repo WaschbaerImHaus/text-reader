@@ -11,8 +11,10 @@ import (
 
 // UIConfig enthält alle Werte die das initiale HTML beeinflussen.
 type UIConfig struct {
-	// FontSize ist die Schriftgröße in Pixeln.
+	// FontSize ist die gespeicherte Schriftgröße in Pixeln.
 	FontSize int
+	// DefaultFontSize ist die unveränderliche Standard-Schriftgröße (Basis für Zoom-Prozent).
+	DefaultFontSize int
 	// Theme ist das Farbschema: "light", "dark" oder "retro".
 	Theme string
 	// IsPortrait gibt an ob der Hochformat-Modus aktiv ist.
@@ -51,11 +53,14 @@ func BuildInitialHTML(cfg UIConfig) string {
 	}
 
 	fontSizeStr := strconv.Itoa(cfg.FontSize)
+	// defaultFontSize ist die konstante Basis für die Zoom-Prozentanzeige (z.B. 16px = 100%).
+	// Dieser Wert darf NICHT mit dem gespeicherten fontSize überschrieben werden.
+	defaultFontSizeStr := strconv.Itoa(cfg.DefaultFontSize)
 
 	// Platzhalter in CSS, HTML und JavaScript ersetzen
 	r := strings.NewReplacer(
 		"{{FONT_SIZE}}", fontSizeStr,
-		"{{DEFAULT_FONT_SIZE}}", fontSizeStr,
+		"{{DEFAULT_FONT_SIZE}}", defaultFontSizeStr,
 		"{{IS_PORTRAIT}}", portraitStr,
 		"{{THEME_CLASS}}", themeClass,
 	)

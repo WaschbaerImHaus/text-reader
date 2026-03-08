@@ -9,7 +9,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"md-reader/renderer"
 	"md-reader/ui"
@@ -59,10 +58,6 @@ func main() {
 	// Sicherstellen dass der main-Thread für UI genutzt wird (macOS/Windows)
 	runtime.LockOSThread()
 
-	// Build-Nummer ausgeben
-	buildNum := readBuildNumber()
-	fmt.Printf("MD Reader - Build %s\n", buildNum)
-
 	// Gespeicherte Konfiguration laden (letzte Datei, Zoom, Theme, Layout)
 	cfg := loadConfig()
 
@@ -96,9 +91,10 @@ func main() {
 	// Initiales HTML rendern mit gespeicherter Konfiguration
 	// ----------------------------------------------------------------
 	uiCfg := ui.UIConfig{
-		FontSize:   app.config.FontSize,
-		Theme:      app.config.Theme,
-		IsPortrait: app.config.Layout == "portrait",
+		FontSize:        app.config.FontSize,
+		DefaultFontSize: defaultFontSize, // Konstante Basis für Zoom-Prozentanzeige
+		Theme:           app.config.Theme,
+		IsPortrait:      app.config.Layout == "portrait",
 	}
 	initialHTML := ui.BuildInitialHTML(uiCfg)
 	w.SetHtml(initialHTML)
@@ -123,19 +119,4 @@ func main() {
 
 	// Hauptschleife (blockiert bis Fenster geschlossen wird)
 	w.Run()
-}
-
-// readBuildNumber liest die aktuelle Build-Nummer aus der build.txt Datei.
-//
-// @return Build-Nummer als String, oder "unbekannt" bei Fehler.
-func readBuildNumber() string {
-	data, err := os.ReadFile("build.txt")
-	if err != nil {
-		return "unbekannt"
-	}
-	num := string(data)
-	if len(num) > 0 && num[len(num)-1] == '\n' {
-		num = num[:len(num)-1]
-	}
-	return num
 }
