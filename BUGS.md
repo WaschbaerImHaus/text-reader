@@ -21,3 +21,5 @@
 - **#007** (Build 18): Beim Windows-Start erschien ein Konsolenfenster. Ursache: Fehlender Linker-Flag `-H windowsgui` im Windows-Build. Fix: `go build -ldflags="-H windowsgui"` für Windows-Ziel.
 
 - **#008** (Build 18): App-Icon war im Windows Explorer nicht sichtbar. Ursache: Die `.ico`-Datei enthielt nur 16×16 und 32×32 – Windows Explorer benötigt 48×48 und 256×256. Fix: `.ico` mit ImageMagick auf 4 Größen (256, 48, 32, 16) regeneriert; `.syso` neu kompiliert.
+
+- **#009** (Build 21): App-Icon fehlte in der Windows-Titelleiste. Ursache: `LoadImageW` aus `.syso`-Ressource schlug lautlos fehl (hIcon = 0). Fix: `favicon.ico` via `go:embed` eingebettet; `CreateIconFromResourceEx` erzeugt `HICON` direkt aus Rohdaten; `GetAncestor(GA_ROOT)` navigiert zum richtigen Top-Level-HWND; `WM_SETICON` + `SetClassLongPtrW(GCLP_HICON/-14, GCLP_HICONSM/-34)` setzen das Icon. Bestätigt funktionsfähig.
