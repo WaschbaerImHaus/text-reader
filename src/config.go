@@ -8,7 +8,7 @@
 //   - Windows: %APPDATA%\md-reader\state.json
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-07
+// Letzte Änderung: 2026-03-08
 package main
 
 import (
@@ -21,8 +21,9 @@ import (
 // AppConfig speichert die persistenten Anwendungseinstellungen.
 type AppConfig struct {
 	// LastFile ist der vollständige Pfad der zuletzt geöffneten Datei.
-	// Wird nur gesetzt wenn die Datei per CLI-Argument oder Startup geöffnet wurde.
 	LastFile string `json:"lastFile"`
+	// LastFileScrollPos ist die gespeicherte Scroll-Position (scrollTop in px).
+	LastFileScrollPos int `json:"lastFileScrollPos"`
 	// FontSize ist die gespeicherte Schriftgröße in Pixeln.
 	FontSize int `json:"fontSize"`
 	// Theme ist das aktive Farbschema: "light", "dark" oder "retro".

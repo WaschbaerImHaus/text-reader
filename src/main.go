@@ -125,8 +125,25 @@ func main() {
 		saveConfig(app.config)
 	})
 
-	// closeApp: Beendet die Anwendung sauber.
-	w.Bind("closeApp", func() {
+	// persistLastFile: Speichert Dateipfad und Scroll-Position der aktuell geöffneten Datei.
+	//
+	// Wird nach jedem Drag & Drop (mit extrahiertem Pfad aus text/uri-list) und beim
+	// Schließen (nur scrollPos, path bleibt unverändert) aufgerufen.
+	//
+	// @param path      Vollständiger Dateipfad (leer = nur scrollPos aktualisieren).
+	// @param scrollPos Aktuelle Scroll-Position in Pixeln.
+	w.Bind("persistLastFile", func(path string, scrollPos float64) {
+		if path != "" {
+			app.config.LastFile = path
+		}
+		app.config.LastFileScrollPos = int(scrollPos)
+		saveConfig(app.config)
+	})
+
+	// _closeAppNative: Beendet die Anwendung sauber.
+	// Wird von der JS-Funktion closeApp() aufgerufen nachdem die Scroll-Position gespeichert wurde.
+	// Eigener Name (_closeAppNative) vermeidet Namenskollision mit der JS-Wrapper-Funktion closeApp().
+	w.Bind("_closeAppNative", func() {
 		w.Dispatch(func() {
 			w.Terminate()
 		})
@@ -211,13 +228,20 @@ func loadFileOnStartup(w webview.WebView, filePath string) {
 		return
 	}
 
-	// Nach kurzem Delay anzeigen (Seite muss erst vollständig geladen sein)
+	// Scroll-Position aus Konfiguration lesen
+	scrollPos := app.config.LastFileScrollPos
+
+	// Nach kurzem Delay anzeigen und Scroll-Position wiederherstellen.
+	// Zwei verschachtelte timeouts: erstes wartet auf Seitenlade, zweites auf DOM-Render.
 	w.Dispatch(func() {
 		w.Eval(fmt.Sprintf(`
 			setTimeout(function() {
 				showContent(%s, %s);
+				setTimeout(function() {
+					document.getElementById('main').scrollTop = %d;
+				}, 80);
 			}, 150);
-		`, string(htmlJSON), string(titleJSON)))
+		`, string(htmlJSON), string(titleJSON), scrollPos))
 	})
 }
 

@@ -5,7 +5,7 @@
 // TOC-Aufbau, Suchfunktion und Tastatur-Shortcuts.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-03-08 (Bug #003/#004: Dateipfad + Scroll-Position persistent)
 package ui
 
 // htmlJavaScript ist das JavaScript-Template der Anwendung.
@@ -101,6 +101,35 @@ function isSupportedFile(filename) {
   return supportedExtensions.some(function(ext) { return lower.endsWith(ext); });
 }
 
+/**
+ * Extrahiert den vollständigen Dateipfad aus einem Drop-Event.
+ *
+ * Desktop-WebViews (WebKitGTK, WebView2) stellen den Dateipfad über die
+ * text/uri-list DataTransfer-Eigenschaft bereit (z.B. "file:///home/user/doc.md").
+ * Diese Information ist in Browser-Umgebungen aus Sicherheitsgründen nicht verfügbar,
+ * aber in nativen Desktop-Apps ist sie zugänglich.
+ *
+ * @param {DragEvent} e - Das Drop-Event.
+ * @returns {string} Vollständiger Dateipfad oder leerer String wenn nicht verfügbar.
+ */
+function extractFilePathFromDrop(e) {
+  var uriList = '';
+  try { uriList = e.dataTransfer.getData('text/uri-list') || ''; } catch(ex) {}
+  if (!uriList) return '';
+  // Erste gültige file://-URI aus der Liste nehmen (ignoriert Kommentarzeilen)
+  var lines = uriList.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/\r/g, '').trim();
+    if (line && !line.startsWith('#') && line.startsWith('file://')) {
+      // file:///pfad/zur/datei → /pfad/zur/datei (Linux)
+      // file:///C:/pfad/datei → C:/pfad/datei (Windows, führenden / entfernen)
+      var path = decodeURIComponent(line.replace(/^file:\/\//, ''));
+      return path;
+    }
+  }
+  return '';
+}
+
 /** Konvertiert ArrayBuffer sicher zu Base64 (in Chunks um Stack-Überlauf zu vermeiden) */
 function arrayBufferToBase64(buffer) {
   var binary = '';
@@ -141,12 +170,21 @@ document.addEventListener('drop', function(e) {
   }
   hideDropError();
 
+  // Vollständigen Dateipfad aus der URI-Liste des Drop-Events extrahieren.
+  // Wird nach erfolgreichem Rendern an Go übergeben damit die Datei beim
+  // nächsten Start automatisch wieder geöffnet werden kann.
+  var droppedFilePath = extractFilePathFromDrop(e);
+
   var reader = new FileReader();
   if (file.name.toLowerCase().endsWith('.epub')) {
     // EPUB: binär lesen, als Base64 an Go senden
     reader.onload = function(ev) {
       window.processEpub(arrayBufferToBase64(ev.target.result), file.name)
-        .then(handleRenderResult).catch(function(e) { showDropError('Fehler: ' + e); });
+        .then(function(result) {
+          handleRenderResult(result);
+          // Pfad nach erfolgreichem Rendern speichern (Scroll-Position = 0, neue Datei)
+          if (!result || !result.error) saveLastFile(droppedFilePath, 0);
+        }).catch(function(e) { showDropError('Fehler: ' + e); });
     };
     reader.onerror = function() { showDropError('EPUB konnte nicht gelesen werden.'); };
     reader.readAsArrayBuffer(file);
@@ -154,7 +192,11 @@ document.addEventListener('drop', function(e) {
     // Text-Formate: als UTF-8 lesen
     reader.onload = function(ev) {
       window.processMarkdown(ev.target.result, file.name)
-        .then(handleRenderResult).catch(function(e) { showDropError('Fehler: ' + e); });
+        .then(function(result) {
+          handleRenderResult(result);
+          // Pfad nach erfolgreichem Rendern speichern (Scroll-Position = 0, neue Datei)
+          if (!result || !result.error) saveLastFile(droppedFilePath, 0);
+        }).catch(function(e) { showDropError('Fehler: ' + e); });
     };
     reader.onerror = function() { showDropError('Datei konnte nicht gelesen werden.'); };
     reader.readAsText(file, 'utf-8');
@@ -527,12 +569,51 @@ function saveState() {
   }
 }
 
+/**
+ * Sendet Dateipfad und Scroll-Position an Go zum Speichern.
+ *
+ * Wird nach Drag & Drop (mit Pfad) und beim Scrollen (nur Scroll-Position)
+ * aufgerufen. Ein leerer Pfad lässt den gespeicherten Pfad in Go unverändert.
+ *
+ * @param {string} path      Vollständiger Dateipfad (leer = nur scrollPos aktualisieren).
+ * @param {number} scrollPos Aktuelle Scroll-Position in Pixeln.
+ */
+function saveLastFile(path, scrollPos) {
+  if (typeof window.persistLastFile === 'function') {
+    window.persistLastFile(path || '', scrollPos || 0);
+  }
+}
+
+/** Timer-Handle für debounced Scroll-Speicherung */
+var scrollSaveTimer = null;
+
+/**
+ * Speichert die Scroll-Position verzögert (debounced, 500ms nach letztem Scroll).
+ *
+ * Verhindert zu viele Schreibzugriffe auf die Konfigurationsdatei während
+ * des Scrollens. Nur ausgeführt wenn eine Datei geöffnet ist (content-wrapper sichtbar).
+ */
+function onScrollDebounced() {
+  if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+  scrollSaveTimer = setTimeout(function() {
+    var wrapper = document.getElementById('content-wrapper');
+    if (wrapper && wrapper.style.display !== 'none') {
+      saveLastFile('', mainEl ? mainEl.scrollTop : 0);
+    }
+  }, 500);
+}
+
 // ============================================================
 // Fenster schließen
 // ============================================================
 
 function closeApp() {
-  if (typeof window.closeApp === 'function') window.closeApp();
+  // Scroll-Position vor dem Beenden synchron speichern
+  saveLastFile('', mainEl ? mainEl.scrollTop : 0);
+  // Kurzen Moment warten damit persistLastFile (async Go-Binding) abgeschlossen wird
+  setTimeout(function() {
+    if (typeof window._closeAppNative === 'function') window._closeAppNative();
+  }, 80);
 }
 
 // ============================================================
@@ -588,6 +669,15 @@ document.addEventListener('wheel', function(e) {
     if (e.deltaY < 0) zoomIn(); else zoomOut();
   }
 }, { passive: false });
+
+// ============================================================
+// Scroll-Position debounced speichern
+// ============================================================
+
+// mainEl scroll → Scroll-Position nach 500ms Inaktivität in Konfiguration schreiben
+if (mainEl) {
+  mainEl.addEventListener('scroll', onScrollDebounced, { passive: true });
+}
 
 </script>
 </body>

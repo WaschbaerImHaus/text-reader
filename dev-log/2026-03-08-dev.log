@@ -34,3 +34,31 @@ Konfigurationswerten befüllt wird. `BuildInitialHTML` fügt die Teile zusammen.
 - Projektstruktur geprüft: alle Pflichtverzeichnisse vorhanden
 - claude.sh: Projekt-Version (2026-03-05) > Home-Version (2026-03-03), kein Update nötig
 - Tests vor Änderungen: alle 16 bestanden (cached)
+
+## 2026-03-08 (später) - Bug #003 + #004 behoben (Build 9)
+
+### Bug #003: Letzte Datei wird bei Drag & Drop nicht gespeichert
+**Ursache**: `processMarkdown`/`processEpub` speichert nur HTML-Inhalt, nicht den Dateipfad.
+Die WebView FileReader API gibt keinen vollen Pfad zurück — nur `file.name` (Dateiname ohne Pfad).
+
+**Fix**:
+- `extractFilePathFromDrop(e)`: Liest `text/uri-list` aus dem DataTransfer-Objekt.
+  Desktop-WebViews (WebKitGTK, WebView2) liefern hier `file:///pfad/zur/datei.md`.
+- Neues Go-Binding `persistLastFile(path, scrollPos)`: Speichert Pfad und Scroll-Position.
+- Nach erfolgreichem Rendern: `saveLastFile(droppedFilePath, 0)` aufgerufen.
+
+### Bug #004: Scroll-Position wird nicht gespeichert/wiederhergestellt
+**Ursache**: `AppConfig` hatte kein `LastFileScrollPos`-Feld. Keine Speicherung, keine Wiederherstellung.
+
+**Fix**:
+- `AppConfig.LastFileScrollPos int` hinzugefügt.
+- Debounced Scroll-Listener (500ms): speichert Position nach Scroll-Pause.
+- `closeApp()` in JS: speichert Scroll-Position vor `_closeAppNative()`.
+  (Go-Binding umbenannt von `closeApp` zu `_closeAppNative` um Namenskollision zu vermeiden)
+- `loadFileOnStartup()`: setzt `scrollTop` nach Render mit 80ms Delay.
+
+### Geänderte Dateien
+- src/config.go: LastFileScrollPos hinzugefügt
+- src/main.go: persistLastFile-Binding, _closeAppNative, Scroll-Restore beim Start
+- src/ui/scripts.go: extractFilePathFromDrop, saveLastFile, onScrollDebounced, closeApp-Fix
+- src/build.txt: 9
