@@ -1,0 +1,36 @@
+2026-03-08 - Tägliche Wartung: Refactoring, UI-Tests, Dokumentation
+
+## Refactoring: ui/template.go aufgeteilt (Build 8)
+
+### Problem
+Die Datei `src/ui/template.go` hatte 992 Zeilen und enthielt CSS, HTML und JavaScript
+als eine monolithische Konstante. Das macht die Suche und Bearbeitung einzelner Bereiche
+unnötig schwierig.
+
+### Lösung
+Die Datei wurde in 4 semantisch getrennte Dateien aufgespalten:
+
+| Datei               | Inhalt                        | Zeilen |
+|---------------------|-------------------------------|--------|
+| `ui/template.go`    | Go-Code (BuildInitialHTML)    | ~60    |
+| `ui/styles.go`      | CSS-Stile (htmlCSS)           | ~260   |
+| `ui/html_body.go`   | HTML-Grundstruktur (htmlBodyHTML) | ~100 |
+| `ui/scripts.go`     | JavaScript-Logik (htmlJavaScript) | ~390 |
+
+Jede Datei enthält eine eigene Go-Konstante, die per `fmt.Sprintf` mit den
+Konfigurationswerten befüllt wird. `BuildInitialHTML` fügt die Teile zusammen.
+
+### Neue Tests (15 UI-Tests)
+- `ui/template_test.go` mit 15 Tests für alle Template-Bereiche
+- Prüft DOCTYPE, Schriftgröße, Themes, Layout, UI-Elemente, %%-Behandlung
+
+### Ergebnis
+- Alle 31 Tests bestehen (16 Renderer + 15 UI)
+- Linux-Build: OK
+- Windows Cross-Compilation: OK
+- Build-Nummer: 8
+
+## 2026-03-08 09:00 - Startzeit der Session
+- Projektstruktur geprüft: alle Pflichtverzeichnisse vorhanden
+- claude.sh: Projekt-Version (2026-03-05) > Home-Version (2026-03-03), kein Update nötig
+- Tests vor Änderungen: alle 16 bestanden (cached)

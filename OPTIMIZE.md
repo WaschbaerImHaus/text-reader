@@ -9,7 +9,8 @@
 
 ## Architektur
 
-- **Template Engine**: HTML-Template auslagern in separate .html Datei (go:embed)
+- ~~**Template Engine**: HTML-Template auslagern in separate .html Datei (go:embed)~~ ✅ *Build 8: In 4 Go-Dateien aufgeteilt (styles.go, html_body.go, scripts.go, template.go)*
+- **go:embed**: CSS/JS/HTML als externe Dateien einbinden (go:embed) für bessere IDE-Unterstützung (Syntax-Highlighting)
 - **Config-Datei**: Benutzereinstellungen in `~/.config/md-reader/config.json` speichern
 - **Plugin-System**: Erweiterbare Markdown-Renderer-Plugins
 - **IPC-Protokoll**: Strukturiertes Nachrichtenprotokoll zwischen Go und JS

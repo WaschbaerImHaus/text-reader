@@ -43,6 +43,18 @@ GitHub nutzt "Primer" Design-System. Die wichtigsten CSS-Eigenschaften:
 - **Bildschirmschoner**: Markdown als Präsentation/Slideshow?
 - **Git-Integration**: Automatisches Öffnen von README.md aus Git-Repos?
 
+## Code-Qualität (Stand 2026-03-08)
+
+### Architektur-Verbesserungen (Build 8)
+- `ui/template.go` aufgeteilt: CSS (styles.go), HTML (html_body.go), JS (scripts.go)
+- 15 neue UI-Tests → 31 Tests gesamt
+- Jede Datei hat klaren Verantwortungsbereich
+
+### Nächste Refactoring-Optionen
+1. `main.go` + Bindings in eigene Datei auslagern (bindings.go)
+2. CSS in externe .css Datei (go:embed) → Syntax-Highlighting im Editor
+3. JS in externe .js Datei (go:embed) → Lint-Unterstützung
+
 ## Verbesserungsideen basierend auf Recherche
 1. GitHub's exakten Primer-CSS direkt einbinden (MIT-Lizenz)
 2. cmark-gfm via CGo für 100% GitHub-Kompatibilität

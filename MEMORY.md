@@ -13,7 +13,7 @@ Markdown-Betrachter mit GitHub-ähnlicher Darstellung. WebView-basiert für echt
 - Binaries: `build/md-reader` (Linux), `build/md-reader.exe` (Windows)
 - Quellcode: `src/` (go.mod hier, nicht im Projektroot)
 - Pkg-Config-Shim: `src/pkgconfig/webkit2gtk-4.0.pc`
-- Tests: `src/renderer/markdown_test.go` (12 Tests, alle grün)
+- Tests: `src/renderer/*_test.go` + `src/ui/template_test.go` (31 Tests, alle grün)
 
 ## Build-Befehle
 ```bash
@@ -43,3 +43,5 @@ PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 go test ./renderer/... 
 
 ## Sitzungsverlauf
 - 2026-03-05: Erstversion. Go 1.26 installiert. App implementiert mit WebView.
+- 2026-03-07: Multi-Format (EPUB, FB2, TXT, HTML), Config-Persistenz, TOC, Suche, Dark/Retro-Mode.
+- 2026-03-08: Refactoring: ui/template.go aufgeteilt in styles.go, html_body.go, scripts.go, template.go. 15 UI-Tests hinzugefügt.
