@@ -19,6 +19,7 @@
 package renderer
 
 import (
+	"encoding/json"
 	"html"
 	"regexp"
 	"strings"
@@ -74,24 +75,37 @@ var reMultiNewlines = regexp.MustCompile(`\n{3,}`)
 // Extrahiert Titel und Dokumentkörper aus der .tex-Datei und wandelt
 // gängige LaTeX-Befehle in HTML-Äquivalente um. Mathematische Ausdrücke
 // werden unverändert ausgegeben, damit KaTeX sie im Browser rendern kann.
+// Custom-Makros (\newcommand, \DeclareMathOperator) werden als window.__latexMacros
+// eingebettet, damit KaTeX sie korrekt rendern kann.
 //
 // @param content  Der LaTeX-Quelltext der Datei.
 // @param filename Dateiname (für den Titel-Fallback).
 // @return Result mit gerendertem HTML und extrahiertem Titel, oder Fehler.
+// @lastModified 2026-03-11
 func ParseLaTeXContent(content, filename string) (*Result, error) {
 	// Kommentare entfernen (aber \% behalten)
 	content = removeLatexComments(content)
+
+	// Präambel isolieren (vor \begin{document}) für Makro-Extraktion
+	preamble := ""
+	if idx := strings.Index(content, `\begin{document}`); idx >= 0 {
+		preamble = content[:idx]
+	}
 
 	// Metadaten aus der Präambel extrahieren
 	title := extractLatexCommand(content, "title")
 	author := extractLatexCommand(content, "author")
 	date := extractLatexCommand(content, "date")
 
+	// Theorem-Umgebungen und Custom-Makros aus der Präambel extrahieren
+	theorems := extractTheoremEnvs(preamble)
+	macros := extractLatexMacros(preamble)
+
 	// Dokumentkörper zwischen \begin{document} und \end{document} isolieren
 	body := extractLatexBody(content)
 
-	// LaTeX in HTML umwandeln
-	htmlContent := convertLatexToHTML(body, title, author, date)
+	// LaTeX in HTML umwandeln (mit Theorem-Map für schöne Ausgabe)
+	htmlContent := convertLatexToHTML(body, title, author, date, theorems, macros)
 
 	// Fallback-Titel: Dateiname ohne Erweiterung
 	if title == "" {
@@ -103,6 +117,155 @@ func ParseLaTeXContent(content, filename string) (*Result, error) {
 		Title:      title,
 		RawContent: content,
 	}, nil
+}
+
+// extractTheoremEnvs liest \newtheorem{envName}{Anzeigetext} Definitionen aus
+// der Präambel und gibt eine Map envName→Anzeigetext zurück.
+//
+// Unterstützt beide Varianten:
+//   - \newtheorem{theorem}{Satz}[section]
+//   - \newtheorem{lemma}[theorem]{Lemma}
+//
+// @param preamble LaTeX-Präambel (vor \begin{document}).
+// @return Map von Umgebungsname zu Anzeigetext (z.B. "theorem" → "Satz").
+// @lastModified 2026-03-11
+func extractTheoremEnvs(preamble string) map[string]string {
+	result := make(map[string]string)
+	marker := `\newtheorem{`
+	rest := preamble
+	for {
+		idx := strings.Index(rest, marker)
+		if idx < 0 {
+			break
+		}
+		// Umgebungsname aus dem ersten {}-Block extrahieren
+		envName, pos1 := extractBraceContent(rest, idx+len(marker)-1)
+		envName = strings.TrimSpace(envName)
+		if envName == "" {
+			rest = rest[idx+len(marker):]
+			continue
+		}
+		// Optionalen [shared-counter] oder [parent-counter] überspringen
+		skip := pos1
+		for skip < len(rest) && (rest[skip] == ' ' || rest[skip] == '\t' || rest[skip] == '\n') {
+			skip++
+		}
+		if skip < len(rest) && rest[skip] == '[' {
+			endBracket := strings.IndexByte(rest[skip:], ']')
+			if endBracket >= 0 {
+				skip += endBracket + 1
+			}
+		}
+		// Anzeigetext aus dem nächsten {}-Block extrahieren
+		displayName, _ := extractBraceContent(rest, skip)
+		displayName = strings.TrimSpace(displayName)
+		if displayName != "" {
+			result[envName] = displayName
+		}
+		rest = rest[pos1:]
+	}
+	return result
+}
+
+// extractLatexMacros liest \newcommand- und \DeclareMathOperator-Definitionen
+// aus der Präambel und gibt eine KaTeX-kompatible Makro-Map zurück.
+//
+// Nur argumentlose Makros werden unterstützt (keine #1/#2 Substitution),
+// da diese direkt als KaTeX-Makros übergeben werden können.
+//
+// Beispiele:
+//   - \newcommand{\N}{\mathbb{N}} → {"\\N": "\\mathbb{N}"}
+//   - \DeclareMathOperator{\ord}{ord} → {"\\ord": "\\operatorname{ord}"}
+//
+// @param preamble LaTeX-Präambel (vor \begin{document}).
+// @return Map Befehlsname→KaTeX-Definition (beide mit führendem Backslash).
+// @lastModified 2026-03-11
+func extractLatexMacros(preamble string) map[string]string {
+	macros := make(map[string]string)
+
+	// \newcommand{\name}{definition} und \newcommand*{\name}{definition}
+	for _, marker := range []string{`\newcommand{`, `\newcommand*{`, `\renewcommand{`, `\renewcommand*{`} {
+		rest := preamble
+		for {
+			idx := strings.Index(rest, marker)
+			if idx < 0 {
+				break
+			}
+			// Befehlsname extrahieren
+			cmdName, pos1 := extractBraceContent(rest, idx+len(marker)-1)
+			cmdName = strings.TrimSpace(cmdName)
+			if cmdName == "" || !strings.HasPrefix(cmdName, `\`) {
+				rest = rest[idx+len(marker):]
+				continue
+			}
+			// Optionalen [Anzahl Argumente] überspringen
+			skip := pos1
+			for skip < len(rest) && (rest[skip] == ' ' || rest[skip] == '\t') {
+				skip++
+			}
+			hasArgs := false
+			if skip < len(rest) && rest[skip] == '[' {
+				endBracket := strings.IndexByte(rest[skip:], ']')
+				if endBracket >= 0 {
+					skip += endBracket + 1
+					hasArgs = true
+				}
+			}
+			// Definition extrahieren
+			def, _ := extractBraceContent(rest, skip)
+			def = strings.TrimSpace(def)
+			// Nur argumentlose Makros ohne #1 etc. übernehmen
+			if def != "" && !hasArgs && !strings.Contains(def, "#") {
+				macros[cmdName] = def
+			}
+			rest = rest[pos1:]
+		}
+	}
+
+	// \DeclareMathOperator{\name}{text}
+	for _, marker := range []string{`\DeclareMathOperator{`, `\DeclareMathOperator*{`} {
+		rest := preamble
+		for {
+			idx := strings.Index(rest, marker)
+			if idx < 0 {
+				break
+			}
+			cmdName, pos1 := extractBraceContent(rest, idx+len(marker)-1)
+			cmdName = strings.TrimSpace(cmdName)
+			if cmdName == "" || !strings.HasPrefix(cmdName, `\`) {
+				rest = rest[idx+len(marker):]
+				continue
+			}
+			opText, _ := extractBraceContent(rest, pos1)
+			opText = strings.TrimSpace(opText)
+			if opText != "" {
+				macros[cmdName] = `\operatorname{` + opText + `}`
+			}
+			rest = rest[pos1:]
+		}
+	}
+
+	return macros
+}
+
+// buildMacrosScript erzeugt einen <script>-Block, der window.__latexMacros
+// für KaTeX mit den extrahierten Makros befüllt.
+//
+// Das Script wird dem HTML-Inhalt vorangestellt, damit initKaTeX() die
+// Makros beim Rendern der Formeln verwenden kann.
+//
+// @param macros Map Befehlsname→KaTeX-Definition.
+// @return HTML-Script-Tag oder leer wenn keine Makros vorhanden.
+// @lastModified 2026-03-11
+func buildMacrosScript(macros map[string]string) string {
+	if len(macros) == 0 {
+		return ""
+	}
+	jsonBytes, err := json.Marshal(macros)
+	if err != nil {
+		return ""
+	}
+	return `<script>window.__latexMacros=` + string(jsonBytes) + `;</script>`
 }
 
 // IsLaTeXFile prüft ob ein Dateipfad auf eine LaTeX-Datei (.tex) zeigt.
@@ -235,12 +398,15 @@ func extractBraceContent(s string, pos int) (string, int) {
 //  4. Absätze erzeugen
 //  5. Math-Platzhalter wiederherstellen
 //
-// @param body   LaTeX-Dokumentkörper.
-// @param title  Titel (für \maketitle).
-// @param author Autor (für \maketitle).
-// @param date   Datum (für \maketitle).
+// @param body     LaTeX-Dokumentkörper.
+// @param title    Titel (für \maketitle).
+// @param author   Autor (für \maketitle).
+// @param date     Datum (für \maketitle).
+// @param theorems Map envName→Anzeigetext aus \newtheorem-Definitionen.
+// @param macros   KaTeX-Makros aus \newcommand/\DeclareMathOperator.
 // @return HTML-String.
-func convertLatexToHTML(body, title, author, date string) string {
+// @lastModified 2026-03-11
+func convertLatexToHTML(body, title, author, date string, theorems map[string]string, macros map[string]string) string {
 	// ---- Schritt 1: Math-Ausdrücke schützen ----
 	// Mathematik wird durch Platzhalter ersetzt, damit die weiteren
 	// Ersetzungsschritte die Formeln nicht beschädigen.
@@ -259,7 +425,7 @@ func convertLatexToHTML(body, title, author, date string) string {
 	// Mehrere Durchläufe für verschachtelte Umgebungen
 	for i := 0; i < 5; i++ {
 		prev := body
-		body = convertLatexEnvironments(body)
+		body = convertLatexEnvironments(body, theorems)
 		if body == prev {
 			break
 		}
@@ -284,7 +450,9 @@ func convertLatexToHTML(body, title, author, date string) string {
 	body = restoreMath(body, mathPlaceholders)
 
 	// Ergebnis in einen Artikel-Wrapper einbetten
-	return `<article class="latex-document">` + body + `</article>`
+	// Makros als <script> voranstellen, damit initKaTeX() sie verwenden kann
+	macrosScript := buildMacrosScript(macros)
+	return macrosScript + `<article class="latex-document">` + body + `</article>`
 }
 
 // mathEnvNames enthält die Namen mathematischer LaTeX-Umgebungen.
@@ -493,10 +661,14 @@ func buildLatexTitleBlock(title, author, date string) string {
 
 // convertLatexEnvironments konvertiert \begin{X}...\end{X} Umgebungen.
 // Mathematische Umgebungen wurden bereits durch protectMath behandelt.
+// Theorem-Umgebungen aus \newtheorem-Definitionen werden mit ihrem Anzeigenamen
+// und einer eigenen CSS-Klasse gerendert.
 //
-// @param content LaTeX-Text.
+// @param content  LaTeX-Text.
+// @param theorems Map envName→Anzeigetext (aus \newtheorem).
 // @return HTML mit konvertierten Umgebungen.
-func convertLatexEnvironments(content string) string {
+// @lastModified 2026-03-11
+func convertLatexEnvironments(content string, theorems map[string]string) string {
 	return processLatexEnvironments(content, func(envName, envContent string) (string, bool) {
 		envName = strings.TrimSpace(envName)
 		switch envName {
@@ -557,6 +729,16 @@ func convertLatexEnvironments(content string) string {
 			return envContent, true
 
 		default:
+			// Prüfen ob es eine bekannte Theorem-Umgebung ist (\newtheorem)
+			if displayName, ok := theorems[envName]; ok {
+				// Theorem-Box mit Anzeigename-Label rendern
+				label := `<span class="latex-theorem-label">` + html.EscapeString(displayName) + `.</span> `
+				return `<div class="latex-env-` + html.EscapeString(envName) + `">` + label + envContent + `</div>`, true
+			}
+			// Proof-Umgebung speziell behandeln
+			if envName == "proof" {
+				return `<div class="latex-env-proof"><em>Beweis.</em> ` + envContent + ` ∎</div>`, true
+			}
 			// Unbekannte Umgebungen als generisches div
 			return `<div class="latex-env-` + html.EscapeString(envName) + `">` + envContent + `</div>`, true
 		}

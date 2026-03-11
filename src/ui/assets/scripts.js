@@ -819,6 +819,10 @@ function initKaTeX(container) {
   // KaTeX und Auto-Render müssen geladen sein (werden als inline scripts eingebettet)
   if (typeof renderMathInElement !== 'function') return;
   try {
+    // Custom-Makros aus LaTeX-Präambel (\newcommand, \DeclareMathOperator)
+    // werden von Go als window.__latexMacros={...} in den HTML-Inhalt eingebettet.
+    var macros = (typeof window.__latexMacros === 'object' && window.__latexMacros)
+      ? window.__latexMacros : {};
     renderMathInElement(container, {
       // Erkannte Trennzeichen für Inline- und Block-Formeln
       delimiters: [
@@ -827,6 +831,8 @@ function initKaTeX(container) {
         { left: '\\[',  right: '\\]',  display: true  },
         { left: '\\(',  right: '\\)',  display: false }
       ],
+      // Custom-Makros (z.B. \N → \mathbb{N}) aus LaTeX-Präambel
+      macros: macros,
       // Fehler in Formeln ignorieren und Original-Text stehen lassen
       throwOnError: false,
       // Trennzeichen innerhalb von Code-Blöcken nicht verarbeiten
@@ -835,6 +841,8 @@ function initKaTeX(container) {
   } catch (e) {
     // KaTeX-Fehler stumm ignorieren (z.B. ungültige Formeln)
   }
+  // Makros zurücksetzen damit nicht-LaTeX-Dateien keinen Makro-Kontext erben
+  window.__latexMacros = null;
 }
 </script>
 {{KATEX_SCRIPTS}}

@@ -253,4 +253,150 @@ body.retro #content tr { border-top-color: #1a4d1a; }
 body.retro mark.search-match { background-color: #1a3d00; color: #39ff14; }
 body.retro mark.search-match.current { background-color: #3d7a00; color: #fff; }
 body.retro #search-input { background: #030a03; color: #39ff14; }
+
+/* ========================================================
+   LaTeX-Dokument-Stile (.tex-Dateien)
+   ======================================================== */
+
+/* Gesamtdokument: Serifenschrift wie in echten LaTeX-PDFs */
+.latex-document {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  line-height: 1.7;
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+/* Titelblock (\maketitle) */
+.latex-title-block {
+  text-align: center;
+  margin: 1.5em 0 2.5em 0;
+  padding-bottom: 1em;
+  border-bottom: 1px solid var(--border-color);
+}
+.latex-title {
+  font-size: 1.6em;
+  font-weight: bold;
+  line-height: 1.3;
+  margin-bottom: 0.5em;
+}
+.latex-author {
+  font-style: italic;
+  margin: 0.4em 0;
+  font-size: 1.05em;
+}
+.latex-date {
+  color: var(--blockquote-color);
+  font-size: 0.95em;
+}
+
+/* Überschriften innerhalb von LaTeX-Dokumenten */
+.latex-document h2 { font-size: 1.35em; margin: 1.5em 0 0.6em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.2em; }
+.latex-document h3 { font-size: 1.15em; margin: 1.2em 0 0.5em; }
+.latex-document h4 { font-size: 1.05em; margin: 1em 0 0.4em; font-style: italic; }
+.latex-document h5 { font-size: 1em; margin: 0.8em 0 0.3em; }
+
+/* Abstact-Umgebung */
+.latex-abstract {
+  margin: 1.5em 3em;
+  padding: 1em 1.2em;
+  border: 1px solid var(--border-color);
+  font-size: 0.95em;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+.latex-abstract > strong:first-child {
+  display: block;
+  text-align: center;
+  margin-bottom: 0.7em;
+  font-variant: small-caps;
+  font-size: 1.05em;
+}
+
+/* Theorem-artige Umgebungen (Box mit farbigem linken Rand) */
+div[class^="latex-env-"],
+div[class*=" latex-env-"] {
+  margin: 1.2em 0;
+  padding: 0.7em 1em 0.7em 1.2em;
+  border-left: 4px solid var(--blockquote-border);
+  background: var(--code-bg);
+  border-radius: 0 4px 4px 0;
+}
+/* Spezifische Farben je Typ */
+.latex-env-theorem    { border-left-color: #0969da; }
+.latex-env-lemma      { border-left-color: #1a7f37; }
+.latex-env-korollar   { border-left-color: #6e40c9; }
+.latex-env-proposition{ border-left-color: #cf7900; }
+.latex-env-definition { border-left-color: #cf222e; }
+.latex-env-bemerkung  { border-left-color: #9a9a9a; font-style: italic; }
+.latex-env-proof      { border-left-color: #9a9a9a; font-style: italic; }
+/* Theorem-Label (fett vorangestellter Name) */
+.latex-theorem-label {
+  font-weight: bold;
+  font-style: normal;
+  margin-right: 0.4em;
+}
+
+/* Blockzitat / Quotation */
+.latex-quote, .latex-quotation {
+  margin: 1em 2.5em;
+  font-style: italic;
+  color: var(--blockquote-color);
+  border-left: 3px solid var(--blockquote-border);
+  padding-left: 1em;
+}
+
+/* Verbatim / Code-Block */
+.latex-verbatim {
+  background: var(--code-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1em;
+  overflow-x: auto;
+  font-size: 0.88em;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+/* Tabellen */
+.latex-table {
+  border-collapse: collapse;
+  margin: 1.2em auto;
+  font-size: 0.95em;
+}
+.latex-table td, .latex-table th {
+  border: 1px solid var(--border-color);
+  padding: 0.4em 0.9em;
+  text-align: left;
+}
+.latex-table-float { margin: 1.2em 0; }
+
+/* Abbildungen */
+.latex-figure { text-align: center; margin: 1.5em 0; }
+.latex-figure figcaption { font-style: italic; font-size: 0.9em; margin-top: 0.4em; color: var(--blockquote-color); }
+
+/* Fußnoten-Tooltip */
+.latex-footnote { color: #0969da; cursor: help; font-size: 0.78em; vertical-align: super; }
+
+/* Seitenumbruch-Trennlinie */
+.latex-pagebreak { margin: 2em 0; border: none; border-top: 2px dashed var(--border-color); }
+
+/* Zentrierter Text */
+.latex-center { text-align: center; margin: 0.5em 0; }
+
+/* TOC-Hinweis */
+.latex-toc-note { color: var(--blockquote-color); font-style: italic; }
+
+/* Listen innerhalb LaTeX */
+.latex-document .latex-itemize,
+.latex-document .latex-enumerate { padding-left: 2em; margin: 0.6em 0; }
+.latex-document .latex-itemize li,
+.latex-document .latex-enumerate li { margin: 0.3em 0; }
+
+/* Dark-Mode Anpassungen für LaTeX */
+body.dark .latex-env-theorem    { border-left-color: #4f98d0; }
+body.dark .latex-env-lemma      { border-left-color: #4ac26b; }
+body.dark .latex-env-korollar   { border-left-color: #a475f9; }
+body.dark .latex-env-proposition{ border-left-color: #d4a72c; }
+body.dark .latex-env-definition { border-left-color: #f07070; }
+body.dark .latex-env-bemerkung  { border-left-color: #6e7681; }
+body.dark .latex-footnote       { color: #58a6ff; }
 </style>

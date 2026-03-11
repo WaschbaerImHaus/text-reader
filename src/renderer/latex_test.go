@@ -384,6 +384,106 @@ Text.
 	}
 }
 
+// TestParseLaTeXTheoremEnv prüft dass \newtheorem-Umgebungen mit Anzeigename gerendert werden.
+func TestParseLaTeXTheoremEnv(t *testing.T) {
+	content := `\documentclass{article}
+\newtheorem{theorem}{Satz}
+\newtheorem{lemma}[theorem]{Lemma}
+\begin{document}
+\begin{theorem}
+Dies ist ein Satz.
+\end{theorem}
+
+\begin{lemma}
+Dies ist ein Lemma.
+\end{lemma}
+\end{document}`
+
+	result, err := renderer.ParseLaTeXContent(content, "test.tex")
+	if err != nil {
+		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
+	}
+	// Theorem-Label muss im HTML erscheinen
+	if !strings.Contains(result.HTML, "Satz") {
+		t.Error("HTML enthält nicht den Theorem-Anzeigenamen 'Satz'")
+	}
+	if !strings.Contains(result.HTML, "latex-theorem-label") {
+		t.Error("HTML enthält kein latex-theorem-label Span")
+	}
+	if !strings.Contains(result.HTML, "Lemma") {
+		t.Error("HTML enthält nicht den Lemma-Anzeigenamen")
+	}
+	// Umgebungsklasse muss gesetzt sein
+	if !strings.Contains(result.HTML, "latex-env-theorem") {
+		t.Error("HTML enthält keine CSS-Klasse latex-env-theorem")
+	}
+}
+
+// TestParseLaTeXProofEnv prüft dass proof-Umgebungen korrekt gerendert werden.
+func TestParseLaTeXProofEnv(t *testing.T) {
+	content := `\begin{document}
+\begin{proof}
+Dies ist ein Beweis.
+\end{proof}
+\end{document}`
+
+	result, err := renderer.ParseLaTeXContent(content, "test.tex")
+	if err != nil {
+		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
+	}
+	if !strings.Contains(result.HTML, "Beweis") {
+		t.Error("HTML enthält nicht das Beweis-Label")
+	}
+	if !strings.Contains(result.HTML, "∎") {
+		t.Error("HTML enthält kein QED-Symbol ∎")
+	}
+}
+
+// TestParseLaTeXNewcommandMacros prüft dass Custom-Makros als window.__latexMacros eingebettet werden.
+func TestParseLaTeXNewcommandMacros(t *testing.T) {
+	content := `\documentclass{article}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\DeclareMathOperator{\ord}{ord}
+\begin{document}
+Es gilt $n \in \N$.
+\end{document}`
+
+	result, err := renderer.ParseLaTeXContent(content, "test.tex")
+	if err != nil {
+		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
+	}
+	// Makros müssen als script-Tag im HTML erscheinen
+	if !strings.Contains(result.HTML, `window.__latexMacros`) {
+		t.Error("HTML enthält kein window.__latexMacros Script für Custom-Makros")
+	}
+	if !strings.Contains(result.HTML, `\\N`) {
+		t.Error("HTML enthält nicht das Makro \\N")
+	}
+	if !strings.Contains(result.HTML, `\\Z`) {
+		t.Error("HTML enthält nicht das Makro \\Z")
+	}
+	if !strings.Contains(result.HTML, `\\ord`) {
+		t.Error("HTML enthält nicht das DeclareMathOperator \\ord")
+	}
+}
+
+// TestParseLaTeXNoMacrosScript prüft dass bei fehlendem \newcommand kein leerer script-Tag erscheint.
+func TestParseLaTeXNoMacrosScript(t *testing.T) {
+	content := `\begin{document}
+Einfacher Text ohne Makros.
+\end{document}`
+
+	result, err := renderer.ParseLaTeXContent(content, "test.tex")
+	if err != nil {
+		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
+	}
+	// Ohne Custom-Makros kein window.__latexMacros Script
+	if strings.Contains(result.HTML, `window.__latexMacros`) {
+		t.Error("HTML enthält window.__latexMacros obwohl keine Makros definiert wurden")
+	}
+}
+
 // TestIsSupportedFileWithTex prüft dass .tex als unterstützt erkannt wird.
 func TestIsSupportedFileWithTex(t *testing.T) {
 	tests := []struct {

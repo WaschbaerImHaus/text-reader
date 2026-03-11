@@ -1,0 +1,9 @@
+
+2026-03-11 [Build 23] LaTeX-Rendering verbessert (Issue #1 + #2)
+  - CSS für LaTeX-Elemente hinzugefügt (.latex-document, .latex-title-block, .latex-env-*, usw.)
+  - Theorem-Umgebungen (\newtheorem) werden mit ihrem Anzeigenamen gerendert (Satz., Lemma. etc.)
+  - proof-Umgebung: "Beweis. ... ∎" Format
+  - \newcommand und \DeclareMathOperator werden aus der Präambel extrahiert
+  - Custom-Makros als window.__latexMacros in HTML eingebettet → KaTeX kann sie rendern
+  - initKaTeX() nutzt window.__latexMacros wenn vorhanden
+  - Neue Tests: TestParseLaTeXTheoremEnv, TestParseLaTeXProofEnv, TestParseLaTeXNewcommandMacros, TestParseLaTeXNoMacrosScript
