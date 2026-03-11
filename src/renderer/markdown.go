@@ -78,7 +78,7 @@ func LoadFile(filePath string) (*Result, error) {
 // ParseContent konvertiert Text-Inhalt zu HTML.
 //
 // Erkennt das Format anhand der Dateiendung und leitet an den
-// entsprechenden Parser weiter. Unterstützt: .md, .markdown, .txt, .html, .htm, .fb2
+// entsprechenden Parser weiter. Unterstützt: .md, .markdown, .txt, .html, .htm, .fb2, .tex
 //
 // @param content  Der Quelltext der Datei.
 // @param filename Dateiname mit Erweiterung zur Formaterkennung.
@@ -90,6 +90,9 @@ func ParseContent(content string, filename string) (*Result, error) {
 		return ParseTextContent(content, filename)
 	case ".fb2":
 		return ParseFB2Content(content, filename)
+	case ".tex":
+		// LaTeX-Quelldateien mit eigenem Parser rendern
+		return ParseLaTeXContent(content, filename)
 	default:
 		// Standard: Markdown-Rendering (.md, .markdown und unbekannte Typen)
 		return parseMarkdown(content, filename)
@@ -125,14 +128,14 @@ func IsMarkdownFile(path string) bool {
 
 // IsSupportedFile prüft ob eine Datei ein unterstütztes Format hat.
 //
-// Unterstützte Endungen: .md, .markdown, .txt, .html, .htm, .fb2, .epub
+// Unterstützte Endungen: .md, .markdown, .txt, .fb2, .epub, .tex
 //
 // @param path Dateipfad der zu prüfenden Datei.
 // @return true wenn das Format unterstützt wird.
 func IsSupportedFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
-	case ".md", ".markdown", ".txt", ".fb2", ".epub":
+	case ".md", ".markdown", ".txt", ".fb2", ".epub", ".tex":
 		return true
 	}
 	return false

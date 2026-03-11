@@ -261,3 +261,65 @@ NSIS-Installer (LZMA-komprimiert) mit:
 Build-Befehl: `makensis installer/md-reader.nsi` (aus Projektroot)
 
 **.gitignore** um ARM-Binaries und Setup-EXE erweitert.
+
+---
+
+## 2026-03-11 11:35 - Build 22: LaTeX-Support + EPUB-Bilder-Fix
+
+### Feature: LaTeX .tex Dateien anzeigen
+
+**Neue Datei: `src/renderer/latex.go`**
+LaTeX → HTML Konverter mit:
+- Kommentare entfernen (% bis EOL, \% bleibt erhalten)
+- Metadaten: `\title{}`, `\author{}`, `\date{}`
+- Abschnitte: `\section`, `\subsection`, `\subsubsection`, `\paragraph` → h2–h5
+- Sternvarianten: `\section*` etc.
+- Textformatierung: `\textbf{}`, `\textit{}`, `\emph{}`, `\underline{}`, `\texttt{}`, `\textsc{}`
+- Listen: `\begin{itemize}`, `\begin{enumerate}` mit `\item`
+- Umgebungen: verbatim, quote, abstract, center, figure, tabular, table
+- Verlinkung: `\href{url}{text}`, `\url{url}`
+- Fußnoten: `\footnote{}` → `<sup title="...">` 
+- Math-Schutz: $...$, $$...$$, \[...\], \(...\), equation/align → Platzhalter → KaTeX rendert
+- `\maketitle` → HTML-Titelblock
+- Absätze aus Doppel-Leerzeilen
+- `processLatexEnvironments()` ohne Backreferences (Go regexp-Einschränkung)
+
+**Neue Datei: `src/renderer/latex_test.go`**
+17 Tests: IsLaTeXFile, Titel-Extraktion, Fallback, Abschnitte, Formatierung,
+Listen, Verbatim, Math-Schutz, Zitat, Kommentare, Verlinkung, Zeilenumbruch,
+Fragment ohne Präambel, Article-Wrapper, Sternvarianten, IsSupportedFile
+
+**Geändert: `src/renderer/markdown.go`**
+- `ParseContent()`: `.tex` → `ParseLaTeXContent()`
+- `IsSupportedFile()`: `.tex` ergänzt
+
+**Geändert: `src/platform_linux.go`**
+- GTK-Dateifilter: `*.tex` ergänzt (8 Patterns statt 7)
+
+**Geändert: `src/platform_windows.go`**
+- OPENFILENAMEW Filter: `*.tex` ergänzt
+
+### Bugfix: EPUB-Bilder korrekt anzeigen
+
+**Analyse:** EPUB-Bilder lagen im ZIP-Archiv. Relative `<img src="../images/foo.png">` waren
+nach dem Extrahieren des XHTML nicht auflösbar – WebView hat keinen Zugriff auf ZIP-Inhalte.
+
+**Fix: `src/renderer/epub.go`**
+- `imageMap map[string]string` (ZIP-Pfad → MediaType) aus Manifest aufgebaut
+- `chapterDir` (Verzeichnis des Kapitels im ZIP) berechnet
+- `embedEpubImages(html, zipReader, chapterDir, imageMap)` aufgerufen
+- Neue Funktionen:
+  - `embedEpubImages()`: Koordinator für doppelt/einfach gequotete src-Attribute
+  - `embedEpubImgSrc()`: Regex-Ersetzung, ZIP-Pfadauflösung, base64-Data-URI
+  - Relativer Pfad + chapterDir → absoluter ZIP-Pfad via `path.Join` + `path.Clean`
+  - MIME-Typ aus Manifest (imageMap) oder Dateiendung
+
+**Neue Tests: `src/renderer/epub_test.go`**
+- `buildTestEPUBWithImage()`: EPUB mit 1×1 PNG in OEBPS/Images/, Kapitel in OEBPS/Text/
+- `TestParseEpubImagesEmbedded()`: prüft data:image/png;base64 im Ergebnis
+- `TestParseEpubImageNotFound()`: prüft graceful handling bei fehlendem Bild
+
+**Build 22:**
+- Alle 75 Tests: bestanden ✅
+- Linux x86_64: build/md-reader ✅  
+- Windows x86_64: build/md-reader.exe ✅

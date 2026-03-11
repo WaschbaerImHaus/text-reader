@@ -196,6 +196,124 @@ func TestParseEpubStyleStripped(t *testing.T) {
 	}
 }
 
+// buildTestEPUBWithImage erstellt ein Test-EPUB mit einem eingebetteten Bild.
+//
+// Enthält ein minimales 1x1 Pixel PNG als Testbild im Manifest.
+func buildTestEPUBWithImage() []byte {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+
+	// mimetype
+	mw, _ := w.CreateHeader(&zip.FileHeader{Name: "mimetype", Method: zip.Store})
+	mw.Write([]byte("application/epub+zip"))
+
+	// META-INF/container.xml
+	container := `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+	cw, _ := w.Create("META-INF/container.xml")
+	cw.Write([]byte(container))
+
+	// OEBPS/content.opf (mit Bild im Manifest)
+	opf := `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Bildtest</dc:title>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="Text/chapter1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="img1" href="Images/test.png" media-type="image/png"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>`
+	ow, _ := w.Create("OEBPS/content.opf")
+	ow.Write([]byte(opf))
+
+	// OEBPS/Images/test.png (minimales 1x1 PNG)
+	// Echte PNG-Bytes: 1x1 transparentes Pixel
+	minimalPNG := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG Signatur
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR Länge + Typ
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // Breite=1, Höhe=1
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, // Bit-Tiefe, Farbtyp, etc.
+		0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, // IDAT Länge + Typ
+		0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, // IDAT Daten
+		0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC, // IDAT Ende
+		0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, // IEND Länge + Typ
+		0x44, 0xAE, 0x42, 0x60, 0x82, // IEND
+	}
+	pw, _ := w.Create("OEBPS/Images/test.png")
+	pw.Write(minimalPNG)
+
+	// OEBPS/Text/chapter1.xhtml mit relativer Bildreferenz
+	ch1 := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Kapitel 1</title></head>
+<body>
+<h1>Kapitel mit Bild</h1>
+<p>Text vor dem Bild.</p>
+<img src="../Images/test.png" alt="Testbild"/>
+<p>Text nach dem Bild.</p>
+</body>
+</html>`
+	c1w, _ := w.Create("OEBPS/Text/chapter1.xhtml")
+	c1w.Write([]byte(ch1))
+
+	w.Close()
+	return buf.Bytes()
+}
+
+// TestParseEpubImagesEmbedded prüft dass Bilder als base64-Data-URIs eingebettet werden.
+func TestParseEpubImagesEmbedded(t *testing.T) {
+	data := buildTestEPUBWithImage()
+
+	result, err := renderer.ParseEpub(data, "bildtest.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+
+	// Das Bild darf NICHT mehr als relativen Pfad vorhanden sein
+	if strings.Contains(result.HTML, `src="../Images/test.png"`) {
+		t.Error("Bild wurde nicht eingebettet – relativer Pfad noch vorhanden")
+	}
+
+	// Das Bild MUSS als Data-URI vorhanden sein
+	if !strings.Contains(result.HTML, "data:image/png;base64,") {
+		t.Error("Bild wurde nicht als base64-Data-URI eingebettet")
+	}
+
+	// Sonstiger Inhalt muss noch vorhanden sein
+	if !strings.Contains(result.HTML, "Kapitel mit Bild") {
+		t.Error("Kapitelinhalt fehlt nach Bildeinbettung")
+	}
+}
+
+// TestParseEpubImageNotFound prüft graceful Handling von fehlenden Bildern.
+func TestParseEpubImageNotFound(t *testing.T) {
+	// EPUB mit Bildreferenz auf nicht vorhandene Datei
+	data := buildTestEPUB(
+		"Fehlerbild",
+		`<p>Text mit fehlendem Bild:</p><img src="../images/nichtvorhanden.png" alt="fehlt"/>`,
+		"<p>Zweites Kapitel.</p>",
+	)
+
+	// Soll keinen Fehler werfen, sondern den src-Wert unverändert lassen
+	result, err := renderer.ParseEpub(data, "fehlerbild.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() soll bei fehlendem Bild keinen Fehler werfen: %v", err)
+	}
+	// Inhalt muss noch da sein
+	if !strings.Contains(result.HTML, "Text mit fehlendem Bild") {
+		t.Error("Kapitelinhalt fehlt nach Verarbeitung mit fehlendem Bild")
+	}
+}
+
 // TestParseEpubMissingContainer prüft Fehlerbehandlung ohne container.xml.
 func TestParseEpubMissingContainer(t *testing.T) {
 	// ZIP ohne META-INF/container.xml

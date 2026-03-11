@@ -115,7 +115,7 @@ const char* showFileDialog(HWND hwndOwner) {
     memset(&ofn, 0, sizeof(ofn));
     ofn.lStructSize  = sizeof(OPENFILENAMEW);
     ofn.hwndOwner    = hwndOwner;
-    ofn.lpstrFilter  = L"Unterst\u00fctzte Dateien\0*.md;*.markdown;*.txt;*.epub;*.fb2;*.html;*.htm\0Alle Dateien (*.*)\0*.*\0";
+    ofn.lpstrFilter  = L"Unterst\u00fctzte Dateien\0*.md;*.markdown;*.txt;*.epub;*.fb2;*.html;*.htm;*.tex\0Alle Dateien (*.*)\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.lpstrFile    = pathBuf;
     ofn.nMaxFile     = 32768;

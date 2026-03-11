@@ -105,9 +105,11 @@ func TestIsSupportedFile(t *testing.T) {
 		{"notes.txt", true},
 		{"book.fb2", true},
 		{"novel.epub", true},
+		{"paper.tex", true},
 		// Groß-/Kleinschreibung
 		{"README.MD", true},
 		{"BOOK.EPUB", true},
+		{"THESIS.TEX", true},
 		// Nicht unterstützt (inkl. HTML - bewusst entfernt)
 		{"page.html", false},
 		{"page.htm", false},

@@ -76,8 +76,8 @@ gchar* showFileDialog(void* parentWindow) {
     // Filter: Unterstützte Dateiformate
     GtkFileFilter *filter = gtk_file_filter_new();
     gtk_file_filter_set_name(filter, "Unterst\u00fctzte Dateien");
-    const char *patterns[] = {"*.md","*.markdown","*.txt","*.epub","*.fb2","*.html","*.htm"};
-    for (int i = 0; i < 7; i++) {
+    const char *patterns[] = {"*.md","*.markdown","*.txt","*.epub","*.fb2","*.html","*.htm","*.tex"};
+    for (int i = 0; i < 8; i++) {
         gtk_file_filter_add_pattern(filter, patterns[i]);
     }
     gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
