@@ -821,8 +821,27 @@ function initKaTeX(container) {
   try {
     // Custom-Makros aus LaTeX-Präambel (\newcommand, \DeclareMathOperator)
     // werden von Go als window.__latexMacros={...} in den HTML-Inhalt eingebettet.
-    var macros = (typeof window.__latexMacros === 'object' && window.__latexMacros)
+    var userMacros = (typeof window.__latexMacros === 'object' && window.__latexMacros)
       ? window.__latexMacros : {};
+
+    // Benutzer-Makros überschreiben ggf. die eingebauten No-Ops
+    var macros = Object.assign({}, userMacros);
+
+    // KaTeX unterstützt \label nicht nativ – es würde den Inhalt (z.B. "eq:foo")
+    // als Klartext im Mathe-Modus ausgeben. Daher alle \label{...} aus Text-Knoten
+    // des Containers entfernen, BEVOR renderMathInElement läuft.
+    (function stripLatexLabels(root) {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      var node;
+      var labelRe = /\\label\{[^}]*\}/g;
+      while ((node = walker.nextNode())) {
+        if (labelRe.test(node.nodeValue)) {
+          node.nodeValue = node.nodeValue.replace(labelRe, '');
+        }
+        labelRe.lastIndex = 0;
+      }
+    })(container);
+
     renderMathInElement(container, {
       // Erkannte Trennzeichen für Inline- und Block-Formeln
       delimiters: [
