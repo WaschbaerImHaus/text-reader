@@ -1,50 +1,51 @@
 ; MD Reader – Windows NSIS Installer
 ;
-; Erstellt einen minimalen Windows-Installer mit:
-;   - Startmenü-Eintrag (Pflicht)
-;   - Optionales Desktop-Symbol (Komponente wählbar)
-;   - Deinstallations-Eintrag in "Programme und Features"
+; Creates a Windows installer with:
+;   - Mandatory start menu entry
+;   - Optional desktop shortcut (selectable component)
+;   - Uninstall entry in "Programs and Features"
+;   - Silent removal of existing installation before new install
 ;
-; Autor: Kurt Ingwer
-; Letzte Änderung: 2026-03-08
+; Author: Kurt Ingwer
+; Last modified: 2026-03-14
 ;
-; Build-Befehl (aus Projektroot):
+; Build command (from project root):
 ;   makensis installer/md-reader.nsi
 ;
-; Voraussetzungen:
-;   - build/md-reader.exe muss existieren (Windows x86_64 Build)
-;   - src/ui/assets/favicon.ico muss existieren (App-Icon)
+; Requirements:
+;   - build/md-reader.exe must exist (Windows x86_64 build)
+;   - src/ui/assets/favicon.ico must exist (app icon)
 
 ; ============================================================
-; Allgemeine Einstellungen
+; General Settings
 ; ============================================================
 
-; Benötigte NSIS-Includes (müssen vor Verwendung stehen)
+; Required NSIS includes (must be declared before use)
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 
-; Compressor für kleinere Installer-Dateigröße
+; Compressor for smaller installer file size
 SetCompressor /SOLID lzma
 
-; Unicode-Unterstützung für Pfade mit Sonderzeichen
+; Unicode support for paths with special characters
 Unicode True
 
-; Installer-Metadaten
+; Installer metadata
 !define APP_NAME        "MD Reader"
-!define APP_VERSION     "1.0.19"
+!define APP_VERSION     "1.0.24"
 !define APP_PUBLISHER   "Kurt Ingwer"
-!define APP_DESCRIPTION "Markdown-Betrachter mit GitHub-ähnlichem Rendering"
-!define APP_URL         "https://bitbucket.org/von-null/md-reader"
+!define APP_DESCRIPTION "Markdown viewer with GitHub-like rendering"
+!define APP_URL         "https://github.com/WaschbaerImHaus/text-reader"
 
-; Installations- und Deinstallationsschlüssel für die Registry
+; Registry keys for install/uninstall
 !define REG_UNINSTALL   "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
 
-; Pfad zur Installationsdatei (relativ zum installer/-Verzeichnis)
+; Path to the binary (relative to installer/ directory)
 !define EXE_SRC         "..\build\md-reader.exe"
 !define ICO_SRC         "..\src\ui\assets\favicon.ico"
 
 ; ============================================================
-; Installer-Konfiguration
+; Installer Configuration
 ; ============================================================
 
 Name                "${APP_NAME} ${APP_VERSION}"
@@ -52,96 +53,112 @@ OutFile             "..\build\md-reader-setup.exe"
 InstallDir          "$PROGRAMFILES64\${APP_NAME}"
 InstallDirRegKey    HKLM "Software\${APP_NAME}" "InstallDir"
 
-; Moderne UI für ansprechende Optik
+; Request elevated privileges so we can write to Program Files
+RequestExecutionLevel admin
 
-; Installer-Icon
+; Modern UI for a clean look
 !define MUI_ICON    "${ICO_SRC}"
 !define MUI_UNICON  "${ICO_SRC}"
 
-; Hintergrundbild links (optional, auskommentiert falls nicht vorhanden)
-; !define MUI_WELCOMEFINISHPAGE_BITMAP "installer\welcome.bmp"
-
-; Startmenü-Variable (wird für Deinstallation gespeichert)
+; Start menu folder variable (saved for uninstall)
 Var StartMenuFolder
 
 ; ============================================================
-; Seiten des Installers
+; Installer Pages
 ; ============================================================
 
-; Willkommensseite
+; Welcome page
 !insertmacro MUI_PAGE_WELCOME
 
-; Lizenzseite (auskommentiert – kein separates Lizenzdokument vorhanden)
+; License page (commented out – no separate license file)
 ; !insertmacro MUI_PAGE_LICENSE "LICENSE.txt"
 
-; Installations-Verzeichnis auswählen
+; Installation directory selection
 !insertmacro MUI_PAGE_DIRECTORY
 
-; Komponenten auswählen (Desktop-Symbol optional)
+; Component selection (desktop shortcut is optional)
 !insertmacro MUI_PAGE_COMPONENTS
 
-; Startmenü-Ordner auswählen
+; Start menu folder selection
 !define MUI_STARTMENUPAGE_REGISTRY_ROOT      "HKLM"
 !define MUI_STARTMENUPAGE_REGISTRY_KEY       "Software\${APP_NAME}"
 !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "StartMenuFolder"
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER      "${APP_NAME}"
 !insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder
 
-; Installationsfortschritt
+; Installation progress
 !insertmacro MUI_PAGE_INSTFILES
 
-; Abschlussseite mit Option "Jetzt starten"
+; Finish page with option to launch now
 !define MUI_FINISHPAGE_RUN          "$INSTDIR\md-reader.exe"
-!define MUI_FINISHPAGE_RUN_TEXT     "MD Reader jetzt starten"
+!define MUI_FINISHPAGE_RUN_TEXT     "Launch MD Reader now"
 !insertmacro MUI_PAGE_FINISH
 
 ; ============================================================
-; Deinstallations-Seiten
+; Uninstaller Pages
 ; ============================================================
 
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ; ============================================================
-; Spracheinstellungen
+; Language Settings
 ; ============================================================
 
-; Deutsch als primäre Sprache, Englisch als Fallback
-!insertmacro MUI_LANGUAGE "German"
+; English as primary language, German as fallback
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "German"
 
 ; ============================================================
-; Komponenten (wählbare Teile der Installation)
+; Helper: silent removal of any previous installation
 ; ============================================================
 
-; Pflicht-Komponente: Programmdateien + Startmenü
-Section "MD Reader (erforderlich)" SecMain
-    SectionIn RO  ; Kann nicht abgewählt werden
+; Called automatically before files are written.
+; Reads the uninstaller path from the registry and runs it silently.
+Function .onInit
+    ; Check whether a previous installation exists
+    ReadRegStr $0 HKLM "${REG_UNINSTALL}" "UninstallString"
+    StrCmp $0 "" done_uninstall
 
-    ; Installationsverzeichnis erstellen und Dateien kopieren
+    ; Run the old uninstaller silently (/S = silent mode)
+    ; We use ExecWait so the uninstaller finishes before we copy new files
+    ExecWait '$0 /S'
+
+done_uninstall:
+FunctionEnd
+
+; ============================================================
+; Components (selectable parts of the installation)
+; ============================================================
+
+; Mandatory component: program files + start menu
+Section "MD Reader (required)" SecMain
+    SectionIn RO  ; Cannot be deselected
+
+    ; Create installation directory and copy files
     SetOutPath "$INSTDIR"
     File "${EXE_SRC}"
     File "${ICO_SRC}"
 
-    ; Registry: Installationspfad speichern
+    ; Registry: save installation path
     WriteRegStr HKLM "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
 
-    ; Startmenü-Eintrag anlegen
+    ; Create start menu entry
     !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
         CreateDirectory "$SMPROGRAMS\$StartMenuFolder"
-        ; Verknüpfung zur Anwendung
+        ; Shortcut to the application
         CreateShortcut  "$SMPROGRAMS\$StartMenuFolder\${APP_NAME}.lnk" \
                         "$INSTDIR\md-reader.exe" "" \
                         "$INSTDIR\favicon.ico" 0
-        ; Verknüpfung zum Deinstaller
-        CreateShortcut  "$SMPROGRAMS\$StartMenuFolder\Deinstallieren.lnk" \
+        ; Shortcut to the uninstaller
+        CreateShortcut  "$SMPROGRAMS\$StartMenuFolder\Uninstall.lnk" \
                         "$INSTDIR\Uninstall.exe"
     !insertmacro MUI_STARTMENU_WRITE_END
 
-    ; Deinstaller erzeugen
+    ; Generate uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-    ; Windows "Programme und Features" Eintrag
+    ; Windows "Programs and Features" entry
     WriteRegStr   HKLM "${REG_UNINSTALL}" "DisplayName"          "${APP_NAME}"
     WriteRegStr   HKLM "${REG_UNINSTALL}" "DisplayVersion"       "${APP_VERSION}"
     WriteRegStr   HKLM "${REG_UNINSTALL}" "Publisher"            "${APP_PUBLISHER}"
@@ -154,54 +171,53 @@ Section "MD Reader (erforderlich)" SecMain
     WriteRegDWORD HKLM "${REG_UNINSTALL}" "NoModify"             1
     WriteRegDWORD HKLM "${REG_UNINSTALL}" "NoRepair"             1
 
-    ; Geschätzte Installationsgröße in KB (für Programme und Features)
+    ; Estimated installation size in KB (for Programs and Features)
     ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
     IntFmt $0 "0x%08X" $0
     WriteRegDWORD HKLM "${REG_UNINSTALL}" "EstimatedSize" "$0"
 
 SectionEnd
 
-; Optionale Komponente: Desktop-Symbol
-Section "Desktop-Symbol" SecDesktop
+; Optional component: desktop shortcut
+Section "Desktop Shortcut" SecDesktop
     CreateShortcut "$DESKTOP\${APP_NAME}.lnk" \
                    "$INSTDIR\md-reader.exe" "" \
                    "$INSTDIR\favicon.ico" 0
 SectionEnd
 
 ; ============================================================
-; Komponenten-Beschreibungen (Tooltip in der Auswahl)
+; Component descriptions (tooltip in component selection)
 ; ============================================================
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
     !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    \
-        "Installiert MD Reader in das Programmverzeichnis und legt einen Startmenü-Eintrag an."
+        "Installs MD Reader to the program directory and creates a start menu entry."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} \
-        "Legt ein Symbol auf dem Desktop an."
+        "Creates a shortcut on the desktop."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ============================================================
-; Deinstallations-Sektion
+; Uninstall section
 ; ============================================================
 
 Section "Uninstall"
-    ; Anwendungsdateien entfernen
+    ; Remove application files
     Delete "$INSTDIR\md-reader.exe"
     Delete "$INSTDIR\favicon.ico"
     Delete "$INSTDIR\Uninstall.exe"
     RMDir  "$INSTDIR"
 
-    ; Startmenü-Einträge entfernen
+    ; Remove start menu entries
     !insertmacro MUI_STARTMENU_GETFOLDER Application $StartMenuFolder
     Delete "$SMPROGRAMS\$StartMenuFolder\${APP_NAME}.lnk"
-    Delete "$SMPROGRAMS\$StartMenuFolder\Deinstallieren.lnk"
+    Delete "$SMPROGRAMS\$StartMenuFolder\Uninstall.lnk"
     RMDir  "$SMPROGRAMS\$StartMenuFolder"
 
-    ; Desktop-Symbol entfernen (falls vorhanden)
+    ; Remove desktop shortcut (if present)
     Delete "$DESKTOP\${APP_NAME}.lnk"
 
-    ; Registry-Einträge entfernen
+    ; Remove registry entries
     DeleteRegKey HKLM "${REG_UNINSTALL}"
     DeleteRegKey HKLM "Software\${APP_NAME}"
 
 SectionEnd
-

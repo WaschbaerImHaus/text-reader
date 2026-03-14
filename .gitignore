@@ -1,9 +1,9 @@
-# Kompilierte Binaries
-build/md-reader
-build/md-reader.exe
-build/md-reader-setup.exe
-build/md-reader-linux-arm64
-build/md-reader-linux-armhf
+# Kompilierte Binaries und Build-Verzeichnis
+/build/
+
+# Claude-spezifische Dateien
+.claude/
+claude.sh
 
 # Go Build-Cache
 src/vendor/
