@@ -2,7 +2,7 @@
 # Cross-Compilation für Linux x86_64, Linux ARM64, Linux ARMhf, Windows x86_64
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-03-14
+# Letzte Änderung: 2026-03-15
 
 PROJECT     := md-reader
 BUILD_DIR   := build
@@ -42,7 +42,7 @@ GITHUB_REPO := WaschbaerImHaus/text-reader
 LDFLAGS_LINUX := -s -w -extldflags '-static-libstdc++ -static-libgcc'
 LDFLAGS_WIN   := -s -w -H windowsgui
 
-.PHONY: all linux windows linux-arm64 linux-armhf installer release test clean increment-build help
+.PHONY: all linux windows linux-arm64 linux-armhf installer release test clean increment-build docker-build docker-build-release docker-rebuild help
 
 ## all: Kompiliert für Linux x86_64, Windows und Linux ARM64/ARMhf
 all: increment-build test linux windows linux-arm64 linux-armhf installer
@@ -169,6 +169,21 @@ test:
 increment-build:
 	@echo $(NEXT_BUILD) > $(SRC_DIR)/build.txt
 	@echo "→ Build-Nummer: $(NEXT_BUILD)"
+
+## docker-build: Vollständiger Build via Docker (Ubuntu 24.04, läuft auf Mint 22+)
+docker-build:
+	@echo "→ Starte Docker-Build (Ubuntu 24.04 / glibc 2.39)..."
+	@bash docker/build.sh all
+
+## docker-build-release: Docker-Build + GitHub Release
+docker-build-release:
+	@echo "→ Starte Docker-Build mit GitHub Release..."
+	@bash docker/build.sh release
+
+## docker-rebuild: Docker-Image neu bauen (nach Dockerfile-Änderungen)
+docker-rebuild:
+	@echo "→ Erzwinge Neubau des Docker-Images..."
+	@FORCE_REBUILD=1 bash docker/build.sh all
 
 ## clean: Löscht kompilierte Binaries
 clean:

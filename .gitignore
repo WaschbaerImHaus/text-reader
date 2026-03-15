@@ -21,3 +21,6 @@ Thumbs.db
 # Temporäre Dateien
 *.tmp
 *.log~
+
+# Docker
+docker/*.tar
