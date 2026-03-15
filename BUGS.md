@@ -6,6 +6,8 @@
 
 ## Behoben ✅
 
+- **#010** (Build 26): Auf Linux Mint (und anderen Systemen mit GCC < 13) erschien beim Start der Fehler `/lib/x86_64-linux-gnu/libstdc++.so.6: version 'CXXABI_1.3.15' not found`. Ursache: Das Build-System verwendet GCC 15.2, der CXXABI_1.3.15 einführt; ältere Systeme kennen diese ABI-Version nicht. Fix: `libstdc++` und `libgcc` werden nun statisch in das Binary eingelinkt via `-extldflags '-static-libstdc++ -static-libgcc'`. Bestätigt für Linux x86_64 und ARM64/ARMhf.
+
 - **#001** (Build 11): Windows Cross-Compilation benötigt EventToken.h Stub (WebView2 SDK Header fehlt in mingw-w64). Workaround per EventToken.h-Stub im GOPATH bestätigt funktionstüchtig. Native Windows-Compilation ohne Stub bleibt empfohlen.
 
 - **#002** (Build 7): Vollbild-Modus zeigte OS-Fensterrahmen bei HTML5 Fullscreen API. Fix: `toggleFullscreen()` nutzt jetzt ausschließlich `nativeFullscreen()` (GTK auf Linux, WinAPI auf Windows). Der `fullscreenchange`-Event-Handler wurde entfernt, der neue State kommt direkt als Rückgabewert des Bindings zurück.
