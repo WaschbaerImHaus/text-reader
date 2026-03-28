@@ -27,23 +27,48 @@ package main
 // daher stehen alle C-Definitionen hier und //export ist in der separaten Datei.
 extern void goFileDropCallback(const char* path);
 
-// onDragDataReceived ist der GTK-Signal-Handler für Datei-Drop-Ereignisse.
+// onDragMotion akzeptiert eingehende Datei-Drags und setzt den Kopier-Cursor.
 //
-// Wird ausgelöst wenn der Nutzer eine Datei auf das WebKitWebView-Widget ablegt.
-// Extrahiert den ersten Dateipfad aus der URI-Liste und ruft goFileDropCallback auf.
+// Muss TRUE zurückgeben damit GTK das Widget als gültiges Drop-Ziel behandelt.
+// Ohne das bleibt der "verboten"-Cursor und drag-drop wird nie ausgelöst.
 //
-// @param widget   Das Drop-Ziel-Widget (WebKitWebView).
-// @param context  GTK-Drag-Kontext.
-// @param x, y     Drop-Position (nicht verwendet).
-// @param selData  Selektionsdaten mit der URI-Liste.
-// @param info     Target-Index (nicht verwendet).
-// @param time     Zeitstempel des Ereignisses.
-// @param userData Benutzerdaten (nicht verwendet).
+// @return TRUE = Drag wird akzeptiert.
+static gboolean onDragMotion(
+    GtkWidget *widget, GdkDragContext *context,
+    gint x, gint y, guint time, gpointer userData
+) {
+    gdk_drag_status(context, GDK_ACTION_COPY, time);
+    return TRUE;
+}
+
+// onDragDrop fordert die URI-Daten vom Drag-Quell-Prozess an.
+//
+// Wird nur beim tatsächlichen Loslassen der Maustaste ausgelöst (nicht bei Hover).
+// gtk_drag_get_data löst danach onDragDataReceived aus.
+//
+// @return TRUE = Drop wird verarbeitet.
+static gboolean onDragDrop(
+    GtkWidget *widget, GdkDragContext *context,
+    gint x, gint y, guint time, gpointer userData
+) {
+    GdkAtom target = gdk_atom_intern("text/uri-list", FALSE);
+    gtk_drag_get_data(widget, context, target, time);
+    return TRUE;
+}
+
+// onDragDataReceived verarbeitet die empfangenen URI-Daten und beendet den Drag.
+//
+// Wird ausgelöst nachdem onDragDrop gtk_drag_get_data aufgerufen hat.
+// gtk_drag_finish MUSS hier aufgerufen werden – genau einmal – sonst bleibt
+// der Mauszeiger im Drag-Modus hängen (Bug).
+//
+// @param selData  Selektionsdaten mit der URI-Liste (text/uri-list).
 static void onDragDataReceived(
     GtkWidget *widget, GdkDragContext *context,
     gint x, gint y, GtkSelectionData *selData,
     guint info, guint time, gpointer userData
 ) {
+    gboolean success = FALSE;
     gchar **uris = gtk_selection_data_get_uris(selData);
     if (uris) {
         int i;
@@ -54,40 +79,49 @@ static void onDragDataReceived(
             if (path) {
                 goFileDropCallback(path);
                 g_free(path);
+                success = TRUE;
                 break; // Nur erste Datei verarbeiten
             }
             if (err) g_error_free(err);
         }
         g_strfreev(uris);
     }
-    gtk_drag_finish(context, TRUE, FALSE, time);
+    // Drag korrekt beenden: success=ob Datei gefunden, del=FALSE (kein Move)
+    // Ohne diesen Aufruf bleibt der Mauszeiger im Drag-Modus hängen!
+    gtk_drag_finish(context, success, FALSE, time);
 }
 
-// setupNativeFileDrop richtet GTK-Drag&Drop direkt auf dem WebKitWebView-Widget ein.
+// setupNativeFileDrop richtet GTK-Drag&Drop auf dem GtkWindow ein.
 //
-// w.Window() in webview_go gibt das Parent-Widget des WebKitWebView zurück.
-// Via gtk_bin_get_child() holen wir das eigentliche WebView-Widget und
-// registrieren es als Drop-Ziel für text/uri-list.
+// Wichtig: GTK_DEST_DEFAULT_NONE + manuelle Signal-Handler statt
+// GTK_DEST_DEFAULT_ALL. GTK_DEST_DEFAULT_ALL auf dem Kind-Widget kollidiert
+// mit WebKits eigenem Drag-Handler und korrumpiert den Drag-State (Bugs:
+// Mauszeiger hängt, Drop feuert bei Hover statt bei Maus-Release).
+//
+// Durch Registrierung auf dem GtkWindow (nicht dem WebView-Kind) vermeiden
+// wir auch Konflikte mit WebKits internem Drag-Dest.
 //
 // WICHTIG: Muss auf dem GTK-Hauptthread aufgerufen werden!
 //
-// @param gtkWindow Das Parent-Widget (wie von w.Window() zurückgegeben).
+// @param gtkWindow GtkWindow-Zeiger (wie von w.Window() zurückgegeben).
 void setupNativeFileDrop(void *gtkWindow) {
-    // WebKitWebView ist das direkte Kind des von w.Window() zurückgegebenen Containers
-    GtkWidget *widget = GTK_WIDGET(gtkWindow);
-    GtkWidget *webview = widget;
-    if (GTK_IS_BIN(widget)) {
-        GtkWidget *child = gtk_bin_get_child(GTK_BIN(widget));
-        if (child) webview = child;
-    }
+    GtkWidget *win = GTK_WIDGET(gtkWindow);
 
-    // text/uri-list als einziges Drop-Ziel registrieren
-    // GTK_DEST_DEFAULT_ALL: automatisches Akzeptieren + Drop-Cursor anzeigen
+    // text/uri-list als Drop-Ziel registrieren.
+    // GTK_DEST_DEFAULT_NONE: wir steuern alle Drag-Signale selbst.
     static GtkTargetEntry targets[] = {
         { "text/uri-list", 0, 0 }
     };
-    gtk_drag_dest_set(webview, GTK_DEST_DEFAULT_ALL, targets, 1, GDK_ACTION_COPY);
-    g_signal_connect(webview, "drag-data-received", G_CALLBACK(onDragDataReceived), NULL);
+    // 0 = kein GTK_DEST_DEFAULT_* Flag → vollständige manuelle Steuerung
+    gtk_drag_dest_set(win, (GtkDestDefaults)0, targets, 1, GDK_ACTION_COPY);
+
+    // Alle drei Phasen manuell behandeln:
+    // drag-motion → akzeptieren + Cursor setzen
+    // drag-drop   → Daten anfordern (nur bei Maus-Release)
+    // drag-data-received → Pfad extrahieren + gtk_drag_finish
+    g_signal_connect(win, "drag-motion",        G_CALLBACK(onDragMotion),       NULL);
+    g_signal_connect(win, "drag-drop",          G_CALLBACK(onDragDrop),         NULL);
+    g_signal_connect(win, "drag-data-received", G_CALLBACK(onDragDataReceived), NULL);
 }
 
 // toggleWindowFullscreen wechselt den Vollbild-Modus des GTK-Fensters.
