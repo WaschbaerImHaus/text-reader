@@ -1,0 +1,9 @@
+# GitHub Pages Konfiguration für MD Reader
+title: MD Reader
+description: A fast, cross-platform viewer for Markdown, EPUB, FB2, LaTeX and more.
+url: "https://waschbaer imhaus.github.io"
+baseurl: "/text-reader"
+
+# Keine Jekyll-Verarbeitung der HTML-Datei (ist bereits fertig gerendert)
+include:
+  - index.html

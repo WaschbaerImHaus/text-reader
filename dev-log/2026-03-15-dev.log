@@ -1,0 +1,14 @@
+
+2026-03-15 $(date +%H:%M): Build 27 – Docker Build-Container hinzugefügt (Ubuntu 24.04, glibc 2.39).
+  - docker/Dockerfile: Ubuntu 24.04 Basis mit Go 1.26, WebKitGTK 4.1, MinGW, ARM-Cross-Compiler, NSIS
+  - docker/build.sh: Build-Skript mit automatischem Image-Cache
+  - Makefile: Neue Targets docker-build, docker-build-release, docker-rebuild
+  - Ziel: Binaries laufen auf Ubuntu 24.04+, Linux Mint 22+, Debian 12+ (glibc >= 2.39)
+  - Ursache: Build-System läuft auf Ubuntu 25.10 (glibc 2.42), zu neu für ältere Systeme
+
+2026-03-28 – GitHub Page + CHANGELOG.md erstellt
+  - docs/index.html: Vollständige GitHub Page mit Features, Formats, Download, Install, Changelog
+  - docs/_config.yml: GitHub Pages Konfiguration
+  - docs/.nojekyll: Jekyll-Verarbeitung deaktiviert (pure HTML)
+  - CHANGELOG.md: Vollständige Release-Historie aller Builds (1–27)
+  - GitHub Pages aktivieren: Settings → Pages → Branch: master, Folder: /docs
