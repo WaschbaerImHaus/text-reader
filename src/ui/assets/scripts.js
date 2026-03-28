@@ -148,7 +148,30 @@ document.addEventListener('drop', function(e) {
   e.preventDefault(); e.stopPropagation();
   dropZone.classList.remove('dragover');
 
+  // Pfad aus URI-Liste extrahieren (immer versuchen, auch als Fallback)
+  var droppedFilePath = extractFilePathFromDrop(e);
+
   var files = e.dataTransfer.files;
+
+  // WebKitGTK auf Linux (z.B. Linux Mint/Nemo): files ist oft leer, aber der
+  // Pfad ist über text/uri-list verfügbar. In diesem Fall Go zum Lesen nutzen.
+  if ((!files || files.length === 0) && droppedFilePath) {
+    if (!isSupportedFile(droppedFilePath)) {
+      var ext = droppedFilePath.split('.').pop() || '?';
+      showDropError('Nicht unterst\u00FCtztes Format: .' + ext +
+        '\n\nUnterst\u00FCtzt: ' + supportedExtensions.join(', '));
+      return;
+    }
+    hideDropError();
+    // Go liest und rendert die Datei direkt vom Dateisystem
+    if (typeof window.openFileByPath === 'function') {
+      window.openFileByPath(droppedFilePath).then(function(result) {
+        handleRenderResult(result);
+      }).catch(function(err) { showDropError('Fehler: ' + err); });
+    }
+    return;
+  }
+
   if (!files || files.length === 0) return;
   var file = files[0];
 
@@ -158,11 +181,6 @@ document.addEventListener('drop', function(e) {
     return;
   }
   hideDropError();
-
-  // Vollständigen Dateipfad aus der URI-Liste des Drop-Events extrahieren.
-  // Wird nach erfolgreichem Rendern an Go übergeben damit die Datei beim
-  // nächsten Start automatisch wieder geöffnet werden kann.
-  var droppedFilePath = extractFilePathFromDrop(e);
 
   var reader = new FileReader();
   if (file.name.toLowerCase().endsWith('.epub')) {
@@ -635,14 +653,22 @@ function onScrollDebounced() {
 /**
  * Öffnet den nativen Datei-Öffnen-Dialog via Go-Binding.
  *
- * Hintergrund: WebView2 (Windows) exponiert aus Sicherheitsgründen keine
- * Dateipfade im DataTransfer. Der native Dialog umgeht dies und liefert
- * den vollständigen Pfad, der dann in lastFile gespeichert werden kann.
+ * openFilePicker() gibt den Pfad als String zurück. Danach lädt
+ * openFileByPath() die Datei direkt über Go (kein FileReader nötig).
+ * Das löst das Problem auf Linux Mint wo w.Eval nach zenity nicht zuverlässig war.
  */
 function openFile() {
-  if (typeof window.openFilePicker === 'function') {
-    window.openFilePicker();
-  }
+  if (typeof window.openFilePicker !== 'function') return;
+  window.openFilePicker().then(function(path) {
+    if (!path || !path.trim()) return;
+    if (typeof window.openFileByPath === 'function') {
+      window.openFileByPath(path.trim()).then(function(result) {
+        handleRenderResult(result);
+      }).catch(function(err) {
+        showDropError('Fehler beim \u00d6ffnen: ' + err);
+      });
+    }
+  });
 }
 
 // ============================================================

@@ -182,12 +182,56 @@ func registerBindings(w webview.WebView) {
 
 	// openFilePicker: Öffnet den nativen Datei-Öffnen-Dialog (Strg+O).
 	//
-	// Lösung für #005: WebView2 exponiert aus Sicherheitsgründen keine Dateipfade
-	// im DataTransfer. Der native Dialog gibt den vollständigen Pfad zurück.
-	w.Bind("openFilePicker", func() {
-		path := openFilePickerBlocking(w)
-		if path != "" {
-			loadFileOnStartup(w, path)
+	// Gibt den ausgewählten Dateipfad als String zurück (leer bei Abbruch).
+	// JS ruft danach openFileByPath() auf um die Datei zu laden.
+	w.Bind("openFilePicker", func() string {
+		return openFilePickerBlocking(w)
+	})
+
+	// openFileByPath: Lädt eine Datei vom Dateisystem anhand des vollständigen Pfads.
+	//
+	// Wird von JS nach openFilePicker() und bei Drag & Drop auf Linux genutzt,
+	// wo e.dataTransfer.files in WebKitGTK leer sein kann (bekanntes GTK-Problem).
+	// Gibt RenderResult zurück – genau wie processMarkdown/processEpub.
+	//
+	// Sicherheit: Pfad wird gegen IsSupportedFile validiert.
+	//
+	// @param path Vollständiger Dateipfad.
+	// @return RenderResult mit HTML, Titel, Hash und Scroll-Position.
+	w.Bind("openFileByPath", func(path string) RenderResult {
+		// Nur unterstützte Formate zulassen
+		if !renderer.IsSupportedFile(path) {
+			return RenderResult{Error: "Nicht unterstütztes Dateiformat: " + path}
+		}
+		// Existenz und Typ prüfen
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			return RenderResult{Error: "Datei nicht gefunden: " + path}
+		}
+		// Rohdaten lesen (für Hash-Berechnung)
+		rawBytes, err := os.ReadFile(path)
+		if err != nil {
+			return RenderResult{Error: "Datei konnte nicht gelesen werden: " + err.Error()}
+		}
+		// Datei rendern
+		result, err := renderer.LoadFile(path)
+		if err != nil {
+			return RenderResult{Error: err.Error()}
+		}
+		// Relative Bild-Pfade in absolute konvertieren (nur bei Nicht-EPUB)
+		if !renderer.IsEpubFile(path) {
+			result.HTML = renderer.ResolveImagePaths(result.HTML, filepath.Dir(path))
+		}
+		hash := computeHash(rawBytes)
+		scrollPos := scrollPosForHash(hash)
+		// Zuletzt geöffnete Datei und Config persistieren
+		app.config.LastFile = path
+		saveConfig(app.config)
+		return RenderResult{
+			HTML:      result.HTML,
+			Title:     result.Title,
+			FileHash:  hash,
+			ScrollPos: scrollPos,
 		}
 	})
 }

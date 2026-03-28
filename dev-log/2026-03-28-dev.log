@@ -23,3 +23,28 @@ Fix (platform_linux.go):
 Dateien geändert:
   - src/platform_linux.go (showOpenFileDialogExternal + openFilePickerBlocking)
   - src/build.txt (26 → 27)
+
+2026-03-28 - Build 28: Fix Datei laden nach Auswahl + Drag & Drop auf Linux Mint
+
+Problem 1 – File Picker lädt nicht:
+  Nach zenity-Auswahl rief loadFileOnStartup() w.Dispatch(w.Eval(...)) auf.
+  Das feuerte teilweise bevor webview_go die Kontrolle an JS zurückgegeben hatte.
+
+Problem 2 – Drag & Drop lädt nicht:
+  WebKitGTK auf Linux Mint (Nemo): e.dataTransfer.files ist leer bei Drops
+  aus dem Dateimanager. Bekanntes WebKitGTK-Problem.
+
+Fix:
+  Neues Go-Binding openFileByPath(path) → RenderResult hinzugefügt.
+  Geht den gleichen sicheren Weg wie processMarkdown/processEpub.
+  
+  openFilePicker() gibt jetzt den Pfad als string zurück (statt void).
+  JS ruft danach openFileByPath() auf → handleRenderResult().
+  
+  Drag & Drop: Wenn files leer aber text/uri-list hat Pfad →
+  openFileByPath() direkt aufrufen (kein FileReader nötig).
+
+Dateien:
+  - src/bindings.go (openFileByPath Binding, openFilePicker → string)
+  - src/ui/assets/scripts.js (openFile(), drop handler)
+  - src/build.txt (27 → 28)
