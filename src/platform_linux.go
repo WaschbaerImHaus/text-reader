@@ -91,37 +91,50 @@ static void onDragDataReceived(
     gtk_drag_finish(context, success, FALSE, time);
 }
 
-// setupNativeFileDrop richtet GTK-Drag&Drop auf dem GtkWindow ein.
+// setupNativeFileDrop richtet GTK-Drag&Drop direkt auf dem WebKitWebView ein.
 //
-// Wichtig: GTK_DEST_DEFAULT_NONE + manuelle Signal-Handler statt
-// GTK_DEST_DEFAULT_ALL. GTK_DEST_DEFAULT_ALL auf dem Kind-Widget kollidiert
-// mit WebKits eigenem Drag-Handler und korrumpiert den Drag-State (Bugs:
-// Mauszeiger hängt, Drop feuert bei Hover statt bei Maus-Release).
+// Widget-Hierarchie in webview_go (Linux):
+//   w.Window() → GtkWindow
+//                  └─ GtkScrolledWindow  (gtk_bin_get_child, Ebene 1)
+//                       └─ WebKitWebView (gtk_bin_get_child, Ebene 2)
 //
-// Durch Registrierung auf dem GtkWindow (nicht dem WebView-Kind) vermeiden
-// wir auch Konflikte mit WebKits internem Drag-Dest.
+// WebKitGTK registriert text/uri-list bereits auf dem WebKitWebView.
+// GTK routet Drags zur tiefsten passenden Widget → Handler auf GtkWindow
+// oder GtkScrolledWindow wird nie aufgerufen, weil WebKit den Drop zuerst
+// beansprucht. Daher muss unser Handler auf dem WebKitWebView sitzen.
+//
+// flags=0: vollständige manuelle Kontrolle über alle drei Drag-Phasen.
 //
 // WICHTIG: Muss auf dem GTK-Hauptthread aufgerufen werden!
 //
 // @param gtkWindow GtkWindow-Zeiger (wie von w.Window() zurückgegeben).
 void setupNativeFileDrop(void *gtkWindow) {
-    GtkWidget *win = GTK_WIDGET(gtkWindow);
+    GtkWidget *win     = GTK_WIDGET(gtkWindow);
+    GtkWidget *scroller = NULL;
+    GtkWidget *webview  = NULL;
 
-    // text/uri-list als Drop-Ziel registrieren.
-    // GTK_DEST_DEFAULT_NONE: wir steuern alle Drag-Signale selbst.
+    // Ebene 1: GtkWindow → GtkScrolledWindow
+    if (GTK_IS_BIN(win)) {
+        scroller = gtk_bin_get_child(GTK_BIN(win));
+    }
+    // Ebene 2: GtkScrolledWindow → WebKitWebView
+    if (scroller && GTK_IS_BIN(scroller)) {
+        webview = gtk_bin_get_child(GTK_BIN(scroller));
+    }
+
+    // Fallback falls Widget-Hierarchie unerwartet ist
+    GtkWidget *target = webview ? webview : (scroller ? scroller : win);
+
+    // Unsere text/uri-list-Registrierung ersetzt WebKits eigene Drag-Targets
+    // auf diesem Widget. flags=0: alle drei Phasen manuell behandeln.
     static GtkTargetEntry targets[] = {
         { "text/uri-list", 0, 0 }
     };
-    // 0 = kein GTK_DEST_DEFAULT_* Flag → vollständige manuelle Steuerung
-    gtk_drag_dest_set(win, (GtkDestDefaults)0, targets, 1, GDK_ACTION_COPY);
+    gtk_drag_dest_set(target, (GtkDestDefaults)0, targets, 1, GDK_ACTION_COPY);
 
-    // Alle drei Phasen manuell behandeln:
-    // drag-motion → akzeptieren + Cursor setzen
-    // drag-drop   → Daten anfordern (nur bei Maus-Release)
-    // drag-data-received → Pfad extrahieren + gtk_drag_finish
-    g_signal_connect(win, "drag-motion",        G_CALLBACK(onDragMotion),       NULL);
-    g_signal_connect(win, "drag-drop",          G_CALLBACK(onDragDrop),         NULL);
-    g_signal_connect(win, "drag-data-received", G_CALLBACK(onDragDataReceived), NULL);
+    g_signal_connect(target, "drag-motion",        G_CALLBACK(onDragMotion),       NULL);
+    g_signal_connect(target, "drag-drop",          G_CALLBACK(onDragDrop),         NULL);
+    g_signal_connect(target, "drag-data-received", G_CALLBACK(onDragDataReceived), NULL);
 }
 
 // toggleWindowFullscreen wechselt den Vollbild-Modus des GTK-Fensters.
