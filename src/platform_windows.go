@@ -218,3 +218,11 @@ func setAppIcon(w webview.WebView) {
 		C.int(len(appIconICO)),
 	)
 }
+
+// setupNativeFileDrop ist auf Windows ein No-Op.
+//
+// Windows WebView2 liefert e.dataTransfer.files korrekt im Drop-Event,
+// daher ist kein nativer GTK-Level-Handler nötig.
+//
+// @param w Die WebView-Instanz (nicht verwendet).
+func setupNativeFileDrop(w webview.WebView) {}

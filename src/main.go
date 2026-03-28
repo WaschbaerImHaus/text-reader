@@ -82,6 +82,10 @@ func main() {
 	// App-Icon setzen (Titelleiste, Taskleiste, Alt+Tab)
 	setAppIcon(w)
 
+	// Nativen GTK-Drag&Drop-Handler einrichten (Linux: WebKitGTK liefert
+	// im JS-Drop-Event keine Dateipfade – GTK-Signal direkt abfangen)
+	setupNativeFileDrop(w)
+
 	// ----------------------------------------------------------------
 	// Go→JS Bindings registrieren (aus bindings.go)
 	// ----------------------------------------------------------------

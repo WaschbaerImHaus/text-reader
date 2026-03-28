@@ -1,9 +1,13 @@
 // Plattformspezifische Implementierung für Linux (GTK + CGo).
 //
-// Enthält nativen Vollbild-Toggle, nativen Datei-Öffnen-Dialog und
-// Fenster-Icon-Setzung via GTK-Funktionen. Der Datei-Dialog und die
-// Icon-Setzung müssen auf dem GTK-Hauptthread ausgeführt werden
-// (GTK ist nicht thread-sicher).
+// Enthält nativen Vollbild-Toggle, nativen Datei-Öffnen-Dialog,
+// Fenster-Icon-Setzung und nativen GTK-Drag&Drop-Handler.
+//
+// Drag & Drop: WebKitGTK liefert im JS-Drop-Event weder e.dataTransfer.files
+// noch getData('text/uri-list') – beide werden aus Sicherheitsgründen geleert.
+// Die Lösung: GTK-Signal 'drag-data-received' direkt auf dem WebKitWebView-
+// Widget abfangen, bevor WebKit es verarbeitet. Der C-Callback ruft
+// goFileDropCallback() auf (definiert in platform_linux_drop.go via //export).
 //
 // Autor: Kurt Ingwer
 // Letzte Änderung: 2026-03-28
@@ -17,6 +21,74 @@ package main
 
 #include <gtk/gtk.h>
 #include <string.h>
+
+// Vorwärtsdeklaration der Go-Export-Funktion (implementiert in platform_linux_drop.go).
+// CGo-Constraint: Dateien mit //export dürfen im Preamble nur Deklarationen haben,
+// daher stehen alle C-Definitionen hier und //export ist in der separaten Datei.
+extern void goFileDropCallback(const char* path);
+
+// onDragDataReceived ist der GTK-Signal-Handler für Datei-Drop-Ereignisse.
+//
+// Wird ausgelöst wenn der Nutzer eine Datei auf das WebKitWebView-Widget ablegt.
+// Extrahiert den ersten Dateipfad aus der URI-Liste und ruft goFileDropCallback auf.
+//
+// @param widget   Das Drop-Ziel-Widget (WebKitWebView).
+// @param context  GTK-Drag-Kontext.
+// @param x, y     Drop-Position (nicht verwendet).
+// @param selData  Selektionsdaten mit der URI-Liste.
+// @param info     Target-Index (nicht verwendet).
+// @param time     Zeitstempel des Ereignisses.
+// @param userData Benutzerdaten (nicht verwendet).
+static void onDragDataReceived(
+    GtkWidget *widget, GdkDragContext *context,
+    gint x, gint y, GtkSelectionData *selData,
+    guint info, guint time, gpointer userData
+) {
+    gchar **uris = gtk_selection_data_get_uris(selData);
+    if (uris) {
+        int i;
+        for (i = 0; uris[i] != NULL; i++) {
+            GError *err = NULL;
+            // file:///home/user/doc.md → /home/user/doc.md
+            gchar *path = g_filename_from_uri(uris[i], NULL, &err);
+            if (path) {
+                goFileDropCallback(path);
+                g_free(path);
+                break; // Nur erste Datei verarbeiten
+            }
+            if (err) g_error_free(err);
+        }
+        g_strfreev(uris);
+    }
+    gtk_drag_finish(context, TRUE, FALSE, time);
+}
+
+// setupNativeFileDrop richtet GTK-Drag&Drop direkt auf dem WebKitWebView-Widget ein.
+//
+// w.Window() in webview_go gibt das Parent-Widget des WebKitWebView zurück.
+// Via gtk_bin_get_child() holen wir das eigentliche WebView-Widget und
+// registrieren es als Drop-Ziel für text/uri-list.
+//
+// WICHTIG: Muss auf dem GTK-Hauptthread aufgerufen werden!
+//
+// @param gtkWindow Das Parent-Widget (wie von w.Window() zurückgegeben).
+void setupNativeFileDrop(void *gtkWindow) {
+    // WebKitWebView ist das direkte Kind des von w.Window() zurückgegebenen Containers
+    GtkWidget *widget = GTK_WIDGET(gtkWindow);
+    GtkWidget *webview = widget;
+    if (GTK_IS_BIN(widget)) {
+        GtkWidget *child = gtk_bin_get_child(GTK_BIN(widget));
+        if (child) webview = child;
+    }
+
+    // text/uri-list als einziges Drop-Ziel registrieren
+    // GTK_DEST_DEFAULT_ALL: automatisches Akzeptieren + Drop-Cursor anzeigen
+    static GtkTargetEntry targets[] = {
+        { "text/uri-list", 0, 0 }
+    };
+    gtk_drag_dest_set(webview, GTK_DEST_DEFAULT_ALL, targets, 1, GDK_ACTION_COPY);
+    g_signal_connect(webview, "drag-data-received", G_CALLBACK(onDragDataReceived), NULL);
+}
 
 // toggleWindowFullscreen wechselt den Vollbild-Modus des GTK-Fensters.
 //
@@ -205,6 +277,23 @@ func showOpenFileDialogExternal() (string, bool) {
 
 	// Kein externes Tool gefunden
 	return "", false
+}
+
+// setupNativeFileDrop aktiviert den nativen GTK-Drag&Drop-Handler.
+//
+// Muss nach dem Start der GTK-Hauptschleife aufgerufen werden, damit das
+// WebKitWebView-Widget bereits existiert. Wird via w.Dispatch() auf dem
+// GTK-Hauptthread ausgeführt.
+//
+// @param w Die WebView-Instanz.
+func setupNativeFileDrop(w webview.WebView) {
+	ptr := w.Window()
+	if ptr == nil {
+		return
+	}
+	w.Dispatch(func() {
+		C.setupNativeFileDrop(unsafe.Pointer(ptr))
+	})
 }
 
 // openFilePickerBlocking öffnet den Datei-Dialog und blockiert bis zur Auswahl.
