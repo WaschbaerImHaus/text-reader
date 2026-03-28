@@ -1,24 +1,23 @@
-// Webview-Bindings für den MD Reader.
+// Webview-Bindings und natives Dateiladen für den MD Reader.
 //
-// Enthält alle Go→JavaScript-Bindings: Dateiverarbeitung,
-// Einstellungen, Vollbild und App-Steuerung.
+// Kernprinzip: Go liest und rendert Dateien, baut das vollständige HTML
+// (inkl. Toolbar, CSS, JS) und übergibt es direkt an w.SetHtml().
+// Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-03-28
 package main
 
 import (
 	"encoding/base64"
-	"encoding/json"
-	"fmt"
 	"hash/fnv"
 	"log"
+	"md-reader/renderer"
+	"md-reader/ui"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
-
-	"md-reader/renderer"
 
 	webview "github.com/webview/webview_go"
 )
@@ -53,13 +52,11 @@ func trimScrollHistory(cfg *AppConfig) {
 	if len(cfg.ScrollHistory) <= maxScrollHistory {
 		return
 	}
-	// Schlüssel sortieren für deterministisches Kürzen
 	keys := make([]string, 0, len(cfg.ScrollHistory))
 	for k := range cfg.ScrollHistory {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	// Älteste (lexikographisch kleinste) Einträge entfernen
 	toDelete := len(keys) - trimScrollHistoryKept
 	for i := 0; i < toDelete; i++ {
 		delete(cfg.ScrollHistory, keys[i])
@@ -77,46 +74,157 @@ func scrollPosForHash(hash string) int {
 	return app.config.ScrollHistory[hash]
 }
 
+// renderAndDisplay baut das vollständige HTML und übergibt es an den WebView.
+//
+// Go rendert Dateien zu HTML und ruft diese Funktion auf. Sie baut das
+// komplette Seiten-HTML (Toolbar, CSS, JS + gerenderter Inhalt) und
+// übergibt es via w.SetHtml() direkt an den WebView.
+// Kein JavaScript-Roundtrip nötig.
+//
+// Muss NICHT auf dem GTK-Hauptthread aufgerufen werden – w.Dispatch übernimmt das.
+//
+// @param w          Die WebView-Instanz.
+// @param contentHTML Gerenderter HTML-Inhalt der Datei.
+// @param title      Dokumenttitel.
+// @param hash       FNV-64a-Hash des Dateiinhalts (für Scroll-History).
+// @param scrollPos  Gespeicherte Scroll-Position in Pixeln.
+func renderAndDisplay(w webview.WebView, contentHTML, title, hash string, scrollPos int) {
+	uiCfg := ui.UIConfig{
+		FontSize:        app.config.FontSize,
+		DefaultFontSize: defaultFontSize,
+		Theme:           app.config.Theme,
+		IsPortrait:      app.config.Layout == "portrait",
+		ContentHTML:     contentHTML,
+		PageTitle:       title,
+		FileHash:        hash,
+		ScrollPos:       scrollPos,
+	}
+	fullHTML := ui.BuildInitialHTML(uiCfg)
+	// w.SetHtml muss auf dem GTK/WebView-Hauptthread ausgeführt werden
+	w.Dispatch(func() {
+		w.SetHtml(fullHTML)
+	})
+}
+
+// loadFileNative liest eine Datei vom Dateisystem, rendert sie und zeigt sie an.
+//
+// Dies ist der zentrale native Dateilademechanismus. Go liest die Datei,
+// rendert den Inhalt zu HTML und übergibt das vollständige Seiten-HTML
+// via w.SetHtml() an den WebView – ohne JavaScript-Binding-Roundtrip.
+//
+// @param w        Die WebView-Instanz.
+// @param filePath Vollständiger Pfad zur Datei.
+func loadFileNative(w webview.WebView, filePath string) {
+	// Sicherheitsprüfung: nur unterstützte Formate laden
+	if !renderer.IsSupportedFile(filePath) {
+		log.Printf("Nicht unterstütztes Format: %s", filePath)
+		return
+	}
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() {
+		log.Printf("Datei nicht gefunden oder Verzeichnis: %s", filePath)
+		return
+	}
+
+	// Rohdaten lesen (für Hash-Berechnung)
+	rawBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Datei konnte nicht gelesen werden: %v", err)
+		return
+	}
+
+	// Dateiinhalt rendern
+	result, err := renderer.LoadFile(filePath)
+	if err != nil {
+		log.Printf("Datei konnte nicht gerendert werden: %v", err)
+		return
+	}
+
+	// Relative Bild-Pfade in absolute konvertieren (nicht bei EPUB)
+	if !renderer.IsEpubFile(filePath) {
+		result.HTML = renderer.ResolveImagePaths(result.HTML, filepath.Dir(filePath))
+	}
+
+	// Hash berechnen und gespeicherte Scroll-Position nachschlagen
+	hash := computeHash(rawBytes)
+	scrollPos := scrollPosForHash(hash)
+
+	// Zuletzt geöffnete Datei und Konfiguration persistieren
+	app.config.LastFile = filePath
+	saveConfig(app.config)
+
+	// Vollständiges HTML bauen und an WebView übergeben
+	renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+}
+
 // registerBindings registriert alle Go→JS-Bindings am WebView.
 //
 // @param w Die WebView-Instanz.
 func registerBindings(w webview.WebView) {
-	// processMarkdown: Konvertiert Text-Formate (MD, TXT, FB2) zu HTML.
-	// Berechnet FNV-64a-Hash des Inhalts und gibt gespeicherte Scroll-Position zurück.
-	w.Bind("processMarkdown", func(content string, filename string) RenderResult {
-		result, err := renderer.ParseContent(content, filename)
-		if err != nil {
-			return RenderResult{Error: err.Error()}
-		}
-		hash := computeHash([]byte(content))
-		scrollPos := scrollPosForHash(hash)
-		return RenderResult{
-			HTML:      result.HTML,
-			Title:     result.Title,
-			FileHash:  hash,
-			ScrollPos: scrollPos,
+	// openFilePicker: Öffnet den nativen Datei-Öffnen-Dialog.
+	//
+	// Go öffnet zenity/kdialog (Linux) bzw. den nativen Windows-Dialog,
+	// liest die Datei und ruft w.SetHtml() auf. JS muss nichts weiter tun.
+	w.Bind("openFilePicker", func() {
+		path := openFilePickerBlocking(w)
+		if path != "" {
+			loadFileNative(w, path)
 		}
 	})
 
+	// loadNativeFile: Lädt eine Datei anhand ihres vollständigen Pfads nativ.
+	//
+	// Wird vom Drag & Drop Handler aufgerufen wenn der Pfad aus text/uri-list
+	// verfügbar ist (Linux + Windows Explorer). Go liest und rendert die Datei
+	// direkt, kein FileReader in JS nötig.
+	//
+	// @param path Vollständiger Dateipfad.
+	w.Bind("loadNativeFile", func(path string) {
+		if path != "" {
+			loadFileNative(w, path)
+		}
+	})
+
+	// processMarkdown: Konvertiert Text-Inhalt (MD, TXT, FB2, HTML, TEX) zu HTML.
+	//
+	// Fallback für Drag & Drop auf Windows wenn kein Pfad aus URI-Liste verfügbar.
+	// JS liest die Datei via FileReader und sendet den Inhalt hierher.
+	// Go rendert und ruft w.SetHtml() auf – kein RenderResult-Roundtrip mehr.
+	//
+	// @param content  Dateiinhalt als UTF-8-String.
+	// @param filename Dateiname (nur für Format-Erkennung, kein vollständiger Pfad).
+	w.Bind("processMarkdown", func(content string, filename string) {
+		result, err := renderer.ParseContent(content, filename)
+		if err != nil {
+			log.Printf("processMarkdown Fehler: %v", err)
+			return
+		}
+		hash := computeHash([]byte(content))
+		scrollPos := scrollPosForHash(hash)
+		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+	})
+
 	// processEpub: Konvertiert eine EPUB-Datei (Base64-kodiert) zu HTML.
-	// Berechnet FNV-64a-Hash der dekodierten Binärdaten.
-	w.Bind("processEpub", func(base64Data string, filename string) RenderResult {
+	//
+	// Fallback für Drag & Drop auf Windows. JS liest EPUB binär via FileReader,
+	// kodiert als Base64 und sendet hierher. Go rendert und ruft w.SetHtml() auf.
+	//
+	// @param base64Data EPUB-Dateiinhalt als Base64-kodierter String.
+	// @param filename   Dateiname für die Titelzeile.
+	w.Bind("processEpub", func(base64Data string, filename string) {
 		data, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
-			return RenderResult{Error: "Base64-Dekodierung fehlgeschlagen: " + err.Error()}
+			log.Printf("processEpub Base64-Fehler: %v", err)
+			return
 		}
 		result, err := renderer.ParseEpub(data, filename)
 		if err != nil {
-			return RenderResult{Error: err.Error()}
+			log.Printf("processEpub Render-Fehler: %v", err)
+			return
 		}
 		hash := computeHash(data)
 		scrollPos := scrollPosForHash(hash)
-		return RenderResult{
-			HTML:      result.HTML,
-			Title:     result.Title,
-			FileHash:  hash,
-			ScrollPos: scrollPos,
-		}
+		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
 	})
 
 	// persistState: Speichert Zoom, Theme und Layout.
@@ -125,24 +233,6 @@ func registerBindings(w webview.WebView) {
 		app.config.Theme = theme
 		app.config.Layout = layout
 		saveConfig(app.config)
-	})
-
-	// persistLastFile: Speichert den vollständigen Dateipfad in der Konfiguration.
-	// Die Scroll-Position wird separat per saveScrollPos gespeichert.
-	//
-	// Sicherheit: Pfad-Validierung gegen Path-Traversal (RISK-004 Fix).
-	//
-	// @param path Vollständiger, validierter Dateipfad.
-	w.Bind("persistLastFile", func(path string) {
-		if path != "" {
-			// Nur existierende, unterstützte Dateien als LastFile akzeptieren
-			if renderer.IsSupportedFile(path) {
-				if info, err := os.Stat(path); err == nil && !info.IsDir() {
-					app.config.LastFile = path
-					saveConfig(app.config)
-				}
-			}
-		}
 	})
 
 	// saveScrollPos: Speichert die Scroll-Position für einen Dateiinhalt-Hash.
@@ -178,113 +268,5 @@ func registerBindings(w webview.WebView) {
 			toggleNativeFullscreen(w)
 		})
 		return newState
-	})
-
-	// openFilePicker: Öffnet den nativen Datei-Öffnen-Dialog (Strg+O).
-	//
-	// Gibt den ausgewählten Dateipfad als String zurück (leer bei Abbruch).
-	// JS ruft danach openFileByPath() auf um die Datei zu laden.
-	w.Bind("openFilePicker", func() string {
-		return openFilePickerBlocking(w)
-	})
-
-	// openFileByPath: Lädt eine Datei vom Dateisystem anhand des vollständigen Pfads.
-	//
-	// Wird von JS nach openFilePicker() und bei Drag & Drop auf Linux genutzt,
-	// wo e.dataTransfer.files in WebKitGTK leer sein kann (bekanntes GTK-Problem).
-	// Gibt RenderResult zurück – genau wie processMarkdown/processEpub.
-	//
-	// Sicherheit: Pfad wird gegen IsSupportedFile validiert.
-	//
-	// @param path Vollständiger Dateipfad.
-	// @return RenderResult mit HTML, Titel, Hash und Scroll-Position.
-	w.Bind("openFileByPath", func(path string) RenderResult {
-		// Nur unterstützte Formate zulassen
-		if !renderer.IsSupportedFile(path) {
-			return RenderResult{Error: "Nicht unterstütztes Dateiformat: " + path}
-		}
-		// Existenz und Typ prüfen
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			return RenderResult{Error: "Datei nicht gefunden: " + path}
-		}
-		// Rohdaten lesen (für Hash-Berechnung)
-		rawBytes, err := os.ReadFile(path)
-		if err != nil {
-			return RenderResult{Error: "Datei konnte nicht gelesen werden: " + err.Error()}
-		}
-		// Datei rendern
-		result, err := renderer.LoadFile(path)
-		if err != nil {
-			return RenderResult{Error: err.Error()}
-		}
-		// Relative Bild-Pfade in absolute konvertieren (nur bei Nicht-EPUB)
-		if !renderer.IsEpubFile(path) {
-			result.HTML = renderer.ResolveImagePaths(result.HTML, filepath.Dir(path))
-		}
-		hash := computeHash(rawBytes)
-		scrollPos := scrollPosForHash(hash)
-		// Zuletzt geöffnete Datei und Config persistieren
-		app.config.LastFile = path
-		saveConfig(app.config)
-		return RenderResult{
-			HTML:      result.HTML,
-			Title:     result.Title,
-			FileHash:  hash,
-			ScrollPos: scrollPos,
-		}
-	})
-}
-
-// loadFileOnStartup lädt eine Datei beim Programmstart (oder per Datei-Dialog)
-// und zeigt sie im WebView an. Stellt die zuletzt gespeicherte Scroll-Position wieder her.
-//
-// @param w        Die WebView-Instanz.
-// @param filePath Vollständiger Pfad zur Datei.
-func loadFileOnStartup(w webview.WebView, filePath string) {
-	// Rohe Bytes lesen (für Hash-Berechnung konsistent mit processMarkdown/processEpub)
-	rawBytes, err := os.ReadFile(filePath)
-	if err != nil {
-		log.Printf("Datei konnte nicht gelesen werden: %v", err)
-		return
-	}
-
-	result, err := renderer.LoadFile(filePath)
-	if err != nil {
-		log.Printf("Datei konnte nicht gerendert werden: %v", err)
-		return
-	}
-	if !renderer.IsEpubFile(filePath) {
-		result.HTML = renderer.ResolveImagePaths(result.HTML, filepath.Dir(filePath))
-	}
-
-	// Zuletzt geöffnete Datei persistieren
-	app.config.LastFile = filePath
-	saveConfig(app.config)
-
-	// Hash berechnen und gespeicherte Scroll-Position nachschlagen
-	hash := computeHash(rawBytes)
-	scrollPos := scrollPosForHash(hash)
-
-	// JSON-sichere Werte für JS-Eval vorbereiten
-	htmlJSON, err := json.Marshal(result.HTML)
-	if err != nil {
-		return
-	}
-	titleJSON, err := json.Marshal(result.Title)
-	if err != nil {
-		return
-	}
-	hashJSON, err := json.Marshal(hash)
-	if err != nil {
-		return
-	}
-
-	w.Dispatch(func() {
-		w.Eval(fmt.Sprintf(`
-            setTimeout(function() {
-                showContent(%s, %s, %d, %s);
-            }, 150);
-        `, string(htmlJSON), string(titleJSON), scrollPos, string(hashJSON)))
 	})
 }

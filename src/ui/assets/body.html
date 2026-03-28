@@ -86,17 +86,17 @@
      ============================================================ -->
 <div id="main">
 
-  <!-- Drop-Zone -->
-  <div id="drop-zone">
+  <!-- Drop-Zone (wird ausgeblendet wenn Go direkt Inhalt via SetHtml einbettet) -->
+  <div id="drop-zone" style="display:{{DROP_ZONE_DISPLAY}}">
     <div class="drop-icon">&#128218;</div>
     <div class="drop-title">Datei hier ablegen</div>
     <div class="drop-subtitle">.md &middot; .epub &middot; .txt &middot; .fb2 und weitere</div>
     <div class="drop-error" id="drop-error"></div>
   </div>
 
-  <!-- Inhaltsbereich (nach dem Laden sichtbar) -->
-  <div id="content-wrapper">
-    <div id="content"></div>
+  <!-- Inhaltsbereich: Go bettet gerendertes HTML direkt ein ({{CONTENT_HTML}}) -->
+  <div id="content-wrapper" style="display:{{CONTENT_WRAPPER_DISPLAY}}">
+    <div id="content">{{CONTENT_HTML}}</div>
   </div>
 
 </div>

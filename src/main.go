@@ -114,7 +114,7 @@ func main() {
 		}
 	}
 	if startFile != "" {
-		loadFileOnStartup(w, startFile)
+		loadFileNative(w, startFile)
 	}
 
 	// Hauptschleife (blockiert bis Fenster geschlossen wird)

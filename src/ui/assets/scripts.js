@@ -25,7 +25,10 @@ var isFullscreen = false;
 var currentTheme = 'light';
 
 /** Hash des aktuell angezeigten Dateiinhalts (FNV-64a, von Go berechnet) */
-var currentFileHash = '';
+var currentFileHash = '{{INITIAL_FILE_HASH}}';
+
+/** Anfangs-Scroll-Position aus Go-Konfiguration (0 = Seitenanfang) */
+var initialScrollPos = {{INITIAL_SCROLL_POS}};
 
 /** TOC-Seitenleiste geöffnet? */
 var tocOpen = false;
@@ -73,6 +76,25 @@ applyFontSize();
     currentTheme = 'retro';
   }
   updateThemeButton();
+})();
+
+/**
+ * Inhalt initialisieren wenn Go via SetHtml() Inhalt direkt eingebettet hat.
+ *
+ * Go rendert Dateien zu HTML und übergibt das vollständige Seiten-HTML an
+ * w.SetHtml(). Der gerenderteinhalt ist dann bereits im DOM vorhanden.
+ * Diese Funktion erkennt das und initialisiert TOC, Mermaid, KaTeX und
+ * stellt die gespeicherte Scroll-Position wieder her.
+ */
+(function initEmbeddedContent() {
+  var content = document.getElementById('content');
+  if (!content || !content.innerHTML.trim()) return;
+  buildTOC();
+  initMermaid();
+  initKaTeX(content);
+  if (initialScrollPos > 0) {
+    setTimeout(function() { mainEl.scrollTop = initialScrollPos; }, 80);
+  }
 })();
 
 // ============================================================
@@ -143,19 +165,21 @@ document.addEventListener('dragleave', function(e) {
   }
 });
 
-/** Verarbeitet das Ablegen einer Datei: EPUB binär, alle anderen als UTF-8-Text */
+/**
+ * Verarbeitet das Ablegen einer Datei.
+ *
+ * Bevorzugter Weg (Linux + Windows): Pfad aus text/uri-list → Go liest nativ.
+ * Fallback (Windows ohne URI-Liste): FileReader → Inhalt an Go senden.
+ * In beiden Fällen baut Go das vollständige HTML und ruft w.SetHtml() auf.
+ */
 document.addEventListener('drop', function(e) {
   e.preventDefault(); e.stopPropagation();
   dropZone.classList.remove('dragover');
 
-  // Pfad aus URI-Liste extrahieren (immer versuchen, auch als Fallback)
   var droppedFilePath = extractFilePathFromDrop(e);
 
-  var files = e.dataTransfer.files;
-
-  // WebKitGTK auf Linux (z.B. Linux Mint/Nemo): files ist oft leer, aber der
-  // Pfad ist über text/uri-list verfügbar. In diesem Fall Go zum Lesen nutzen.
-  if ((!files || files.length === 0) && droppedFilePath) {
+  // Bevorzugt: Go liest die Datei nativ anhand des Pfads (Linux + Windows Explorer)
+  if (droppedFilePath) {
     if (!isSupportedFile(droppedFilePath)) {
       var ext = droppedFilePath.split('.').pop() || '?';
       showDropError('Nicht unterst\u00FCtztes Format: .' + ext +
@@ -163,18 +187,16 @@ document.addEventListener('drop', function(e) {
       return;
     }
     hideDropError();
-    // Go liest und rendert die Datei direkt vom Dateisystem
-    if (typeof window.openFileByPath === 'function') {
-      window.openFileByPath(droppedFilePath).then(function(result) {
-        handleRenderResult(result);
-      }).catch(function(err) { showDropError('Fehler: ' + err); });
+    if (typeof window.loadNativeFile === 'function') {
+      window.loadNativeFile(droppedFilePath);
     }
     return;
   }
 
+  // Fallback: FileReader (z.B. Windows WebView2 ohne URI-Liste)
+  var files = e.dataTransfer.files;
   if (!files || files.length === 0) return;
   var file = files[0];
-
   if (!isSupportedFile(file.name)) {
     showDropError('Nicht unterst\u00FCtztes Format: ' + file.name +
       '\n\nUnterst\u00FCtzt: ' + supportedExtensions.join(', '));
@@ -184,26 +206,20 @@ document.addEventListener('drop', function(e) {
 
   var reader = new FileReader();
   if (file.name.toLowerCase().endsWith('.epub')) {
-    // EPUB: binär lesen, als Base64 an Go senden
+    // EPUB: binär lesen, als Base64 an Go senden → Go ruft w.SetHtml() auf
     reader.onload = function(ev) {
-      window.processEpub(arrayBufferToBase64(ev.target.result), file.name)
-        .then(function(result) {
-          handleRenderResult(result);
-          // Pfad nach erfolgreichem Rendern speichern
-          if (!result || !result.error) saveLastFile(droppedFilePath);
-        }).catch(function(e) { showDropError('Fehler: ' + e); });
+      if (typeof window.processEpub === 'function') {
+        window.processEpub(arrayBufferToBase64(ev.target.result), file.name);
+      }
     };
     reader.onerror = function() { showDropError('EPUB konnte nicht gelesen werden.'); };
     reader.readAsArrayBuffer(file);
   } else {
-    // Text-Formate: als UTF-8 lesen
+    // Text-Formate: als UTF-8 lesen → Go ruft w.SetHtml() auf
     reader.onload = function(ev) {
-      window.processMarkdown(ev.target.result, file.name)
-        .then(function(result) {
-          handleRenderResult(result);
-          // Pfad nach erfolgreichem Rendern speichern
-          if (!result || !result.error) saveLastFile(droppedFilePath);
-        }).catch(function(e) { showDropError('Fehler: ' + e); });
+      if (typeof window.processMarkdown === 'function') {
+        window.processMarkdown(ev.target.result, file.name);
+      }
     };
     reader.onerror = function() { showDropError('Datei konnte nicht gelesen werden.'); };
     reader.readAsText(file, 'utf-8');
@@ -653,22 +669,14 @@ function onScrollDebounced() {
 /**
  * Öffnet den nativen Datei-Öffnen-Dialog via Go-Binding.
  *
- * openFilePicker() gibt den Pfad als String zurück. Danach lädt
- * openFileByPath() die Datei direkt über Go (kein FileReader nötig).
- * Das löst das Problem auf Linux Mint wo w.Eval nach zenity nicht zuverlässig war.
+ * Go öffnet zenity/kdialog (Linux) bzw. den nativen Windows-Dialog,
+ * liest die gewählte Datei, rendert sie und ruft w.SetHtml() auf.
+ * JS muss nichts weiter tun – fire and forget.
  */
 function openFile() {
-  if (typeof window.openFilePicker !== 'function') return;
-  window.openFilePicker().then(function(path) {
-    if (!path || !path.trim()) return;
-    if (typeof window.openFileByPath === 'function') {
-      window.openFileByPath(path.trim()).then(function(result) {
-        handleRenderResult(result);
-      }).catch(function(err) {
-        showDropError('Fehler beim \u00d6ffnen: ' + err);
-      });
-    }
-  });
+  if (typeof window.openFilePicker === 'function') {
+    window.openFilePicker();
+  }
 }
 
 // ============================================================
