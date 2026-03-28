@@ -1,0 +1,3 @@
+# Hinweis: Diese Datei wird nicht mehr von Jekyll verarbeitet.
+# Das Deployment erfolgt über .github/workflows/pages.yml (GitHub Actions, kein Jekyll).
+# Die .nojekyll-Datei bleibt als Fallback für den Legacy-Pages-Build erhalten.

@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>MD Reader – Markdown &amp; Document Viewer</title>
+	<meta name="description" content="A fast, cross-platform viewer for Markdown, EPUB, FB2, LaTeX and more with GitHub-like rendering.">
+	<style>
+		/* ── Reset & Base ───────────────────────────────────────────────── */
+		*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+		:root {
+			--bg:        #0d1117;
+			--bg2:       #161b22;
+			--bg3:       #21262d;
+			--border:    #30363d;
+			--text:      #e6edf3;
+			--muted:     #8b949e;
+			--accent:    #58a6ff;
+			--accent2:   #3fb950;
+			--accent3:   #f0883e;
+			--accent4:   #bc8cff;
+			--danger:    #f85149;
+			--radius:    8px;
+			--shadow:    0 4px 24px rgba(0,0,0,.5);
+		}
+
+		html { scroll-behavior: smooth; }
+
+		body {
+			background: var(--bg);
+			color: var(--text);
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			font-size: 16px;
+			line-height: 1.6;
+		}
+
+		a { color: var(--accent); text-decoration: none; }
+		a:hover { text-decoration: underline; }
+
+		/* ── Layout ─────────────────────────────────────────────────────── */
+		.container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+		/* ── Nav ─────────────────────────────────────────────────────────── */
+		nav {
+			position: sticky;
+			top: 0;
+			z-index: 100;
+			background: rgba(13,17,23,.92);
+			backdrop-filter: blur(12px);
+			border-bottom: 1px solid var(--border);
+		}
+
+		nav .inner {
+			display: flex;
+			align-items: center;
+			gap: 24px;
+			padding: 14px 24px;
+			max-width: 960px;
+			margin: 0 auto;
+		}
+
+		nav .brand {
+			font-weight: 700;
+			font-size: 1.1rem;
+			color: var(--text);
+			white-space: nowrap;
+		}
+
+		nav .brand span { color: var(--accent); }
+
+		nav ul {
+			display: flex;
+			gap: 20px;
+			list-style: none;
+			margin-left: auto;
+		}
+
+		nav ul a {
+			color: var(--muted);
+			font-size: .9rem;
+			transition: color .2s;
+		}
+
+		nav ul a:hover { color: var(--text); text-decoration: none; }
+
+		/* ── Hero ────────────────────────────────────────────────────────── */
+		.hero {
+			padding: 80px 0 64px;
+			text-align: center;
+			background: radial-gradient(ellipse at 50% 0%, rgba(88,166,255,.08) 0%, transparent 70%);
+		}
+
+		.hero-badge {
+			display: inline-block;
+			background: rgba(88,166,255,.12);
+			border: 1px solid rgba(88,166,255,.3);
+			color: var(--accent);
+			font-size: .8rem;
+			font-weight: 600;
+			padding: 4px 12px;
+			border-radius: 20px;
+			margin-bottom: 20px;
+			letter-spacing: .04em;
+			text-transform: uppercase;
+		}
+
+		.hero h1 {
+			font-size: clamp(2rem, 5vw, 3.2rem);
+			font-weight: 800;
+			line-height: 1.15;
+			margin-bottom: 20px;
+			letter-spacing: -.02em;
+		}
+
+		.hero h1 .highlight { color: var(--accent); }
+
+		.hero p {
+			color: var(--muted);
+			font-size: 1.15rem;
+			max-width: 560px;
+			margin: 0 auto 36px;
+		}
+
+		.btn-group {
+			display: flex;
+			gap: 12px;
+			justify-content: center;
+			flex-wrap: wrap;
+		}
+
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			padding: 12px 24px;
+			border-radius: var(--radius);
+			font-size: .95rem;
+			font-weight: 600;
+			transition: all .2s;
+			border: 1px solid transparent;
+		}
+
+		.btn-primary {
+			background: var(--accent);
+			color: #0d1117;
+			border-color: var(--accent);
+		}
+
+		.btn-primary:hover {
+			background: #79b8ff;
+			text-decoration: none;
+		}
+
+		.btn-secondary {
+			background: var(--bg3);
+			color: var(--text);
+			border-color: var(--border);
+		}
+
+		.btn-secondary:hover {
+			background: #2d333b;
+			text-decoration: none;
+		}
+
+		/* ── Badges ──────────────────────────────────────────────────────── */
+		.badges {
+			display: flex;
+			gap: 8px;
+			justify-content: center;
+			flex-wrap: wrap;
+			margin-top: 32px;
+		}
+
+		.badge {
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 4px;
+			padding: 4px 10px;
+			font-size: .78rem;
+			color: var(--muted);
+			font-family: monospace;
+		}
+
+		.badge.green { border-color: rgba(63,185,80,.4); color: var(--accent2); }
+		.badge.blue  { border-color: rgba(88,166,255,.4); color: var(--accent); }
+		.badge.orange{ border-color: rgba(240,136,62,.4); color: var(--accent3); }
+
+		/* ── Section ─────────────────────────────────────────────────────── */
+		section { padding: 64px 0; }
+
+		section + section { border-top: 1px solid var(--border); }
+
+		.section-label {
+			font-size: .78rem;
+			font-weight: 700;
+			letter-spacing: .1em;
+			text-transform: uppercase;
+			color: var(--accent);
+			margin-bottom: 8px;
+		}
+
+		h2 {
+			font-size: 1.8rem;
+			font-weight: 700;
+			margin-bottom: 12px;
+		}
+
+		.section-lead {
+			color: var(--muted);
+			font-size: 1.05rem;
+			margin-bottom: 40px;
+			max-width: 600px;
+		}
+
+		/* ── Feature Grid ────────────────────────────────────────────────── */
+		.feature-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+			gap: 16px;
+		}
+
+		.feature-card {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 20px 24px;
+			transition: border-color .2s;
+		}
+
+		.feature-card:hover { border-color: var(--accent); }
+
+		.feature-icon {
+			font-size: 1.4rem;
+			margin-bottom: 10px;
+		}
+
+		.feature-card h3 {
+			font-size: 1rem;
+			font-weight: 600;
+			margin-bottom: 6px;
+		}
+
+		.feature-card p {
+			font-size: .88rem;
+			color: var(--muted);
+			line-height: 1.5;
+		}
+
+		/* ── Formats ─────────────────────────────────────────────────────── */
+		.format-list {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 10px;
+		}
+
+		.format-chip {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 8px 16px;
+			font-family: monospace;
+			font-size: .92rem;
+		}
+
+		.format-chip .ext { color: var(--accent); font-weight: 700; }
+		.format-chip .desc { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+
+		/* ── Download ────────────────────────────────────────────────────── */
+		.download-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+			gap: 16px;
+		}
+
+		.download-card {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 24px;
+			transition: border-color .2s, box-shadow .2s;
+		}
+
+		.download-card:hover {
+			border-color: var(--accent);
+			box-shadow: 0 0 0 1px var(--accent);
+		}
+
+		.dl-platform {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			margin-bottom: 14px;
+		}
+
+		.dl-icon { font-size: 1.6rem; }
+
+		.dl-platform h3 { font-size: 1rem; font-weight: 600; }
+
+		.dl-platform .arch {
+			font-size: .78rem;
+			color: var(--muted);
+		}
+
+		.dl-files { display: flex; flex-direction: column; gap: 6px; }
+
+		.dl-file {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 8px 12px;
+			transition: border-color .2s;
+		}
+
+		.dl-file:hover { border-color: var(--accent); }
+
+		.dl-file .name {
+			font-family: monospace;
+			font-size: .85rem;
+			color: var(--text);
+		}
+
+		.dl-file .arrow {
+			color: var(--accent);
+			font-size: .85rem;
+		}
+
+		.dl-note {
+			margin-top: 10px;
+			font-size: .8rem;
+			color: var(--muted);
+		}
+
+		/* ── Changelog ───────────────────────────────────────────────────── */
+		.changelog-list { display: flex; flex-direction: column; gap: 0; }
+
+		.changelog-entry {
+			display: grid;
+			grid-template-columns: 200px 1fr;
+			gap: 24px;
+			padding: 28px 0;
+			border-bottom: 1px solid var(--border);
+		}
+
+		.changelog-entry:last-child { border-bottom: none; }
+
+		.cl-meta { padding-top: 2px; }
+
+		.cl-build {
+			font-size: 1rem;
+			font-weight: 700;
+			color: var(--text);
+			margin-bottom: 4px;
+		}
+
+		.cl-date {
+			font-size: .8rem;
+			color: var(--muted);
+		}
+
+		.cl-body h3 {
+			font-size: 1.05rem;
+			font-weight: 600;
+			margin-bottom: 8px;
+		}
+
+		.cl-tags {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			margin-bottom: 10px;
+		}
+
+		.tag {
+			font-size: .72rem;
+			font-weight: 600;
+			padding: 2px 8px;
+			border-radius: 20px;
+			letter-spacing: .02em;
+			text-transform: uppercase;
+		}
+
+		.tag-feature  { background: rgba(63,185,80,.15);  color: var(--accent2); border: 1px solid rgba(63,185,80,.3); }
+		.tag-bugfix   { background: rgba(248,81,73,.15);  color: var(--danger);  border: 1px solid rgba(248,81,73,.3); }
+		.tag-infra    { background: rgba(88,166,255,.15); color: var(--accent);  border: 1px solid rgba(88,166,255,.3); }
+		.tag-refactor { background: rgba(188,140,255,.15);color: var(--accent4); border: 1px solid rgba(188,140,255,.3); }
+		.tag-security { background: rgba(240,136,62,.15); color: var(--accent3); border: 1px solid rgba(240,136,62,.3); }
+
+		.cl-body ul {
+			list-style: none;
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+
+		.cl-body ul li {
+			font-size: .9rem;
+			color: var(--muted);
+			padding-left: 16px;
+			position: relative;
+		}
+
+		.cl-body ul li::before {
+			content: "–";
+			position: absolute;
+			left: 0;
+			color: var(--border);
+		}
+
+		.cl-body ul li strong { color: var(--text); }
+
+		/* ── Shortcuts ───────────────────────────────────────────────────── */
+		.shortcut-table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		.shortcut-table tr {
+			border-bottom: 1px solid var(--border);
+		}
+
+		.shortcut-table tr:last-child { border-bottom: none; }
+
+		.shortcut-table td {
+			padding: 10px 12px;
+			font-size: .9rem;
+		}
+
+		.shortcut-table td:first-child {
+			width: 160px;
+		}
+
+		kbd {
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 4px;
+			padding: 2px 7px;
+			font-family: monospace;
+			font-size: .83rem;
+			color: var(--text);
+		}
+
+		.shortcut-table td:last-child { color: var(--muted); }
+
+		/* ── Install tabs ────────────────────────────────────────────────── */
+		.tabs {
+			display: flex;
+			gap: 0;
+			border-bottom: 1px solid var(--border);
+			margin-bottom: 24px;
+		}
+
+		.tab {
+			padding: 10px 20px;
+			font-size: .9rem;
+			cursor: pointer;
+			color: var(--muted);
+			border-bottom: 2px solid transparent;
+			margin-bottom: -1px;
+			transition: color .2s;
+		}
+
+		.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+		.tab:hover  { color: var(--text); }
+
+		.tab-content { display: none; }
+		.tab-content.active { display: block; }
+
+		pre {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 16px 20px;
+			overflow-x: auto;
+			font-family: "Cascadia Code", "Fira Code", monospace;
+			font-size: .88rem;
+			line-height: 1.6;
+		}
+
+		pre .comment { color: #8b949e; }
+		pre .cmd     { color: #79c0ff; }
+		pre .flag    { color: #ffab70; }
+		pre .path    { color: #a5d6ff; }
+		pre .str     { color: #a5d6ff; }
+
+		/* ── Footer ──────────────────────────────────────────────────────── */
+		footer {
+			border-top: 1px solid var(--border);
+			padding: 32px 0;
+			text-align: center;
+		}
+
+		footer p { font-size: .85rem; color: var(--muted); }
+		footer a { color: var(--muted); }
+		footer a:hover { color: var(--text); }
+
+		/* ── Responsive ──────────────────────────────────────────────────── */
+		@media (max-width: 640px) {
+			.changelog-entry {
+				grid-template-columns: 1fr;
+				gap: 8px;
+			}
+
+			nav ul { gap: 12px; }
+		}
+	</style>
+</head>
+<body>
+
+<!-- ── Navigation ─────────────────────────────────────────────────────────── -->
+<nav>
+	<div class="inner">
+		<span class="brand">MD <span>Reader</span></span>
+		<ul>
+			<li><a href="#features">Features</a></li>
+			<li><a href="#formats">Formats</a></li>
+			<li><a href="#download">Download</a></li>
+			<li><a href="#install">Install</a></li>
+			<li><a href="#changelog">Changelog</a></li>
+			<li><a href="https://github.com/WaschbaerImHaus/text-reader">GitHub</a></li>
+		</ul>
+	</div>
+</nav>
+
+<!-- ── Hero ───────────────────────────────────────────────────────────────── -->
+<section class="hero">
+	<div class="container">
+		<div class="hero-badge">Open Source · Cross-Platform</div>
+		<h1>
+			Read documents the way<br>
+			<span class="highlight">GitHub renders them.</span>
+		</h1>
+		<p>
+			MD Reader is a lightweight, fast viewer for Markdown, EPUB, FictionBook, LaTeX and more —
+			with GitHub-like rendering, offline math, syntax highlighting and native OS integration.
+		</p>
+		<div class="btn-group">
+			<a class="btn btn-primary" href="#download">
+				⬇ Download
+			</a>
+			<a class="btn btn-secondary" href="https://github.com/WaschbaerImHaus/text-reader">
+				View on GitHub
+			</a>
+		</div>
+		<div class="badges">
+			<span class="badge green">Build 27</span>
+			<span class="badge blue">Go 1.26</span>
+			<span class="badge blue">WebKitGTK 4.1 · Edge WebView2</span>
+			<span class="badge orange">Linux · Windows · ARM</span>
+		</div>
+	</div>
+</section>
+
+<!-- ── Features ───────────────────────────────────────────────────────────── -->
+<section id="features">
+	<div class="container">
+		<div class="section-label">Capabilities</div>
+		<h2>Everything you need to read documents</h2>
+		<p class="section-lead">
+			Built on a real browser engine — no Electron, no heavyweight runtime.
+			Just Go, WebView and native OS APIs.
+		</p>
+		<div class="feature-grid">
+			<div class="feature-card">
+				<div class="feature-icon">🎨</div>
+				<h3>GitHub-style Rendering</h3>
+				<p>goldmark with GFM extensions. Tables, task lists, strikethrough, autolinks — all rendered identically to GitHub.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">✨</div>
+				<h3>Syntax Highlighting</h3>
+				<p>Code blocks highlighted via chroma with the GitHub Light/Dark palette. Language auto-detection.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">∑</div>
+				<h3>Offline KaTeX Math</h3>
+				<p>Full LaTeX math rendering with KaTeX v0.16 — completely embedded, no CDN. Inline <code>$…$</code>, display <code>$$…$$</code>, equation/align environments.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">📊</div>
+				<h3>Mermaid Diagrams</h3>
+				<p>Flowcharts, sequence diagrams and more rendered inline. Falls back to code block when offline.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">📚</div>
+				<h3>Table of Contents</h3>
+				<p>Auto-generated TOC sidebar (toggle ☰) built from all headings. Shown only when headings are present.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">🔍</div>
+				<h3>Full-text Search</h3>
+				<p>Ctrl+F opens an inline search bar. Match highlighting, hit counter and forward/back navigation.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">🌙</div>
+				<h3>Three Themes</h3>
+				<p>GitHub Light, GitHub Dark and a retro CRT phosphor-green mode. All preserved across restarts.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">📐</div>
+				<h3>Portrait &amp; Landscape</h3>
+				<p>Portrait mode centers content at 750 px (scales with zoom). Landscape uses full window width.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">🔎</div>
+				<h3>Zoom (25 %–400 %)</h3>
+				<p>Ctrl+Scroll, Ctrl+/−/0 or toolbar buttons. Zoom level displayed and persisted.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">📂</div>
+				<h3>Drag &amp; Drop</h3>
+				<p>Drop any supported file directly onto the window. Native file-picker via Ctrl+O as alternative.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">💾</div>
+				<h3>Persistent State</h3>
+				<p>Last opened file, scroll position (per file, FNV-64a hash), zoom, theme and layout — all restored on next launch.</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon">🖥</div>
+				<h3>Native OS Integration</h3>
+				<p>GTK fullscreen (Linux) and WinAPI fullscreen (Windows). Native file dialogs. Correct window icon in taskbar and Alt+Tab.</p>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- ── Formats ────────────────────────────────────────────────────────────── -->
+<section id="formats">
+	<div class="container">
+		<div class="section-label">File Formats</div>
+		<h2>Six formats supported</h2>
+		<p class="section-lead">One viewer for all your documents.</p>
+		<div class="format-list">
+			<div class="format-chip">
+				<div class="ext">.md .markdown</div>
+				<div class="desc">Full GFM — tables, tasks, autolinks</div>
+			</div>
+			<div class="format-chip">
+				<div class="ext">.epub</div>
+				<div class="desc">EPUB 2 &amp; 3, embedded images</div>
+			</div>
+			<div class="format-chip">
+				<div class="ext">.fb2</div>
+				<div class="desc">FictionBook 2 — XML, poems, epigraphs</div>
+			</div>
+			<div class="format-chip">
+				<div class="ext">.tex</div>
+				<div class="desc">LaTeX — sections, theorems, math, tables</div>
+			</div>
+			<div class="format-chip">
+				<div class="ext">.txt</div>
+				<div class="desc">Monospace, preserved whitespace</div>
+			</div>
+			<div class="format-chip">
+				<div class="ext">.html .htm</div>
+				<div class="desc">Body extracted, scripts removed</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- ── Download ───────────────────────────────────────────────────────────── -->
+<section id="download">
+	<div class="container">
+		<div class="section-label">Download</div>
+		<h2>Get MD Reader</h2>
+		<p class="section-lead">
+			Pre-built binaries for every platform.
+			All releases are on
+			<a href="https://github.com/WaschbaerImHaus/text-reader/releases">GitHub Releases</a>.
+		</p>
+		<div class="download-grid">
+
+			<!-- Windows -->
+			<div class="download-card">
+				<div class="dl-platform">
+					<div class="dl-icon">🪟</div>
+					<div>
+						<h3>Windows</h3>
+						<div class="arch">x86_64 · WebView2 (pre-installed on Win 10+)</div>
+					</div>
+				</div>
+				<div class="dl-files">
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader-setup.exe">
+						<span class="name">md-reader-setup.exe</span>
+						<span class="arrow">↓</span>
+					</a>
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader.exe">
+						<span class="name">md-reader.exe</span>
+						<span class="arrow">↓</span>
+					</a>
+				</div>
+				<p class="dl-note">Installer creates start menu entry + optional desktop icon.</p>
+			</div>
+
+			<!-- Linux x86_64 -->
+			<div class="download-card">
+				<div class="dl-platform">
+					<div class="dl-icon">🐧</div>
+					<div>
+						<h3>Linux x86_64</h3>
+						<div class="arch">Ubuntu 24.04+ · Linux Mint 22+ · glibc ≥ 2.39</div>
+					</div>
+				</div>
+				<div class="dl-files">
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader">
+						<span class="name">md-reader</span>
+						<span class="arrow">↓</span>
+					</a>
+				</div>
+				<p class="dl-note">Requires: <code>libwebkit2gtk-4.1-0</code>, <code>libgtk-3-0</code></p>
+			</div>
+
+			<!-- Linux ARM64 -->
+			<div class="download-card">
+				<div class="dl-platform">
+					<div class="dl-icon">🐧</div>
+					<div>
+						<h3>Linux ARM64</h3>
+						<div class="arch">Raspberry Pi 4/5 · Apple M-series (Linux)</div>
+					</div>
+				</div>
+				<div class="dl-files">
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader-linux-arm64">
+						<span class="name">md-reader-linux-arm64</span>
+						<span class="arrow">↓</span>
+					</a>
+				</div>
+				<p class="dl-note">Requires: <code>libwebkit2gtk-4.1-0</code>, <code>libgtk-3-0</code></p>
+			</div>
+
+			<!-- Linux ARMhf -->
+			<div class="download-card">
+				<div class="dl-platform">
+					<div class="dl-icon">🐧</div>
+					<div>
+						<h3>Linux ARMhf (32-bit)</h3>
+						<div class="arch">Raspberry Pi 3 · older ARM boards</div>
+					</div>
+				</div>
+				<div class="dl-files">
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader-linux-armhf">
+						<span class="name">md-reader-linux-armhf</span>
+						<span class="arrow">↓</span>
+					</a>
+				</div>
+				<p class="dl-note">Requires: <code>libwebkit2gtk-4.1-0</code>, <code>libgtk-3-0</code></p>
+			</div>
+
+		</div>
+
+		<p style="margin-top:24px; color: var(--muted); font-size:.9rem;">
+			Looking for a specific version?
+			<a href="https://github.com/WaschbaerImHaus/text-reader/releases">Browse all releases →</a>
+		</p>
+	</div>
+</section>
+
+<!-- ── Install ────────────────────────────────────────────────────────────── -->
+<section id="install">
+	<div class="container">
+		<div class="section-label">Installation</div>
+		<h2>Get started in seconds</h2>
+		<p class="section-lead">
+			MD Reader needs no configuration. Download, run, drop a file.
+		</p>
+
+		<div class="tabs">
+			<div class="tab active" onclick="switchTab(event,'windows')">Windows</div>
+			<div class="tab" onclick="switchTab(event,'linux')">Linux</div>
+			<div class="tab" onclick="switchTab(event,'build')">Build from Source</div>
+		</div>
+
+		<div id="tab-windows" class="tab-content active">
+			<ol style="padding-left:20px; color:var(--muted); font-size:.95rem; display:flex; flex-direction:column; gap:10px;">
+				<li>Download <strong style="color:var(--text)">md-reader-setup.exe</strong> from the Releases page.</li>
+				<li>Run the installer — it creates a Start Menu entry automatically.</li>
+				<li>Optionally add a desktop shortcut during setup.</li>
+				<li>Drag any <code>.md</code>, <code>.epub</code>, <code>.fb2</code>, <code>.tex</code> or <code>.txt</code> file onto the window.</li>
+			</ol>
+			<p style="margin-top:16px; font-size:.85rem; color:var(--muted);">
+				Windows 10 or newer recommended (WebView2 is pre-installed).
+				On older systems:
+				<a href="https://developer.microsoft.com/en-us/microsoft-edge/webview2/">install WebView2 Runtime</a>.
+			</p>
+		</div>
+
+		<div id="tab-linux" class="tab-content">
+			<pre><span class="comment"># Install runtime dependencies</span>
+<span class="cmd">sudo apt</span> install libwebkit2gtk-4.1-0 libgtk-3-0
+
+<span class="comment"># Download and make executable</span>
+<span class="cmd">wget</span> https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader
+<span class="cmd">chmod</span> +x md-reader
+
+<span class="comment"># Run with a file</span>
+./md-reader <span class="path">/path/to/file.md</span></pre>
+		</div>
+
+		<div id="tab-build" class="tab-content">
+			<pre><span class="comment"># Prerequisites</span>
+<span class="cmd">sudo apt</span> install libwebkit2gtk-4.1-dev libgtk-3-dev \
+  gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 nsis
+
+<span class="comment"># Clone the repository</span>
+<span class="cmd">git clone</span> https://github.com/WaschbaerImHaus/text-reader.git
+<span class="cmd">cd</span> text-reader
+
+<span class="comment"># Build all targets (Linux + Windows + tests)</span>
+<span class="cmd">make</span> all
+
+<span class="comment"># Or individual targets</span>
+<span class="cmd">make</span> linux          <span class="comment"># Linux x86_64</span>
+<span class="cmd">make</span> windows        <span class="comment"># Windows x86_64 (.exe + installer)</span>
+<span class="cmd">make</span> linux-arm64    <span class="comment"># Linux ARM64 (requires aarch64-linux-gnu-gcc)</span>
+<span class="cmd">make</span> test           <span class="comment"># Run all tests</span></pre>
+		</div>
+
+		<!-- Keyboard shortcuts -->
+		<h3 style="margin-top:48px; margin-bottom:16px; font-size:1.1rem;">Keyboard Shortcuts</h3>
+		<table class="shortcut-table">
+			<tr><td><kbd>F11</kbd></td><td>Toggle fullscreen</td></tr>
+			<tr><td><kbd>Ctrl+F</kbd></td><td>Open / close search</td></tr>
+			<tr><td><kbd>Ctrl+O</kbd></td><td>Open file picker</td></tr>
+			<tr><td><kbd>Ctrl++</kbd> / <kbd>Ctrl+−</kbd></td><td>Zoom in / out</td></tr>
+			<tr><td><kbd>Ctrl+0</kbd></td><td>Reset zoom</td></tr>
+			<tr><td><kbd>Ctrl+Scroll</kbd></td><td>Zoom with mouse wheel</td></tr>
+			<tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Scroll 60 px</td></tr>
+			<tr><td><kbd>Page Up</kbd> / <kbd>Page Down</kbd></td><td>Scroll 90% of viewport</td></tr>
+			<tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to top / bottom</td></tr>
+		</table>
+	</div>
+</section>
+
+<!-- ── Changelog ──────────────────────────────────────────────────────────── -->
+<section id="changelog">
+	<div class="container">
+		<div class="section-label">Release History</div>
+		<h2>Changelog</h2>
+		<p class="section-lead">
+			Full history of every build.
+			<a href="https://github.com/WaschbaerImHaus/text-reader/releases">GitHub Releases →</a>
+		</p>
+
+		<div class="changelog-list">
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 27</div>
+					<div class="cl-date">2026-03-15</div>
+				</div>
+				<div class="cl-body">
+					<h3>Docker Build-Container</h3>
+					<div class="cl-tags">
+						<span class="tag tag-infra">infra</span>
+					</div>
+					<ul>
+						<li><strong>docker/Dockerfile</strong> — Ubuntu 24.04, Go 1.26, WebKitGTK 4.1, MinGW, ARM cross-compilers, NSIS</li>
+						<li><strong>docker/build.sh</strong> — automated build script with image caching</li>
+						<li>New Makefile targets: <code>docker-build</code>, <code>docker-build-release</code>, <code>docker-rebuild</code></li>
+						<li>Ensures glibc ≥ 2.39 compatibility (Ubuntu 24.04+, Linux Mint 22+, Debian 12+)</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 26</div>
+					<div class="cl-date">2026-03-15</div>
+				</div>
+				<div class="cl-body">
+					<h3>Fix CXXABI_1.3.15 on Linux Mint</h3>
+					<div class="cl-tags">
+						<span class="tag tag-bugfix">bugfix</span>
+					</div>
+					<ul>
+						<li>Static libstdc++ linking resolves <code>CXXABI_1.3.15</code> symbol errors on Linux Mint 21 and glibc 2.35 systems</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 25</div>
+					<div class="cl-date">2026-03-15</div>
+				</div>
+				<div class="cl-body">
+					<h3>English README &amp; GitHub Release Setup</h3>
+					<div class="cl-tags">
+						<span class="tag tag-infra">infra</span>
+					</div>
+					<ul>
+						<li>README.md rewritten in English as user-facing manual</li>
+						<li>GitHub release workflow configured with English release notes</li>
+						<li>Updated NSIS installer and start menu entry</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 24</div>
+					<div class="cl-date">2026-03-11</div>
+				</div>
+				<div class="cl-body">
+					<h3>Fix \label{eq:…} in KaTeX</h3>
+					<div class="cl-tags">
+						<span class="tag tag-bugfix">bugfix</span>
+					</div>
+					<ul>
+						<li><code>\label{...}</code> macros inside math environments no longer appear as literal text — stripped before KaTeX rendering</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 23</div>
+					<div class="cl-date">2026-03-11</div>
+				</div>
+				<div class="cl-body">
+					<h3>LaTeX Rendering Improvements</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+					</div>
+					<ul>
+						<li>CSS for all LaTeX elements (theorem, lemma, proof, definition, corollary, remark, example)</li>
+						<li><code>\newtheorem</code> → styled display names; <code>proof</code> → "Proof. … ∎"</li>
+						<li><code>\newcommand</code> / <code>\DeclareMathOperator</code> extracted from preamble and passed to KaTeX</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 22</div>
+					<div class="cl-date">2026-03-11</div>
+				</div>
+				<div class="cl-body">
+					<h3>LaTeX .tex Support &amp; EPUB Image Embedding</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+						<span class="tag tag-bugfix">bugfix</span>
+					</div>
+					<ul>
+						<li>New format: <strong>.tex</strong> files via <code>renderer/latex.go</code> — sections, lists, theorem environments, math, footnotes, links</li>
+						<li>EPUB images now embedded as Base64 Data-URIs (ZIP path resolution fixed)</li>
+						<li>Platform file dialogs updated to include <code>*.tex</code></li>
+						<li>17 new LaTeX tests, 3 new EPUB image tests</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 20</div>
+					<div class="cl-date">2026-03-08</div>
+				</div>
+				<div class="cl-body">
+					<h3>Windows NSIS Installer</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+					</div>
+					<ul>
+						<li>LZMA-compressed installer with MUI2 wizard (NSIS)</li>
+						<li>Start menu entry (required) and optional desktop icon</li>
+						<li>Uninstaller cleans all files, shortcuts and registry entries</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 19</div>
+					<div class="cl-date">2026-03-08</div>
+				</div>
+				<div class="cl-body">
+					<h3>Offline KaTeX Math Rendering</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+					</div>
+					<ul>
+						<li>KaTeX v0.16.37 fully embedded — no CDN dependency, works offline</li>
+						<li>All fonts converted to Base64 Data-URIs at runtime via <code>sync.Once</code></li>
+						<li>Supports inline <code>$…$</code>, display <code>$$…$$</code>, <code>\(...\)</code>, <code>\[…\]</code>, equation/align</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 18</div>
+					<div class="cl-date">2026-03-08</div>
+				</div>
+				<div class="cl-body">
+					<h3>Three Bug Fixes</h3>
+					<div class="cl-tags">
+						<span class="tag tag-bugfix">bugfix</span>
+					</div>
+					<ul>
+						<li><strong>Bug #006</strong> — Zoom display after restart showed wrong default font size</li>
+						<li><strong>Bug #007</strong> — Console window appeared on Windows startup</li>
+						<li><strong>Bug #008</strong> — App icon missing in Windows Explorer (ICO regenerated 16/32/48/256 px)</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 14</div>
+					<div class="cl-date">2026-03-08</div>
+				</div>
+				<div class="cl-body">
+					<h3>Scroll History &amp; Portrait Zoom Scaling</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+					</div>
+					<ul>
+						<li>Scroll position saved per file using FNV-64a hash (max 200 entries)</li>
+						<li>Portrait mode width now scales proportionally with zoom level</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 11</div>
+					<div class="cl-date">2026-03-08</div>
+				</div>
+				<div class="cl-body">
+					<h3>Security, Mermaid.js, ARM Builds</h3>
+					<div class="cl-tags">
+						<span class="tag tag-security">security</span>
+						<span class="tag tag-feature">feature</span>
+						<span class="tag tag-infra">infra</span>
+					</div>
+					<ul>
+						<li>CSP Meta-Tag added (script-src, style-src, font-src, img-src)</li>
+						<li>Path validation in <code>persistLastFile</code> (RISK-004 fixed)</li>
+						<li>Mermaid.js flowcharts and sequence diagrams (CDN with code-block fallback)</li>
+						<li>Linux ARM64 and ARMhf cross-compilation</li>
+						<li><code>go:embed</code> for all CSS/JS/HTML assets; binaries stripped (<code>-s -w</code>)</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 7</div>
+					<div class="cl-date">2026-03-07</div>
+				</div>
+				<div class="cl-body">
+					<h3>Multi-Format Support, TOC &amp; Search</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+					</div>
+					<ul>
+						<li>New formats: <strong>EPUB 2/3</strong>, <strong>FictionBook 2</strong> (.fb2), <strong>Plaintext</strong> (.txt)</li>
+						<li>TOC sidebar auto-built from headings (toggle ☰)</li>
+						<li>Ctrl+F search with <code>&lt;mark&gt;</code> highlighting and match navigation</li>
+						<li>Persistent settings: zoom, theme, layout (<code>state.json</code>)</li>
+						<li>Last opened file restored on startup</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
+					<div class="cl-build">Build 1–5</div>
+					<div class="cl-date">2026-03-05</div>
+				</div>
+				<div class="cl-body">
+					<h3>Initial Release</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+					</div>
+					<ul>
+						<li>Markdown viewer with GitHub-like rendering (goldmark + GFM)</li>
+						<li>Syntax highlighting (chroma), Drag &amp; Drop</li>
+						<li>Portrait / Landscape layout, Zoom (25%–400%)</li>
+						<li>Native fullscreen (F11), Dark &amp; Retro CRT themes</li>
+						<li>Linux (WebKitGTK 4.1) and Windows (Edge WebView2)</li>
+						<li>Cross-compilation: Linux x86_64 and Windows x86_64</li>
+					</ul>
+				</div>
+			</div>
+
+		</div>
+	</div>
+</section>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<footer>
+	<div class="container">
+		<p>
+			<a href="https://github.com/WaschbaerImHaus/text-reader">GitHub</a> ·
+			<a href="https://github.com/WaschbaerImHaus/text-reader/releases">Releases</a> ·
+			<a href="https://github.com/WaschbaerImHaus/text-reader/issues">Issues</a>
+			&nbsp;·&nbsp;
+			Built with Go 1.26, webview_go, goldmark &amp; KaTeX
+		</p>
+		<p style="margin-top:6px;">Author: Kurt Ingwer · MIT License</p>
+	</div>
+</footer>
+
+<script>
+	/* Tab-Umschaltung für den Install-Bereich */
+	function switchTab(e, id) {
+		document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+		document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+		e.currentTarget.classList.add('active');
+		document.getElementById('tab-' + id).classList.add('active');
+	}
+</script>
+
+</body>
+</html>
