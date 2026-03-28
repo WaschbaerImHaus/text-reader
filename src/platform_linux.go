@@ -6,7 +6,7 @@
 // (GTK ist nicht thread-sicher).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-03-28
 
 //go:build linux
 
@@ -104,6 +104,8 @@ gchar* showFileDialog(void* parentWindow) {
 import "C"
 
 import (
+	"os/exec"
+	"strings"
 	"unsafe"
 
 	webview "github.com/webview/webview_go"
@@ -166,16 +168,61 @@ func showOpenFileDialog(parentWindow unsafe.Pointer) string {
 	return C.GoString(filename)
 }
 
+// showOpenFileDialogExternal versucht zenity oder kdialog als externen Dateidialog.
+//
+// Externe Prozesse umgehen das GTK-Threading-Problem komplett, da sie in
+// einem eigenen Prozess laufen und keine GTK-Event-Loop-Konflikte erzeugen.
+// Rückgabe: (Pfad, true) wenn ein externes Tool gefunden wurde (auch bei Abbruch),
+//           ("", false) wenn kein externes Tool verfügbar ist.
+//
+// @return Ausgewählter Dateipfad (leer bei Abbruch) und ob ein Tool gefunden wurde.
+func showOpenFileDialogExternal() (string, bool) {
+	patterns := "*.md *.markdown *.txt *.epub *.fb2 *.html *.htm *.tex"
+
+	// Versuch 1: zenity (GNOME, Cinnamon, XFCE, Mint)
+	if _, err := exec.LookPath("zenity"); err == nil {
+		cmd := exec.Command("zenity",
+			"--file-selection",
+			"--title=Datei öffnen – MD Reader",
+			"--file-filter=Unterstützte Dateien|"+patterns,
+			"--file-filter=Alle Dateien|*",
+		)
+		// Bei Abbruch liefert zenity Exit-Code 1; Output ist dann leer
+		out, _ := cmd.Output()
+		return strings.TrimSpace(string(out)), true
+	}
+
+	// Versuch 2: kdialog (KDE/Plasma)
+	if _, err := exec.LookPath("kdialog"); err == nil {
+		cmd := exec.Command("kdialog",
+			"--getopenfilename", ".",
+			patterns,
+			"--title", "Datei öffnen – MD Reader",
+		)
+		out, _ := cmd.Output()
+		return strings.TrimSpace(string(out)), true
+	}
+
+	// Kein externes Tool gefunden
+	return "", false
+}
+
 // openFilePickerBlocking öffnet den Datei-Dialog und blockiert bis zur Auswahl.
 //
-// Auf Linux muss showOpenFileDialog auf dem GTK-Hauptthread laufen.
-// w.Dispatch() stellt das sicher; ein Channel überträgt das Ergebnis zurück.
+// Bevorzugt externe Tools (zenity/kdialog), die keinen GTK-Hauptthread benötigen
+// und deshalb keine Deadlocks erzeugen können. Nur wenn kein externes Tool
+// verfügbar ist, wird der GTK-eigene Dialog auf dem Hauptthread ausgeführt.
 //
 // @param w Die WebView-Instanz.
 // @return Gewählter Dateipfad oder leer bei Abbruch.
 func openFilePickerBlocking(w webview.WebView) string {
+	// Externe Tools bevorzugen – kein GTK-Threading-Problem
+	if path, ok := showOpenFileDialogExternal(); ok {
+		return path
+	}
+
+	// Fallback: GTK-Dialog auf dem GTK-Hauptthread (kann auf manchen Systemen hängen)
 	ch := make(chan string, 1)
-	// GTK-Dialog auf dem Hauptthread ausführen
 	w.Dispatch(func() {
 		ch <- showOpenFileDialog(w.Window())
 	})

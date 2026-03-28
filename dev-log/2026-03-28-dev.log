@@ -1,0 +1,25 @@
+2026-03-28 - Build 27: Fix Dateidialog-Hang auf Linux Mint
+
+Problem:
+  Auf Linux Mint (und vermutlich anderen GTK-Distributionen) hängt die App
+  beim Klick auf "Datei öffnen". Der gtk_dialog_run()-Aufruf blockiert die
+  GTK-Event-Loop wenn der WebView gleichzeitig aktiv ist.
+
+Ursache:
+  `openFilePickerBlocking()` dispatcht den GTK-Dialog auf den Hauptthread.
+  Auf bestimmten Systemen (Linux Mint, Cinnamon) kollidiert gtk_dialog_run()
+  mit dem WebKitGTK-Event-Loop – der Dialog erscheint nie.
+
+Fix (platform_linux.go):
+  Neue Funktion `showOpenFileDialogExternal()` versucht zuerst:
+  1. zenity  – auf GNOME/Cinnamon/XFCE/Mint verfügbar
+  2. kdialog – auf KDE/Plasma verfügbar
+  Nur wenn kein externes Tool gefunden wird, fällt die App auf den
+  GTK-Dialog-Fallback zurück.
+
+  Externe Prozesse laufen eigenständig und haben keine GTK-Threading-
+  Konflikte, da sie in einem separaten Prozess ausgeführt werden.
+
+Dateien geändert:
+  - src/platform_linux.go (showOpenFileDialogExternal + openFilePickerBlocking)
+  - src/build.txt (26 → 27)
