@@ -6,9 +6,12 @@
 //   - HTML (.html, .htm)        → Body-Extraktion und Bereinigung
 //   - FB2 (.fb2)                → XML-Token-Parser
 //   - EPUB (.epub)              → ZIP + XHTML-Kapitel-Extraktion
+//   - LaTeX (.tex)              → eigener LaTeX-Parser
+//   - PDF (.pdf)                → base64-Daten-URI in <embed>, nativ im WebView
+//   - PostScript (.ps)          → gs-Konvertierung zu PDF, Fallback: <pre>-Block
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-04-15
 package renderer
 
 import (
@@ -54,7 +57,8 @@ var md = goldmark.New(
 // LoadFile lädt eine unterstützte Datei und konvertiert sie zu HTML.
 //
 // Erkennt das Format anhand der Dateiendung und leitet an den
-// entsprechenden Parser weiter. EPUB-Dateien werden als Binärdaten gelesen.
+// entsprechenden Parser weiter. Binärdateien (EPUB, PDF, PS) werden
+// als []byte gelesen; alle anderen Formate als UTF-8-Text.
 //
 // @param filePath Absoluter oder relativer Pfad zur Datei.
 // @return Result mit gerendertem HTML und Metadaten, oder Fehler.
@@ -66,6 +70,22 @@ func LoadFile(filePath string) (*Result, error) {
 			return nil, err
 		}
 		return ParseEpub(data, filepath.Base(filePath))
+	}
+	// PDF benötigt Binärdaten (base64-Einbettung)
+	if IsPDFFile(filePath) {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		return ParsePDF(data, filepath.Base(filePath))
+	}
+	// PostScript benötigt Binärdaten (gs-Konvertierung oder Text-Fallback)
+	if IsPSFile(filePath) {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		return ParsePS(data, filepath.Base(filePath))
 	}
 	// Alle anderen Formate als Text lesen
 	data, err := os.ReadFile(filePath)
@@ -128,14 +148,14 @@ func IsMarkdownFile(path string) bool {
 
 // IsSupportedFile prüft ob eine Datei ein unterstütztes Format hat.
 //
-// Unterstützte Endungen: .md, .markdown, .txt, .fb2, .epub, .tex
+// Unterstützte Endungen: .md, .markdown, .txt, .fb2, .epub, .tex, .pdf, .ps
 //
 // @param path Dateipfad der zu prüfenden Datei.
 // @return true wenn das Format unterstützt wird.
 func IsSupportedFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
-	case ".md", ".markdown", ".txt", ".fb2", ".epub", ".tex":
+	case ".md", ".markdown", ".txt", ".fb2", ".epub", ".tex", ".pdf", ".ps":
 		return true
 	}
 	return false
