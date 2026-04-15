@@ -195,8 +195,8 @@ gchar* showFileDialog(void* parentWindow) {
     // Filter: Unterstützte Dateiformate
     GtkFileFilter *filter = gtk_file_filter_new();
     gtk_file_filter_set_name(filter, "Unterst\u00fctzte Dateien");
-    const char *patterns[] = {"*.md","*.markdown","*.txt","*.epub","*.fb2","*.html","*.htm","*.tex"};
-    for (int i = 0; i < 8; i++) {
+    const char *patterns[] = {"*.md","*.markdown","*.txt","*.epub","*.fb2","*.html","*.htm","*.tex","*.pdf","*.ps"};
+    for (int i = 0; i < 10; i++) {
         gtk_file_filter_add_pattern(filter, patterns[i]);
     }
     gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
@@ -296,7 +296,7 @@ func showOpenFileDialog(parentWindow unsafe.Pointer) string {
 //
 // @return Ausgewählter Dateipfad (leer bei Abbruch) und ob ein Tool gefunden wurde.
 func showOpenFileDialogExternal() (string, bool) {
-	patterns := "*.md *.markdown *.txt *.epub *.fb2 *.html *.htm *.tex"
+	patterns := "*.md *.markdown *.txt *.epub *.fb2 *.html *.htm *.tex *.pdf *.ps"
 
 	// Versuch 1: zenity (GNOME, Cinnamon, XFCE, Mint)
 	if _, err := exec.LookPath("zenity"); err == nil {
