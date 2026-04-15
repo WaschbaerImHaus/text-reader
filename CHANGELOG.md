@@ -4,13 +4,40 @@ All notable changes to MD Reader are documented here.
 
 ---
 
-## Build 34 – 2026-04-15
+## Build 37 – 2026-04-15
+
+### Fixed
+- PostScript rendering on Windows: PS pages are now rendered directly to PNG images via
+  Ghostscript (`-sDEVICE=png16m`, 144 DPI) instead of the broken PS→PDF→`<embed>` path.
+  Edge WebView2 does not support `data:` URIs in `<embed>` for PDFs.
+- No-Ghostscript fallback now shows a friendly message with install instructions instead of
+  silently displaying raw PS source text.
+
+---
+
+## Build 36 – 2026-04-15
+
+### Fixed
+- PDF rendering on Linux: `<embed type="application/pdf">` does not work in WebKitGTK
+  without a PDF plugin. PDFs are now rendered via `pdftoppm` (poppler-utils): each page
+  converted to 144 DPI PNG, embedded as `data:image/png;base64` image tags.
+  Falls back to `<embed>` on Windows where Edge WebView2 handles PDFs natively.
+- Content Security Policy: added `object-src data:` to allow `<embed>` on Windows.
+- Ghostscript flags: added `-dNODISPLAY -dSAFER` to prevent X11 window flash on Linux.
 
 ### Added
-- PDF support: native rendering via WebKit (Linux) and Edge WebView2 (Windows)
-- PostScript (.ps) support: converts to PDF via Ghostscript if available, falls back to plain text display
-- Windows installer: optional Ghostscript component for PostScript rendering
-- File picker and drag & drop now accept .pdf and .ps files
+- CSS styles for multi-page PDF/PS image display (drop shadows, dark-mode support).
+
+---
+
+## Build 34–35 – 2026-04-15
+
+### Added
+- PDF support (.pdf): rendered natively via WebView embed
+- PostScript support (.ps): converted via Ghostscript, falls back to plain text
+- Windows installer: optional Ghostscript download component
+- File picker and drag & drop support for .pdf and .ps
+- Native file loading via `w.SetHtml()` (no JS roundtrip)
 
 ---
 
