@@ -194,7 +194,12 @@ SectionEnd
 ; Optionale Komponente: Ghostscript für PostScript-Unterstützung
 Section "Ghostscript (PostScript support)" SecGhostscript
 
-    ; Prüfen ob gs.exe bereits im System-PATH vorhanden ist
+    ; Prüfen ob Ghostscript bereits installiert ist.
+    ; Der offizielle Windows-Installer legt gswin64c.exe an (nicht gs.exe),
+    ; daher beide Namen prüfen.
+    nsExec::ExecToStack 'cmd /C where gswin64c.exe'
+    Pop $0
+    StrCmp $0 "0" gs_already_installed
     nsExec::ExecToStack 'cmd /C where gs.exe'
     Pop $0
     StrCmp $0 "0" gs_already_installed
