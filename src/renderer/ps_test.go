@@ -36,27 +36,37 @@ func TestIsPSFile(t *testing.T) {
 	}
 }
 
-// TestParsePSFallback prüft den Text-Fallback wenn gs nicht verfügbar ist
-// oder die Konvertierung fehlschlägt.
-func TestParsePSFallback(t *testing.T) {
-	// Einfaches PS-Dokument (kein echtes PostScript, gs schlägt fehl → Fallback)
-	psContent := `%!PS-Adobe-3.0
-%%Title: Testdokument
-%%Pages: 1
-%%EndComments
-/Helvetica findfont 12 scalefont setfont
-100 700 moveto (Hallo Welt) show
-showpage`
+// TestParsePSOutputFormat prüft dass ParsePS immer ein nutzbares HTML-Ergebnis liefert.
+//
+// Akzeptiert alle drei möglichen Ausgaben:
+//   - PNG-Bilder (gs vorhanden, Konvertierung erfolgreich)
+//   - PS-Quelltext als <pre>-Block (gs vorhanden, Konvertierung fehlgeschlagen)
+//   - Hinweismeldung + Quelltext (gs nicht installiert)
+func TestParsePSOutputFormat(t *testing.T) {
+	psContent := "%!PS-Adobe-3.0\n%%Title: Testdokument\n%%Pages: 1\n%%EndComments\n" +
+		"/Helvetica findfont 12 scalefont setfont\n100 700 moveto (Hallo Welt) show\nshowpage\n"
 
 	result, err := renderer.ParsePS([]byte(psContent), "test.ps")
 	if err != nil {
 		t.Fatalf("ParsePS() sollte keinen Fehler zurückgeben: %v", err)
 	}
-	// Entweder PDF-Einbettung oder Text-Fallback – beides ist korrekt
-	hasPDF := strings.Contains(result.HTML, "data:application/pdf;base64,")
+	if result == nil {
+		t.Fatal("ParsePS() sollte kein nil Result zurückgeben")
+	}
+	if result.HTML == "" {
+		t.Error("ParsePS() HTML darf nicht leer sein")
+	}
+	if result.Title == "" {
+		t.Error("ParsePS() Title darf nicht leer sein")
+	}
+
+	// Mindestens eine der drei Ausgabeformen muss vorhanden sein:
+	hasPNGPages := strings.Contains(result.HTML, "class=\"pdf-pages\"")
 	hasText := strings.Contains(result.HTML, "PS-Adobe") || strings.Contains(result.HTML, "Hallo Welt")
-	if !hasPDF && !hasText {
-		t.Error("ParsePS() HTML enthält weder PDF-Einbettung noch PS-Quelltext")
+	hasHint := strings.Contains(result.HTML, "Ghostscript")
+
+	if !hasPNGPages && !hasText && !hasHint {
+		t.Errorf("ParsePS() HTML hat unerwartetes Format (erste 200 Zeichen): %.200s", result.HTML)
 	}
 }
 

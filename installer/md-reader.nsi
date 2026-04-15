@@ -32,7 +32,7 @@ Unicode True
 
 ; Installer metadata
 !define APP_NAME        "MD Reader"
-!define APP_VERSION     "1.0.36"
+!define APP_VERSION     "1.0.37"
 !define APP_PUBLISHER   "Kurt Ingwer"
 !define APP_DESCRIPTION "Markdown viewer with GitHub-like rendering"
 !define APP_URL         "https://github.com/WaschbaerImHaus/text-reader"
