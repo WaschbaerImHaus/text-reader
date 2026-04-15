@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	webview "github.com/webview/webview_go"
 )
@@ -220,6 +221,44 @@ func registerBindings(w webview.WebView) {
 		result, err := renderer.ParseEpub(data, filename)
 		if err != nil {
 			log.Printf("processEpub Render-Fehler: %v", err)
+			return
+		}
+		hash := computeHash(data)
+		scrollPos := scrollPosForHash(hash)
+		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+	})
+
+	// processBinaryFile: Konvertiert binäre Dateiinhalte (EPUB, PDF, PS) zu HTML.
+	//
+	// Universeller Fallback für Drag & Drop auf Windows, wenn kein nativer Pfad
+	// aus der URI-Liste verfügbar ist. JS liest Dateien binär via FileReader,
+	// kodiert als Base64 und sendet hierher. Go rendert und ruft w.SetHtml() auf.
+	//
+	// @param base64Data Dateiinhalt als Base64-kodierter String.
+	// @param filename   Dateiname mit Erweiterung (für Format-Erkennung und Titel).
+	w.Bind("processBinaryFile", func(base64Data string, filename string) {
+		data, err := base64.StdEncoding.DecodeString(base64Data)
+		if err != nil {
+			log.Printf("processBinaryFile Base64-Fehler: %v", err)
+			return
+		}
+
+		// Format anhand der Dateiendung bestimmen
+		var result *renderer.Result
+		ext := strings.ToLower(filepath.Ext(filename))
+		switch ext {
+		case ".epub":
+			result, err = renderer.ParseEpub(data, filename)
+		case ".pdf":
+			result, err = renderer.ParsePDF(data, filename)
+		case ".ps":
+			result, err = renderer.ParsePS(data, filename)
+		default:
+			log.Printf("processBinaryFile: unbekanntes Binärformat %q", ext)
+			return
+		}
+		if err != nil {
+			log.Printf("processBinaryFile Render-Fehler: %v", err)
 			return
 		}
 		hash := computeHash(data)
