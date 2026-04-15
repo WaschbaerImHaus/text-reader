@@ -4,6 +4,16 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 34 – 2026-04-15
+
+### Added
+- PDF support: native rendering via WebKit (Linux) and Edge WebView2 (Windows)
+- PostScript (.ps) support: converts to PDF via Ghostscript if available, falls back to plain text display
+- Windows installer: optional Ghostscript component for PostScript rendering
+- File picker and drag & drop now accept .pdf and .ps files
+
+---
+
 ## Build 27 – Docker Build-Container (2026-03-15)
 
 - Added `docker/Dockerfile`: Ubuntu 24.04 base with Go 1.26, WebKitGTK 4.1, MinGW, ARM cross-compilers, NSIS

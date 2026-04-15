@@ -36,6 +36,8 @@
 - **KaTeX LaTeX** (Build 19): Inline-Formeln `$...$`, Block-Formeln `$$...$$`, `\(...\)`, `\[...\]` – vollständig offline eingebettet (keine CDN-Abhängigkeit), alle Schriften als base64-Data-URIs
 - **Scroll-History**: Scroll-Position wird pro Datei (FNV-64a Hash) gespeichert; beim Wiedereröffnen wird automatisch die letzte Leseposition wiederhergestellt (max. 200 Einträge)
 - **Nativer Dateidialog**: 📂-Button / Strg+O öffnet OS-nativen Datei-Öffnen-Dialog (Lösung für WebView2-Einschränkung)
+- [x] PDF-Anzeige (.pdf) – nativ via WebView-Einbettung (Build 34)
+- [x] PostScript-Anzeige (.ps) – via gs-Konvertierung oder Text-Fallback (Build 34)
 
 ## Geplant 📋
 
