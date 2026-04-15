@@ -53,13 +53,22 @@ func ParsePS(data []byte, filename string) (*Result, error) {
 		"-",                 // Eingabe von stdin lesen
 	)
 	cmd.Stdin = bytes.NewReader(data)
+	// WaitDelay stellt sicher dass Pipes vollständig geleert werden
+	// bevor der Prozess nach einem Timeout als beendet gilt.
+	cmd.WaitDelay = 5 * time.Second
 
-	pdfBytes, err := cmd.Output()
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	pdfBytes := stdout.Bytes()
+
 	if err == nil && len(pdfBytes) > 4 {
 		// Prüfen ob die Ausgabe wirklich eine PDF-Signatur hat (%PDF)
 		if bytes.HasPrefix(pdfBytes, []byte("%PDF")) {
 			return ParsePDF(pdfBytes, filename)
 		}
+		// gs lief erfolgreich aber erzeugte keine gültige PDF-Datei
+		log.Printf("ParsePS: gs lieferte keine gültige PDF-Ausgabe (kein %%PDF-Header) – zeige Text-Fallback")
 	}
 
 	// Fallback: PS als Quelltext anzeigen

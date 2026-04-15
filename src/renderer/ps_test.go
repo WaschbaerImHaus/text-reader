@@ -26,6 +26,7 @@ func TestIsPSFile(t *testing.T) {
 		{"doc.pdf", false},
 		{"doc.md", false},
 		{"/home/user/datei.ps", true},
+		{"C:/Users/user/datei.ps", true},
 	}
 	for _, tt := range tests {
 		got := renderer.IsPSFile(tt.path)
@@ -82,6 +83,8 @@ func TestParsePSEmpty(t *testing.T) {
 }
 
 // TestIsSupportedFileWithPS prüft dass .ps als unterstützt erkannt wird.
+// Hinweis: Dieser Test schlägt bis Task 3 fehl, da IsSupportedFile
+// noch keine .ps-Endung kennt.
 func TestIsSupportedFileWithPS(t *testing.T) {
 	tests := []struct {
 		path     string
