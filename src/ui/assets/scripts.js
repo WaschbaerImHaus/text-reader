@@ -102,7 +102,7 @@ applyFontSize();
 // ============================================================
 
 /** Unterstützte Dateiendungen (muss mit IsSupportedFile in renderer/markdown.go übereinstimmen) */
-var supportedExtensions = ['.md', '.markdown', '.txt', '.fb2', '.epub'];
+var supportedExtensions = ['.md', '.markdown', '.txt', '.fb2', '.epub', '.pdf', '.ps'];
 
 /** Prüft ob eine Datei ein unterstütztes Format hat */
 function isSupportedFile(filename) {
@@ -205,14 +205,16 @@ document.addEventListener('drop', function(e) {
   hideDropError();
 
   var reader = new FileReader();
-  if (file.name.toLowerCase().endsWith('.epub')) {
-    // EPUB: binär lesen, als Base64 an Go senden → Go ruft w.SetHtml() auf
+  // Binärformate als ArrayBuffer lesen und base64-kodiert an Go senden
+  var binaryExts = ['.epub', '.pdf', '.ps'];
+  var fileExt = '.' + file.name.toLowerCase().split('.').pop();
+  if (binaryExts.indexOf(fileExt) !== -1) {
     reader.onload = function(ev) {
-      if (typeof window.processEpub === 'function') {
-        window.processEpub(arrayBufferToBase64(ev.target.result), file.name);
+      if (typeof window.processBinaryFile === 'function') {
+        window.processBinaryFile(arrayBufferToBase64(ev.target.result), file.name);
       }
     };
-    reader.onerror = function() { showDropError('EPUB konnte nicht gelesen werden.'); };
+    reader.onerror = function() { showDropError('Datei konnte nicht gelesen werden.'); };
     reader.readAsArrayBuffer(file);
   } else {
     // Text-Formate: als UTF-8 lesen → Go ruft w.SetHtml() auf
