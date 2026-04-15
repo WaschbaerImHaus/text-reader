@@ -104,12 +104,16 @@ func ParsePS(data []byte, filename string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// gs liest PS von stdin und schreibt PDF nach stdout
+	// gs liest PS von stdin und schreibt PDF nach stdout.
+	// -dNODISPLAY: verhindert dass gs ein X11-Fenster öffnet (würde kurz aufblitzen).
+	// -dSAFER: deaktiviert gefährliche PS-Operatoren (Sicherheit).
 	cmd := exec.CommandContext(ctx, gsExe,
 		"-sDEVICE=pdfwrite", // Ausgabe als PDF
 		"-sOutputFile=-",    // - bedeutet stdout
 		"-dBATCH",           // Kein interaktiver Modus
 		"-dNOPAUSE",         // Nicht auf Tastendruck warten
+		"-dNODISPLAY",       // Kein X11/Display-Fenster öffnen
+		"-dSAFER",           // Sicherer Modus: keine Datei-I/O aus PS
 		"-dQUIET",           // Keine Fortschrittsausgabe
 		"-q",                // Noch weniger Ausgabe
 		"-",                 // Eingabe von stdin lesen

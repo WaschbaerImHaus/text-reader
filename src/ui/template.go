@@ -38,7 +38,7 @@ const htmlDocHeadTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob: file:; font-src data:; connect-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob: file:; font-src data:; object-src data:; connect-src 'none';">
 <link rel="icon" type="image/svg+xml" href="{{FAVICON_URI}}">
 <title>{{PAGE_TITLE}}</title>
 <style>
