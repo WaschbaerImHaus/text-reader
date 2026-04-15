@@ -32,7 +32,7 @@ Unicode True
 
 ; Installer metadata
 !define APP_NAME        "MD Reader"
-!define APP_VERSION     "1.0.24"
+!define APP_VERSION     "1.0.34"
 !define APP_PUBLISHER   "Kurt Ingwer"
 !define APP_DESCRIPTION "Markdown viewer with GitHub-like rendering"
 !define APP_URL         "https://github.com/WaschbaerImHaus/text-reader"
@@ -43,6 +43,12 @@ Unicode True
 ; Path to the binary (relative to installer/ directory)
 !define EXE_SRC         "..\build\md-reader.exe"
 !define ICO_SRC         "..\src\ui\assets\favicon.ico"
+
+; Ghostscript – für PostScript-Unterstützung (optional)
+!define GS_VERSION      "10.05.0"
+!define GS_VERSION_FLAT "10050"
+!define GS_INSTALLER    "gs${GS_VERSION_FLAT}w64.exe"
+!define GS_URL          "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs${GS_VERSION_FLAT}/${GS_INSTALLER}"
 
 ; ============================================================
 ; Installer Configuration
@@ -185,15 +191,54 @@ Section "Desktop Shortcut" SecDesktop
                    "$INSTDIR\favicon.ico" 0
 SectionEnd
 
+; Optionale Komponente: Ghostscript für PostScript-Unterstützung
+Section "Ghostscript (PostScript support)" SecGhostscript
+
+    ; Prüfen ob gs.exe bereits im System-PATH vorhanden ist
+    nsExec::ExecToStack 'cmd /C where gs.exe'
+    Pop $0
+    StrCmp $0 "0" gs_already_installed
+
+    ; Ghostscript via PowerShell herunterladen
+    DetailPrint "Downloading Ghostscript ${GS_VERSION}..."
+    nsExec::ExecToLog 'powershell -NoProfile -Command "Invoke-WebRequest -Uri \"${GS_URL}\" -OutFile \"$TEMP\${GS_INSTALLER}\" -UseBasicParsing"'
+    Pop $0
+    StrCmp $0 "0" gs_download_ok
+
+    ; Download fehlgeschlagen
+    MessageBox MB_OK|MB_ICONINFORMATION \
+        "Ghostscript download failed.$\n$\nPostScript files will be displayed as plain text.$\nYou can install Ghostscript manually from ghostscript.com."
+    Goto gs_done
+
+gs_download_ok:
+    ; Ghostscript-Installer silent ausführen
+    DetailPrint "Installing Ghostscript ${GS_VERSION}..."
+    ExecWait '"$TEMP\${GS_INSTALLER}" /S' $0
+    Delete "$TEMP\${GS_INSTALLER}"
+    StrCmp $0 "0" gs_done
+
+    ; Installation fehlgeschlagen
+    MessageBox MB_OK|MB_ICONINFORMATION \
+        "Ghostscript installation failed.$\n$\nPostScript files will be displayed as plain text."
+    Goto gs_done
+
+gs_already_installed:
+    DetailPrint "Ghostscript already installed – skipping."
+
+gs_done:
+SectionEnd
+
 ; ============================================================
 ; Component descriptions (tooltip in component selection)
 ; ============================================================
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    \
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}        \
         "Installs MD Reader to the program directory and creates a start menu entry."
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} \
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop}     \
         "Creates a shortcut on the desktop."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecGhostscript} \
+        "Downloads and installs GPL Ghostscript for PostScript (.ps) rendering. Optional – .ps files will display as plain text without it."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ============================================================
