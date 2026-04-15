@@ -34,6 +34,8 @@ func IsPDFFile(path string) bool {
 // @return Result mit HTML-Einbettung und Metadaten, oder Fehler.
 func ParsePDF(data []byte, filename string) (*Result, error) {
 	// PDF als base64 kodieren
+	// Hinweis: Leere data-Slices werden nicht als Fehler behandelt –
+	// die Validierung des Dateiinhalts liegt beim Aufrufer (LoadFile).
 	b64 := base64.StdEncoding.EncodeToString(data)
 
 	// Embed-Element: position:fixed bricht aus dem #content max-width heraus
@@ -46,7 +48,8 @@ func ParsePDF(data []byte, filename string) (*Result, error) {
 	)
 
 	return &Result{
-		HTML:  html,
-		Title: fileBaseName(filename),
+		HTML:       html,
+		Title:      fileBaseName(filename),
+		RawContent: "", // Binärdaten werden nicht als RawContent gespeichert
 	}, nil
 }

@@ -68,7 +68,10 @@ func TestParsePDFEmpty(t *testing.T) {
 
 // TestParsePDFTitleFromFilename prüft Titelextraktion aus Dateiname.
 func TestParsePDFTitleFromFilename(t *testing.T) {
-	result, _ := renderer.ParsePDF([]byte("%PDF"), "jahresbericht-2025.pdf")
+	result, err := renderer.ParsePDF([]byte("%PDF"), "jahresbericht-2025.pdf")
+	if err != nil {
+		t.Fatalf("ParsePDF() unerwarteter Fehler: %v", err)
+	}
 	if result.Title != "jahresbericht-2025" {
 		t.Errorf("ParsePDF() Title = %q, erwartet %q", result.Title, "jahresbericht-2025")
 	}
