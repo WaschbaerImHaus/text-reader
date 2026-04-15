@@ -39,9 +39,9 @@ func ParsePDF(data []byte, filename string) (*Result, error) {
 	b64 := base64.StdEncoding.EncodeToString(data)
 
 	// Embed-Element: position:fixed bricht aus dem #content max-width heraus
-	// und belegt die gesamte Fläche unterhalb der Toolbar (--toolbar-height = 44px).
+	// und belegt die gesamte Fläche unterhalb der Toolbar (CSS-Variable --toolbar-height).
 	html := fmt.Sprintf(
-		`<div class="pdf-viewer" style="position:fixed;top:44px;left:0;right:0;bottom:0;overflow:hidden;">`+
+		`<div class="pdf-viewer" style="position:fixed;top:var(--toolbar-height);left:0;right:0;bottom:0;overflow:hidden;">`+
 			`<embed src="data:application/pdf;base64,%s" type="application/pdf" width="100%%" height="100%%">`+
 			`</div>`,
 		b64,

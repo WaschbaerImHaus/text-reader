@@ -5,7 +5,7 @@
 // Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-28
+// Letzte Änderung: 2026-04-15
 package main
 
 import (
@@ -141,8 +141,9 @@ func loadFileNative(w webview.WebView, filePath string) {
 		return
 	}
 
-	// Relative Bild-Pfade in absolute konvertieren (nicht bei EPUB)
-	if !renderer.IsEpubFile(filePath) {
+	// Relative Bild-Pfade in absolute konvertieren
+	// Nur bei Textformaten – PDF/PS/EPUB enthalten keine relativen <img>-Pfade
+	if !renderer.IsEpubFile(filePath) && !renderer.IsPDFFile(filePath) && !renderer.IsPSFile(filePath) {
 		result.HTML = renderer.ResolveImagePaths(result.HTML, filepath.Dir(filePath))
 	}
 
@@ -207,8 +208,8 @@ func registerBindings(w webview.WebView) {
 
 	// processEpub: Konvertiert eine EPUB-Datei (Base64-kodiert) zu HTML.
 	//
-	// Fallback für Drag & Drop auf Windows. JS liest EPUB binär via FileReader,
-	// kodiert als Base64 und sendet hierher. Go rendert und ruft w.SetHtml() auf.
+	// Veraltet: Drag & Drop verwendet nun processBinaryFile für alle Binärformate.
+	// Wird für Rückwärtskompatibilität beibehalten.
 	//
 	// @param base64Data EPUB-Dateiinhalt als Base64-kodierter String.
 	// @param filename   Dateiname für die Titelzeile.
