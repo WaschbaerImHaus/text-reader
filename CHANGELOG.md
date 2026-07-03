@@ -4,6 +4,23 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 38 – 2026-07-03
+
+### Fixed
+- EPUB chapter links: clicking a chapter link (e.g. in the book's table of contents)
+  blanked the window. Cause: all chapters are merged into one HTML document loaded via
+  `SetHtml()`, but links like `href="chapter2.xhtml"` still pointed to files that do not
+  exist in the WebView → navigation to nowhere. Fix: internal EPUB links are now rewritten
+  to in-page anchors (`file.xhtml#frag` → `#frag`, `file.xhtml` → chapter container anchor),
+  each chapter is wrapped in `<div class="epub-chapter" id="epub-…">`.
+- Calibre-style jump targets on `<body id="…">` were lost when extracting the chapter body;
+  the ID is now preserved as an invisible anchor so fragment links find their target.
+- Safety net in the UI: clicks on in-page anchors scroll smoothly (like TOC links) instead
+  of relying on `about:blank#…` navigation; clicks on unresolved relative links are
+  swallowed so the window can never go blank from a stray link.
+
+---
+
 ## Build 37 – 2026-04-15
 
 ### Fixed

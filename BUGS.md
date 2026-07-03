@@ -6,6 +6,8 @@
 
 ## Behoben ✅
 
+- **#011** (Build 38): Klick auf einen Kapitellink in einem EPUB (z.B. im Buch-Inhaltsverzeichnis) führte zu einem leeren Fenster. Ursache: Alle Kapitel werden zu EINEM HTML-Dokument zusammengefügt und per `SetHtml()` geladen, aber Links wie `href="chapter2.xhtml"` zeigten weiter auf Dateien, die es im WebView nicht gibt → Navigation ins Leere. Fix (dreiteilig): 1) Interne EPUB-Links werden beim Rendern zu Anker-Links umgeschrieben (`datei.xhtml#frag` → `#frag`, `datei.xhtml` → Kapitel-Container-Anker `#epub-<pfad>`); jedes Kapitel wird in `<div class="epub-chapter" id="epub-…">` gepackt. 2) Calibre setzt Sprungziele als `<body id="…">` – diese ID ging beim Body-Extrahieren verloren und wird nun als unsichtbarer `<span>`-Anker erhalten. 3) Sicherheitsnetz in `scripts.js`: Anker-Klicks scrollen selbst (wie TOC-Links), nicht umgeschriebene relative Links werden abgefangen statt zu navigieren. Verifiziert mit realem Calibre-EPUB (29/29 Links mit gültigem Ziel).
+
 - **#010** (Build 26): Auf Linux Mint (und anderen Systemen mit GCC < 13) erschien beim Start der Fehler `/lib/x86_64-linux-gnu/libstdc++.so.6: version 'CXXABI_1.3.15' not found`. Ursache: Das Build-System verwendet GCC 15.2, der CXXABI_1.3.15 einführt; ältere Systeme kennen diese ABI-Version nicht. Fix: `libstdc++` und `libgcc` werden nun statisch in das Binary eingelinkt via `-extldflags '-static-libstdc++ -static-libgcc'`. Bestätigt für Linux x86_64 und ARM64/ARMhf.
 
 - **#001** (Build 11): Windows Cross-Compilation benötigt EventToken.h Stub (WebView2 SDK Header fehlt in mingw-w64). Workaround per EventToken.h-Stub im GOPATH bestätigt funktionstüchtig. Native Windows-Compilation ohne Stub bleibt empfohlen.

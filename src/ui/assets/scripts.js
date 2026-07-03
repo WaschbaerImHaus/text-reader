@@ -98,6 +98,57 @@ applyFontSize();
 })();
 
 // ============================================================
+// Link-Behandlung im Inhaltsbereich
+// ============================================================
+
+/**
+ * Delegierter Click-Handler für alle Links im Inhaltsbereich.
+ *
+ * Hintergrund: Der Inhalt wird per w.SetHtml() gesetzt – es gibt keine echte
+ * Basis-URL. Ein Klick auf einen relativen Link (z.B. "chapter2.xhtml" in
+ * EPUB-Kapiteln) würde die WebView zu einer nicht existierenden Datei
+ * navigieren lassen → leeres Fenster (Bug Build 38). Daher:
+ *   - "#anker"       → sanft zum Ziel scrollen (wie TOC-Links)
+ *   - relative Pfade → Klick abfangen, Navigation verhindern
+ *   - externe URLs (http/https/mailto) → Standardverhalten
+ */
+(function initContentLinkHandler() {
+  var content = document.getElementById('content');
+  if (!content) return;
+  content.addEventListener('click', function(e) {
+    // Nächstgelegenes <a href=...> zum Klickziel finden (Delegation)
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a || !content.contains(a)) return;
+    var href = a.getAttribute('href') || '';
+
+    // Interner Anker-Link: selbst scrollen statt Browser-Navigation,
+    // damit WebKitGTK nicht versucht "about:blank#..." neu zu laden.
+    if (href.charAt(0) === '#') {
+      e.preventDefault();
+      var id;
+      try { id = decodeURIComponent(href.substring(1)); }
+      catch (err) { id = href.substring(1); }
+      var target = document.getElementById(id);
+      if (!target) {
+        // Fallback: alte <a name="..."> Anker (häufig in EPUB/HTML)
+        var esc = (window.CSS && CSS.escape) ? CSS.escape(id) : id.replace(/"/g, '\\"');
+        target = document.querySelector('a[name="' + esc + '"]');
+      }
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
+    // Externe Protokolle: Standardverhalten beibehalten
+    if (/^(https?:|mailto:|data:)/i.test(href)) return;
+
+    // Relativer Pfad ohne Basis-URL → Navigation würde leeres Fenster
+    // erzeugen → Klick abfangen (Sicherheitsnetz, falls ein Renderer
+    // einen Link nicht umgeschrieben hat)
+    e.preventDefault();
+  });
+})();
+
+// ============================================================
 // Drag & Drop
 // ============================================================
 

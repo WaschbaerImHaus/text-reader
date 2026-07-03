@@ -9,7 +9,7 @@
 //   - XHTML-Dateien → eigentliche Kapitelinhalte
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-07
+// Letzte Änderung: 2026-07-03
 package renderer
 
 import (
@@ -176,6 +176,11 @@ func ParseEpub(data []byte, filename string) (*Result, error) {
 			continue
 		}
 
+		// ID des <body>-Tags sichern BEVOR der Body extrahiert wird:
+		// Calibre & Co. setzen Kapitel-Sprungziele als <body id="...">,
+		// diese ID würde sonst mit dem Body-Tag verloren gehen.
+		bodyID := extractBodyID(string(chapterData))
+
 		// XHTML-Body-Inhalt extrahieren und von style/script befreien
 		body := extractHTMLBody(string(chapterData))
 		body = stripContentTags(body, []string{"style", "script", "link"})
@@ -188,11 +193,24 @@ func ParseEpub(data []byte, filename string) (*Result, error) {
 			continue
 		}
 
+		// Interne Kapitel-Links (z.B. href="chapter2.xhtml") in Anker-Links
+		// umschreiben, sonst navigiert die WebView weg → leeres Fenster.
+		body = rewriteEpubLinks(body, chapterDir)
+
 		// Trenn-Linie zwischen Kapiteln einfügen (nicht vor dem ersten)
 		if chapterNum > 0 {
 			htmlBuilder.WriteString(`<hr class="epub-chapter-separator">`)
 		}
+		// Kapitel in einen Container mit pfadbasierter Anker-ID einpacken,
+		// damit umgeschriebene Kapitel-Links hierher springen können.
+		htmlBuilder.WriteString(`<div class="epub-chapter" id="` + epubAnchorID(itemPath) + `">`)
+		// Gesicherte Body-ID als unsichtbaren Anker wieder einfügen,
+		// damit Links auf "datei.xhtml#bodyID" ihr Ziel finden.
+		if bodyID != "" {
+			htmlBuilder.WriteString(`<span id="` + bodyID + `"></span>`)
+		}
 		htmlBuilder.WriteString(body)
+		htmlBuilder.WriteString(`</div>`)
 		chapterNum++
 	}
 
@@ -305,6 +323,122 @@ func embedEpubImgSrc(html string, r *zip.Reader, chapterDir string, imageMap map
 		// Base64-Data-URI zusammenbauen
 		dataURI := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 		return prefix + dataURI + suffix
+	})
+}
+
+// epubBodyIDDouble erkennt eine id auf dem <body>-Tag (doppelt gequotet).
+var epubBodyIDDouble = regexp.MustCompile(`(?is)<body[^>]*?\sid\s*=\s*"([^"]+)"`)
+
+// epubBodyIDSingle erkennt eine id auf dem <body>-Tag (einfach gequotet).
+var epubBodyIDSingle = regexp.MustCompile(`(?is)<body[^>]*?\sid\s*=\s*'([^']+)'`)
+
+// extractBodyID liest das id-Attribut des <body>-Tags eines XHTML-Dokuments.
+//
+// @param content Vollständiger XHTML-Quelltext des Kapitels.
+// @return Wert des id-Attributs, oder leerer String wenn nicht vorhanden.
+func extractBodyID(content string) string {
+	if m := epubBodyIDDouble.FindStringSubmatch(content); len(m) > 1 {
+		return m[1]
+	}
+	if m := epubBodyIDSingle.FindStringSubmatch(content); len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+// epubAnchorNonAlnum erkennt alle Zeichen die nicht in eine HTML-ID gehören.
+var epubAnchorNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+
+// epubAnchorID erzeugt aus einem ZIP-Pfad eine stabile HTML-Anker-ID.
+//
+// Beispiel: "OEBPS/chapter2.xhtml" → "epub-oebps-chapter2-xhtml"
+//
+// @param zipPath Pfad der Kapiteldatei im EPUB-Archiv.
+// @return HTML-taugliche Anker-ID mit Präfix "epub-".
+func epubAnchorID(zipPath string) string {
+	id := strings.ToLower(zipPath)
+	id = epubAnchorNonAlnum.ReplaceAllString(id, "-")
+	return "epub-" + strings.Trim(id, "-")
+}
+
+// epubLinkHrefDouble erkennt <a>-Tags mit doppelt-gequotetem href-Attribut.
+var epubLinkHrefDouble = regexp.MustCompile(`(?i)(<a[^>]*?\shref\s*=\s*")([^"]+)(")`)
+
+// epubLinkHrefSingle erkennt <a>-Tags mit einfach-gequotetem href-Attribut.
+var epubLinkHrefSingle = regexp.MustCompile(`(?i)(<a[^>]*?\shref\s*=\s*')([^']+)(')`)
+
+// rewriteEpubLinks schreibt relative Datei-Links in EPUB-Kapiteln zu
+// internen Anker-Links um.
+//
+// Da alle Kapitel zu EINEM HTML-Dokument zusammengefügt werden, würde ein
+// Klick auf href="chapter2.xhtml" die WebView zu einer nicht existierenden
+// Datei navigieren lassen (leeres Fenster). Stattdessen:
+//   - "datei.xhtml#frag" → "#frag" (Ziel-ID existiert im zusammengefügten Dokument)
+//   - "datei.xhtml"      → "#epub-<pfad>" (Anker des Kapitel-Containers)
+//   - "#frag", externe URLs (http/https/mailto …) bleiben unverändert
+//
+// @param html       HTML-Inhalt des Kapitels.
+// @param chapterDir Verzeichnis des Kapitels im ZIP (für relative Pfadauflösung).
+// @return HTML mit umgeschriebenen internen Links.
+func rewriteEpubLinks(html string, chapterDir string) string {
+	html = rewriteEpubLinkHref(html, chapterDir, epubLinkHrefDouble)
+	html = rewriteEpubLinkHref(html, chapterDir, epubLinkHrefSingle)
+	return html
+}
+
+// rewriteEpubLinkHref verarbeitet einen href-Regex (doppelt oder einfach gequotet).
+//
+// @param html       HTML-Text.
+// @param chapterDir Verzeichnis des Kapitels im ZIP.
+// @param re         Regex für href-Attribute.
+// @return HTML mit umgeschriebenen Links.
+func rewriteEpubLinkHref(html string, chapterDir string, re *regexp.Regexp) string {
+	return re.ReplaceAllStringFunc(html, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		if len(parts) < 4 {
+			return match
+		}
+		prefix := parts[1] // z.B. `<a href="`
+		href := parts[2]   // das Link-Ziel
+		suffix := parts[3] // schließendes Anführungszeichen
+
+		// Interne Anker, externe URLs und Spezial-Schemata unverändert lassen
+		lower := strings.ToLower(href)
+		if strings.HasPrefix(lower, "#") ||
+			strings.HasPrefix(lower, "http://") ||
+			strings.HasPrefix(lower, "https://") ||
+			strings.HasPrefix(lower, "mailto:") ||
+			strings.HasPrefix(lower, "data:") ||
+			strings.HasPrefix(lower, "file://") ||
+			strings.HasPrefix(lower, "javascript:") {
+			return match
+		}
+
+		// Fragment abtrennen: "datei.xhtml#frag" → Datei + "frag"
+		filePart := href
+		fragment := ""
+		if idx := strings.Index(href, "#"); idx >= 0 {
+			filePart = href[:idx]
+			fragment = href[idx+1:]
+		}
+
+		// Link mit Fragment → direkt auf die Ziel-ID im Gesamtdokument zeigen
+		if fragment != "" {
+			return prefix + "#" + fragment + suffix
+		}
+
+		// URL-Kodierung auflösen und Pfad relativ zum Kapitelverzeichnis auflösen
+		decoded, _ := url.PathUnescape(filePart)
+		var targetPath string
+		if path.IsAbs(decoded) {
+			targetPath = strings.TrimPrefix(decoded, "/")
+		} else {
+			targetPath = path.Join(chapterDir, decoded)
+		}
+		targetPath = path.Clean(targetPath)
+
+		// Auf den Anker des Kapitel-Containers zeigen
+		return prefix + "#" + epubAnchorID(targetPath) + suffix
 	})
 }
 

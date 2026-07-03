@@ -1,0 +1,11 @@
+2026-07-03 20:28 – Bugreport: EPUB-Kapitellink → leeres Fenster (Testdatei 491.epub, "Der reichste Mann von Babylon", Calibre-EPUB)
+2026-07-03 20:29 – Root Cause 1: ParseEpub fügt alle Kapitel zu einem Dokument zusammen, lässt aber href="chapterX.xhtml" unverändert → WebView navigiert weg vom SetHtml-Inhalt → leer.
+2026-07-03 20:30 – TDD: 4 neue Tests (ChapterAnchors, InternalLinksRewritten, LinkWithFragment, LinksUnchanged) → RED bestätigt.
+2026-07-03 20:31 – Fix 1 in renderer/epub.go: rewriteEpubLinks() + epubAnchorID(); Kapitel in <div class="epub-chapter" id="epub-<pfad>"> gepackt. Tests GREEN.
+2026-07-03 20:32 – Verifikation mit echter Datei: 29/29 Links umgeschrieben, ABER alle 29 Fragment-Ziele fehlten.
+2026-07-03 20:33 – Root Cause 2: Calibre setzt Sprungziele als <body id="…">; extractHTMLBody verwirft den Body-Tag samt ID.
+2026-07-03 20:33 – TDD: Test TestParseEpubBodyIDPreserved (buildTestEPUBRaw-Helper) → RED.
+2026-07-03 20:34 – Fix 2: extractBodyID() sichert die Body-ID, wird als <span id="…"></span> im Kapitel-Container wieder eingefügt. Tests GREEN. Realdatei: 29/29 Ziele vorhanden.
+2026-07-03 20:34 – Fix 3 (Defense in Depth) in ui/assets/scripts.js: delegierter Click-Handler im #content – Anker-Links scrollen per scrollIntoView (kein about:blank#-Reload-Risiko), relative Links werden abgefangen (kein leeres Fenster mehr möglich, auch bei anderen Formaten).
+2026-07-03 20:35 – Build 38: Linux x86_64, ARM64, ARMhf (Paket-Reihenfolge armhf→arm64→amd64 wegen Multiarch-Kollision), Windows x86_64 + NSIS-Installer. Alle Tests grün.
+2026-07-03 20:36 – Debugging-Skript debugging/epub-link-check.go hinzugefügt (prüft rohe Datei-Links nach ParseEpub).

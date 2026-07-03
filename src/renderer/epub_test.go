@@ -1,7 +1,7 @@
 // Tests für das EPUB-Datei-Rendering.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-07
+// Letzte Änderung: 2026-07-03
 package renderer_test
 
 import (
@@ -47,6 +47,24 @@ func TestIsEpubFile(t *testing.T) {
 //   - OEBPS/chapter1.xhtml
 //   - OEBPS/chapter2.xhtml
 func buildTestEPUB(title, chapter1, chapter2 string) []byte {
+	ch1 := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Kapitel 1</title></head>
+<body>` + chapter1 + `</body>
+</html>`
+	ch2 := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Kapitel 2</title></head>
+<body>` + chapter2 + `</body>
+</html>`
+	return buildTestEPUBRaw(title, ch1, ch2)
+}
+
+// buildTestEPUBRaw erstellt ein Test-EPUB mit vollständigen XHTML-Dokumenten
+// als Kapitel (inkl. eigenem <body>-Tag, z.B. für Tests mit <body id=...>).
+func buildTestEPUBRaw(title, chapter1XHTML, chapter2XHTML string) []byte {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 
@@ -87,24 +105,12 @@ func buildTestEPUB(title, chapter1, chapter2 string) []byte {
 	ow.Write([]byte(opf))
 
 	// OEBPS/chapter1.xhtml
-	ch1 := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head><title>Kapitel 1</title></head>
-<body>` + chapter1 + `</body>
-</html>`
 	c1w, _ := w.Create("OEBPS/chapter1.xhtml")
-	c1w.Write([]byte(ch1))
+	c1w.Write([]byte(chapter1XHTML))
 
 	// OEBPS/chapter2.xhtml
-	ch2 := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head><title>Kapitel 2</title></head>
-<body>` + chapter2 + `</body>
-</html>`
 	c2w, _ := w.Create("OEBPS/chapter2.xhtml")
-	c2w.Write([]byte(ch2))
+	c2w.Write([]byte(chapter2XHTML))
 
 	w.Close()
 	return buf.Bytes()
@@ -311,6 +317,130 @@ func TestParseEpubImageNotFound(t *testing.T) {
 	// Inhalt muss noch da sein
 	if !strings.Contains(result.HTML, "Text mit fehlendem Bild") {
 		t.Error("Kapitelinhalt fehlt nach Verarbeitung mit fehlendem Bild")
+	}
+}
+
+// TestParseEpubChapterAnchors prüft dass jedes Kapitel einen Anker mit
+// pfadbasierter ID bekommt, damit interne Links darauf zeigen können.
+func TestParseEpubChapterAnchors(t *testing.T) {
+	data := buildTestEPUB(
+		"Ankertest",
+		"<p>Erstes Kapitel.</p>",
+		"<p>Zweites Kapitel.</p>",
+	)
+
+	result, err := renderer.ParseEpub(data, "ankertest.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+	// Jedes Kapitel muss einen Anker mit ID aus dem ZIP-Pfad haben
+	if !strings.Contains(result.HTML, `id="epub-oebps-chapter1-xhtml"`) {
+		t.Error("Kapitel 1 hat keinen Anker mit pfadbasierter ID")
+	}
+	if !strings.Contains(result.HTML, `id="epub-oebps-chapter2-xhtml"`) {
+		t.Error("Kapitel 2 hat keinen Anker mit pfadbasierter ID")
+	}
+}
+
+// TestParseEpubInternalLinksRewritten prüft dass Kapitel-Links auf andere
+// EPUB-Dateien in interne Anker-Links umgeschrieben werden.
+//
+// Hintergrund (Bug): Links wie href="chapter2.xhtml" führen im WebView zu
+// einer Navigation weg vom per SetHtml gesetzten Inhalt → leeres Fenster.
+func TestParseEpubInternalLinksRewritten(t *testing.T) {
+	data := buildTestEPUB(
+		"Linktest",
+		`<p>Siehe <a href="chapter2.xhtml">Kapitel 2</a> und <a href='./chapter2.xhtml'>nochmal</a>.</p>`,
+		"<p>Zweites Kapitel.</p>",
+	)
+
+	result, err := renderer.ParseEpub(data, "linktest.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+	// Der rohe Dateilink darf nicht mehr vorhanden sein
+	if strings.Contains(result.HTML, `href="chapter2.xhtml"`) {
+		t.Error("Kapitel-Link wurde nicht umgeschrieben (doppelte Anführungszeichen)")
+	}
+	if strings.Contains(result.HTML, `href='./chapter2.xhtml'`) {
+		t.Error("Kapitel-Link wurde nicht umgeschrieben (einfache Anführungszeichen)")
+	}
+	// Stattdessen muss ein interner Anker-Link vorhanden sein
+	if !strings.Contains(result.HTML, `href="#epub-oebps-chapter2-xhtml"`) {
+		t.Error("Kein interner Anker-Link auf Kapitel 2 gefunden")
+	}
+}
+
+// TestParseEpubLinkWithFragment prüft dass Links mit Fragment auf das
+// Fragment umgeschrieben werden (Ziel-ID bleibt im Kapitelinhalt erhalten).
+func TestParseEpubLinkWithFragment(t *testing.T) {
+	data := buildTestEPUB(
+		"Fragmenttest",
+		`<p><a href="chapter2.xhtml#abschnitt2">Zu Abschnitt 2</a></p>`,
+		`<h2 id="abschnitt2">Abschnitt 2</h2><p>Inhalt.</p>`,
+	)
+
+	result, err := renderer.ParseEpub(data, "fragmenttest.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+	if strings.Contains(result.HTML, `href="chapter2.xhtml#abschnitt2"`) {
+		t.Error("Fragment-Link wurde nicht umgeschrieben")
+	}
+	if !strings.Contains(result.HTML, `href="#abschnitt2"`) {
+		t.Error("Fragment-Link zeigt nicht auf den internen Anker #abschnitt2")
+	}
+}
+
+// TestParseEpubLinksUnchanged prüft dass reine Fragment-Links und externe
+// URLs NICHT verändert werden.
+func TestParseEpubLinksUnchanged(t *testing.T) {
+	data := buildTestEPUB(
+		"Unverändert",
+		`<p><a href="#lokal">Lokal</a> <a href="https://example.org/seite.xhtml">Extern</a></p><p id="lokal">Ziel</p>`,
+		"<p>Zweites Kapitel.</p>",
+	)
+
+	result, err := renderer.ParseEpub(data, "unveraendert.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+	if !strings.Contains(result.HTML, `href="#lokal"`) {
+		t.Error("Reiner Fragment-Link wurde fälschlich verändert")
+	}
+	if !strings.Contains(result.HTML, `href="https://example.org/seite.xhtml"`) {
+		t.Error("Externe URL wurde fälschlich verändert")
+	}
+}
+
+// TestParseEpubBodyIDPreserved prüft dass eine ID auf dem <body>-Tag als
+// Anker erhalten bleibt (Calibre setzt Kapitel-Sprungziele auf <body id=...>).
+func TestParseEpubBodyIDPreserved(t *testing.T) {
+	ch1 := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Kapitel 1</title></head>
+<body><p><a href="chapter2.xhtml#zielk2">Zu Kapitel 2</a></p></body>
+</html>`
+	ch2 := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Kapitel 2</title></head>
+<body id="zielk2" class="calibre"><p>Zweites Kapitel.</p></body>
+</html>`
+	data := buildTestEPUBRaw("BodyID-Test", ch1, ch2)
+
+	result, err := renderer.ParseEpub(data, "bodyid.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+	// Der Link muss auf das Fragment umgeschrieben sein
+	if !strings.Contains(result.HTML, `href="#zielk2"`) {
+		t.Error("Fragment-Link auf Body-ID wurde nicht umgeschrieben")
+	}
+	// Die Body-ID muss als Anker im Dokument existieren
+	if !strings.Contains(result.HTML, `id="zielk2"`) {
+		t.Error("Body-ID ging beim Extrahieren verloren – Linkziel fehlt")
 	}
 }
 
