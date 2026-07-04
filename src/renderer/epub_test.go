@@ -1,7 +1,7 @@
 // Tests für das EPUB-Datei-Rendering.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-03
+// Letzte Änderung: 2026-07-04
 package renderer_test
 
 import (
@@ -456,5 +456,141 @@ func TestParseEpubMissingContainer(t *testing.T) {
 	_, err := renderer.ParseEpub(buf.Bytes(), "kaputt.epub")
 	if err == nil {
 		t.Error("ParseEpub() sollte Fehler zurückgeben wenn container.xml fehlt")
+	}
+}
+
+// buildTestEPUBWithSVGCover erstellt ein Test-EPUB mit einer Calibre-artigen
+// Titelseite: ein SVG mit <image xlink:href="cover.jpeg"> im EPUB-Root.
+//
+// Nachgebaut nach der Struktur echter Calibre-EPUBs (titlepage.xhtml + cover.jpeg
+// direkt im Root, OPF ebenfalls im Root). Zusätzlich ein zweites Kapitel mit
+// einem einfach gequoteten SVG-href (SVG2-Syntax ohne xlink-Namensraum).
+func buildTestEPUBWithSVGCover() []byte {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+
+	// mimetype (unkomprimiert, wie von der EPUB-Spezifikation verlangt)
+	mw, _ := w.CreateHeader(&zip.FileHeader{Name: "mimetype", Method: zip.Store})
+	mw.Write([]byte("application/epub+zip"))
+
+	// META-INF/container.xml – OPF liegt im Root
+	container := `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+	cw, _ := w.Create("META-INF/container.xml")
+	cw.Write([]byte(container))
+
+	// content.opf mit Titelseite, Kapitel und Cover-Bild im Manifest
+	opf := `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>SVG-Cover-Test</dc:title>
+  </metadata>
+  <manifest>
+    <item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ch1" href="text/chapter1.html" media-type="application/xhtml+xml"/>
+    <item id="cover" href="cover.jpeg" media-type="image/jpeg"/>
+  </manifest>
+  <spine>
+    <itemref idref="titlepage"/>
+    <itemref idref="ch1"/>
+  </spine>
+</package>`
+	ow, _ := w.Create("content.opf")
+	ow.Write([]byte(opf))
+
+	// cover.jpeg (minimale JPEG-Signatur reicht für den Test)
+	minimalJPEG := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0xFF, 0xD9}
+	jw, _ := w.Create("cover.jpeg")
+	jw.Write(minimalJPEG)
+
+	// titlepage.xhtml – Calibre-Stil: SVG mit xlink:href auf das Cover
+	titlepage := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Cover</title></head>
+<body>
+<div>
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+       version="1.1" width="100%" height="100%" viewBox="0 0 474 751" preserveAspectRatio="none">
+    <image width="474" height="751" xlink:href="cover.jpeg"/>
+  </svg>
+</div>
+</body>
+</html>`
+	tw, _ := w.Create("titlepage.xhtml")
+	tw.Write([]byte(titlepage))
+
+	// text/chapter1.html – SVG2-Syntax: href ohne xlink, einfach gequotet,
+	// relativer Pfad aus einem Unterverzeichnis heraus
+	ch1 := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Kapitel 1</title></head>
+<body>
+<h1>Kapitel mit SVG-Bild</h1>
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+  <image width="10" height="10" href='../cover.jpeg'/>
+</svg>
+</body>
+</html>`
+	c1w, _ := w.Create("text/chapter1.html")
+	c1w.Write([]byte(ch1))
+
+	w.Close()
+	return buf.Bytes()
+}
+
+// TestParseEpubSVGCoverEmbedded prüft, dass SVG-<image>-Referenzen
+// (xlink:href und href) als base64-Data-URIs eingebettet werden.
+//
+// Hintergrund (Bug #012): Calibre-Titelseiten referenzieren das Cover als
+// <image xlink:href="cover.jpeg"> in einem SVG. Ohne Einbettung bleibt die
+// erste Seite des Buchs komplett weiß.
+func TestParseEpubSVGCoverEmbedded(t *testing.T) {
+	data := buildTestEPUBWithSVGCover()
+
+	result, err := renderer.ParseEpub(data, "svgcover.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() Fehler: %v", err)
+	}
+
+	// Die rohen Bildpfade dürfen nicht mehr vorhanden sein
+	if strings.Contains(result.HTML, `xlink:href="cover.jpeg"`) {
+		t.Error("SVG-Cover (xlink:href) wurde nicht eingebettet – roher Pfad noch vorhanden")
+	}
+	if strings.Contains(result.HTML, `href='../cover.jpeg'`) {
+		t.Error("SVG-Bild (href, einfach gequotet) wurde nicht eingebettet – roher Pfad noch vorhanden")
+	}
+
+	// Beide müssen als JPEG-Data-URI vorhanden sein (2 Vorkommen)
+	if strings.Count(result.HTML, "data:image/jpeg;base64,") < 2 {
+		t.Errorf("SVG-Bilder nicht als base64-Data-URIs eingebettet (gefunden: %d von 2)",
+			strings.Count(result.HTML, "data:image/jpeg;base64,"))
+	}
+
+	// Kapiteltext muss erhalten bleiben
+	if !strings.Contains(result.HTML, "Kapitel mit SVG-Bild") {
+		t.Error("Kapitelinhalt fehlt nach SVG-Bildeinbettung")
+	}
+}
+
+// TestParseEpubSVGImageNotFound prüft graceful Handling eines fehlenden SVG-Bilds.
+func TestParseEpubSVGImageNotFound(t *testing.T) {
+	data := buildTestEPUBRaw(
+		"SVG-Fehlt",
+		`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>K1</title></head><body><p>Vor dem SVG.</p><svg xmlns="http://www.w3.org/2000/svg"><image xlink:href="gibtsnicht.jpeg"/></svg></body></html>`,
+		`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>K2</title></head><body><p>Zweites Kapitel.</p></body></html>`,
+	)
+
+	result, err := renderer.ParseEpub(data, "svgfehlt.epub")
+	if err != nil {
+		t.Fatalf("ParseEpub() soll bei fehlendem SVG-Bild keinen Fehler werfen: %v", err)
+	}
+	if !strings.Contains(result.HTML, "Vor dem SVG.") {
+		t.Error("Kapitelinhalt fehlt nach Verarbeitung mit fehlendem SVG-Bild")
 	}
 }

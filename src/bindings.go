@@ -5,7 +5,7 @@
 // Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-04-15
+// Letzte Änderung: 2026-07-04
 package main
 
 import (
@@ -101,10 +101,35 @@ func renderAndDisplay(w webview.WebView, contentHTML, title, hash string, scroll
 		ScrollPos:       scrollPos,
 	}
 	fullHTML := ui.BuildInitialHTML(uiCfg)
-	// w.SetHtml muss auf dem GTK/WebView-Hauptthread ausgeführt werden
+	// SetHtml/Navigate muss auf dem GTK/WebView-Hauptthread ausgeführt werden
 	w.Dispatch(func() {
-		w.SetHtml(fullHTML)
+		displayFullHTML(w, fullHTML)
 	})
+}
+
+// displayFullHTML zeigt ein vollständiges Seiten-HTML im WebView an.
+//
+// Kleine Dokumente gehen direkt per w.SetHtml(). Große Dokumente (z.B. EPUBs
+// mit vielen eingebetteten Bildern) überschreiten das 2-MB-Limit von
+// WebView2s NavigateToString (Windows) → dort bliebe das Fenster leer
+// (Bug #012). Deshalb werden sie in eine Temp-Datei geschrieben und per
+// file://-URL geladen – das hat kein Größenlimit.
+//
+// Muss auf dem GTK/WebView-Hauptthread aufgerufen werden.
+//
+// @param w        Die WebView-Instanz.
+// @param fullHTML Vollständiges Seiten-HTML.
+func displayFullHTML(w webview.WebView, fullHTML string) {
+	if ui.NeedsFileNavigation(fullHTML) {
+		fileURL, err := ui.WriteTempViewFile(fullHTML)
+		if err == nil {
+			w.Navigate(fileURL)
+			return
+		}
+		// Fallback: Temp-Datei nicht schreibbar → direkter Versuch per SetHtml
+		log.Printf("Temp-Ansichtsdatei fehlgeschlagen, nutze SetHtml: %v", err)
+	}
+	w.SetHtml(fullHTML)
 }
 
 // loadFileNative liest eine Datei vom Dateisystem, rendert sie und zeigt sie an.

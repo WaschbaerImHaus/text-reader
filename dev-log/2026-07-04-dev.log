@@ -1,0 +1,10 @@
+2026-07-04 11:02 – Bugreport: EPUB 17.epub („Der Aufbruch zu den Sternen", Calibre) lässt sich nicht öffnen.
+2026-07-04 11:05 – Reproduktion: ParseEpub OK (1,9 MB Inhalt), App unter Xvfb → Fenster weiß. 491.epub im selben Harness OK → inhaltsspezifisch.
+2026-07-04 11:10 – Instrumentierung (WebView-Harness mit JS-Probes): kein JS-Fehler, 129 Kapitel im DOM, Inhalt 350.000 px hoch. Erste Kapitel-DIV (Titelseite) = 1479 px leeres SVG.
+2026-07-04 11:12 – Root Cause 1 (alle Plattformen): Calibre-Cover als <svg><image xlink:href="cover.jpeg"/></svg>; embedEpubImages kannte nur <img src> → Cover nicht eingebettet → erste ~2 Bildschirmseiten weiß.
+2026-07-04 11:13 – Root Cause 2 (Windows): Gesamt-HTML 4,27 MB > 2-MB-Limit von WebView2 NavigateToString → SetHtml schlägt still fehl, Fenster bleibt leer. 491.epub lag mit 1,2 MB darunter.
+2026-07-04 11:14 – TDD Fix 1: Tests TestParseEpubSVGCoverEmbedded / TestParseEpubSVGImageNotFound (RED) → neue Regexe epubSvgImageDouble/Single (xlink:href + SVG2-href) in embedEpubImages → GREEN.
+2026-07-04 11:15 – TDD Fix 2: Tests für ui.NeedsFileNavigation / WriteTempViewFile / Cleanup (RED) → neues ui/viewfile.go: MaxInlineHTMLSize=1,5 MB, Temp-Datei md-reader-view-<pid>.html (0600), file://-URL; bindings.go displayFullHTML() wählt SetHtml vs. Navigate; main.go räumt nach w.Run() auf.
+2026-07-04 11:16 – Verifikation Xvfb: 17.epub zeigt jetzt das Cover, Temp-Datei 4,8 MB per file:// geladen. Regressionstest 491.epub OK. Alle Tests grün.
+2026-07-04 11:18 – debugging/epub-image-check.go: meldet rohe Bildreferenzen + 2-MB-Überschreitung; 17.epub: 0 rohe Referenzen.
+2026-07-04 11:20 – Build 39: CHANGELOG, BUGS #012, Cross-Builds (armhf → arm64 → amd64, Windows + NSIS).

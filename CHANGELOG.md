@@ -4,6 +4,21 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 39 – 2026-07-04
+
+### Fixed
+- Large EPUBs failed to open on Windows: WebView2's `NavigateToString` silently rejects
+  HTML larger than 2 MB, so books with many embedded images left the window blank.
+  Documents above 1.5 MB are now written to a private temp file and loaded via a
+  `file://` URL (works identically on WebKitGTK and WebView2, no size limit).
+  The temp file is per-process and removed on exit.
+- Calibre cover pages rendered as a blank white page: the cover is referenced as
+  `<svg><image xlink:href="cover.jpeg"/></svg>`, but only `<img src>` references were
+  embedded as Base64 data URIs. SVG `<image>` references (both `xlink:href` and SVG2
+  `href`, single- or double-quoted) are now embedded as well.
+
+---
+
 ## Build 38 – 2026-07-03
 
 ### Fixed

@@ -5,7 +5,7 @@
 //           lokale Bilder, persistente Einstellungen, letzte Datei öffnen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-07-04
 package main
 
 import (
@@ -123,4 +123,7 @@ func main() {
 
 	// Hauptschleife (blockiert bis Fenster geschlossen wird)
 	w.Run()
+
+	// Temp-Ansichtsdatei (große Dokumente, siehe displayFullHTML) aufräumen
+	ui.CleanupTempViewFile()
 }

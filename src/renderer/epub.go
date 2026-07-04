@@ -9,7 +9,7 @@
 //   - XHTML-Dateien → eigentliche Kapitelinhalte
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-03
+// Letzte Änderung: 2026-07-04
 package renderer
 
 import (
@@ -241,10 +241,23 @@ var epubImgSrcDouble = regexp.MustCompile(`(?i)(<img[^>]*?\ssrc\s*=\s*")([^"]+)(
 // epubImgSrcSingle erkennt <img>-Tags mit einfach-gequotetem src-Attribut im EPUB-Kontext.
 var epubImgSrcSingle = regexp.MustCompile(`(?i)(<img[^>]*?\ssrc\s*=\s*')([^']+)(')`)
 
-// embedEpubImages ersetzt <img src="..."> Referenzen in EPUB-Kapiteln durch base64-Data-URIs.
+// epubSvgImageDouble erkennt SVG-<image>-Tags mit doppelt-gequotetem href/xlink:href.
 //
-// Da EPUB-Bilder im ZIP-Archiv liegen und nicht direkt über das Dateisystem
-// erreichbar sind, müssen sie als Data-URIs eingebettet werden.
+// Calibre-Titelseiten betten das Cover als <svg><image xlink:href="cover.jpeg"/></svg>
+// ein. Ohne Einbettung bleibt die erste Buchseite komplett weiß (Bug #012).
+// Das optionale "xlink:"-Präfix deckt sowohl SVG-1.1- (xlink:href) als auch
+// SVG-2-Syntax (href) ab.
+var epubSvgImageDouble = regexp.MustCompile(`(?i)(<image[^>]*?\s(?:xlink:)?href\s*=\s*")([^"]+)(")`)
+
+// epubSvgImageSingle erkennt SVG-<image>-Tags mit einfach-gequotetem href/xlink:href.
+var epubSvgImageSingle = regexp.MustCompile(`(?i)(<image[^>]*?\s(?:xlink:)?href\s*=\s*')([^']+)(')`)
+
+// embedEpubImages ersetzt Bildreferenzen in EPUB-Kapiteln durch base64-Data-URIs.
+//
+// Verarbeitet sowohl <img src="..."> als auch SVG-<image xlink:href="...">
+// (Calibre-Cover-Titelseiten). Da EPUB-Bilder im ZIP-Archiv liegen und nicht
+// direkt über das Dateisystem erreichbar sind, müssen sie als Data-URIs
+// eingebettet werden.
 //
 // @param html       HTML-Inhalt des Kapitels (nach extractHTMLBody).
 // @param r          Geöffnetes ZIP-Archiv des EPUB.
@@ -254,6 +267,8 @@ var epubImgSrcSingle = regexp.MustCompile(`(?i)(<img[^>]*?\ssrc\s*=\s*')([^']+)(
 func embedEpubImages(html string, r *zip.Reader, chapterDir string, imageMap map[string]string) string {
 	html = embedEpubImgSrc(html, r, chapterDir, imageMap, epubImgSrcDouble)
 	html = embedEpubImgSrc(html, r, chapterDir, imageMap, epubImgSrcSingle)
+	html = embedEpubImgSrc(html, r, chapterDir, imageMap, epubSvgImageDouble)
+	html = embedEpubImgSrc(html, r, chapterDir, imageMap, epubSvgImageSingle)
 	return html
 }
 
