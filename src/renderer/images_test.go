@@ -1,7 +1,7 @@
 // Tests für die Bildpfad-Auflösung in HTML.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-07
+// Letzte Änderung: 2026-10-14 (absolute Pfade einbetten, UNC nie lesen, nur Bildtypen)
 package renderer_test
 
 import (
@@ -124,5 +124,68 @@ func TestResolveImagePathsSingleQuotes(t *testing.T) {
 	result := renderer.ResolveImagePaths(html, tmpDir)
 	if !strings.Contains(result, "data:image/png;base64,") {
 		t.Errorf("Einfache Anführungszeichen werden nicht verarbeitet: %s", result)
+	}
+}
+
+// writeTestPNG legt ein minimales PNG im Verzeichnis an und gibt den Pfad zurück.
+func writeTestPNG(t *testing.T, dir, name string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+		t.Fatalf("Testbild konnte nicht erstellt werden: %v", err)
+	}
+	return p
+}
+
+// TestResolveImagePathsAbsoluteLocalFileEmbedded prüft, dass existierende
+// absolute Bildpfade eingebettet werden. Seit die CSP keine file:-Bilder mehr
+// erlaubt (Security-Review Build 41), funktionieren sie nur noch so.
+func TestResolveImagePathsAbsoluteLocalFileEmbedded(t *testing.T) {
+	imgPath := writeTestPNG(t, t.TempDir(), "abs.png")
+	result := renderer.ResolveImagePaths(`<img src="`+filepath.ToSlash(imgPath)+`" alt="a">`, "/irgendwo")
+	if !strings.Contains(result, `src="data:image/png;base64,`) {
+		t.Errorf("Absoluter Bildpfad nicht eingebettet: %s", result)
+	}
+}
+
+// TestResolveImagePathsUNCNeverRead prüft, dass UNC-/Netzwerkpfade (//server/…,
+// \\server\…) nie gelesen werden: Unter Windows würde schon das Lesen einen
+// SMB-Zugriff auslösen und kann den NTLM-Hash preisgeben. Auf Linux zeigt
+// "//tmp/…" auf eine lokale Datei – sie darf trotzdem nicht eingebettet werden.
+func TestResolveImagePathsUNCNeverRead(t *testing.T) {
+	imgPath := writeTestPNG(t, t.TempDir(), "unc.png")
+	for _, src := range []string{
+		"/" + filepath.ToSlash(imgPath), // "//tmp/…/unc.png"
+		`\\server\share\unc.png`,
+		`//server/share/unc.png`,
+	} {
+		html := `<img src="` + src + `">`
+		if result := renderer.ResolveImagePaths(html, "/irgendwo"); result != html {
+			t.Errorf("UNC-Pfad %q wurde verarbeitet: %s", src, result)
+		}
+	}
+}
+
+// TestResolveImagePathsOnlyImageTypes prüft, dass nur Bilddateien eingebettet
+// werden – ein Dokument darf keine beliebigen Dateien (z. B. Schlüssel) als
+// "Bild" in die Seite laden.
+func TestResolveImagePathsOnlyImageTypes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "geheim.txt"), []byte("GEHEIM"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "id_rsa"), []byte("SCHLUESSEL"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range []string{"geheim.txt", "id_rsa"} {
+		html := `<img src="` + src + `">`
+		if result := renderer.ResolveImagePaths(html, dir); result != html {
+			t.Errorf("Nicht-Bild %q wurde eingebettet: %s", src, result)
+		}
+	}
+	// Gegenprobe: echte Bildtypen werden eingebettet (Groß-/Kleinschreibung egal)
+	writeTestPNG(t, dir, "bild.PNG")
+	if result := renderer.ResolveImagePaths(`<img src="bild.PNG">`, dir); !strings.Contains(result, "data:image/png;base64,") {
+		t.Errorf("Bild mit Endung .PNG nicht eingebettet: %s", result)
 	}
 }

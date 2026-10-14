@@ -5,13 +5,14 @@
 // Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-04
+// Letzte Änderung: 2026-10-14 (RISK-008: openExternal-Binding)
 package main
 
 import (
 	"encoding/base64"
 	"hash/fnv"
 	"log"
+	"md-reader/extlink"
 	"md-reader/renderer"
 	"md-reader/ui"
 	"os"
@@ -29,6 +30,9 @@ const maxScrollHistory = 200
 
 // trimScrollHistoryKept ist die Zielgröße nach dem Kürzen.
 const trimScrollHistoryKept = 150
+
+// externalOpener öffnet externe Links im Standardprogramm des Systems (RISK-008).
+var externalOpener = extlink.NewOpener()
 
 // computeHash berechnet einen FNV-64a-Hash der gegebenen Bytes.
 //
@@ -324,6 +328,21 @@ func registerBindings(w webview.WebView) {
 		w.Dispatch(func() {
 			w.Terminate()
 		})
+	})
+
+	// openExternal: Öffnet einen externen Link (http/https/mailto) im
+	// Standardprogramm des Systems statt im App-Fenster (RISK-008).
+	// Die URL wird in extlink erneut streng geprüft; abgelehnte URLs liefern
+	// einen Fehler, es wird dann nichts gestartet.
+	//
+	// @param rawURL Link-Ziel aus dem Dokument.
+	// @return Fehler bei ungültiger URL oder fehlendem Programm.
+	w.Bind("openExternal", func(rawURL string) error {
+		if err := externalOpener.Open(rawURL); err != nil {
+			log.Printf("Externer Link abgelehnt/nicht geöffnet: %v", err)
+			return err
+		}
+		return nil
 	})
 
 	// nativeFullscreen: Plattformspezifischer Vollbild-Modus.

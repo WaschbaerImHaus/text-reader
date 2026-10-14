@@ -40,6 +40,8 @@ type UIConfig struct {
 //     KEIN 'unsafe-inline' → eingeschleuste Inline-Handler (onerror=…) und
 //     javascript:-URLs werden vom Browser blockiert, selbst wenn die
 //     Bereinigung etwas übersehen sollte.
+//   - img-src data: – alle Bilder sind eingebettet. KEIN file:: url(file://server/…)
+//     würde unter Windows einen SMB-Zugriff auslösen (NTLM-Hash-Leck).
 //   - font-src data: ist nötig, damit die eingebetteten KaTeX-Schriften laden.
 //   - object-src data: wird für die PDF-Anzeige per <embed> (Windows) benötigt.
 //   - base-uri/form-action/frame-src 'none': keine Basis-URL-Umlenkung,
@@ -49,7 +51,7 @@ const htmlDocHeadTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{{SCRIPT_NONCE}}' https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js; style-src 'unsafe-inline'; img-src data: blob: file:; font-src data:; object-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{{SCRIPT_NONCE}}' https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js; style-src 'unsafe-inline'; img-src data:; font-src data:; object-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none';">
 <link rel="icon" type="image/svg+xml" href="{{FAVICON_URI}}">
 <title>{{PAGE_TITLE}}</title>
 <style>

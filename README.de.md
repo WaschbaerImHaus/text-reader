@@ -18,7 +18,8 @@ Ein einfacher, schneller Betrachter für Markdown, EPUB, FB2, TXT und HTML mit G
 - **Persistente Einstellungen**: Zoom, Theme und Layout bleiben über Starts erhalten
 - **Letzte Datei**: Zuletzt geöffnete Datei wird beim Start automatisch wiedergeladen
 - **Scroll-Position**: Scroll-Position wird gespeichert und beim nächsten Start wiederhergestellt
-- **Lokale Bilder**: Relative Bildpfade werden als Base64 Data-URI eingebettet
+- **Lokale Bilder**: Relative und absolute lokale Bildpfade (png, jpg, gif, webp, svg, bmp, ico, avif) werden als Base64 Data-URI eingebettet; Netzwerkpfade (UNC) werden nicht geladen
+- **Externe Links**: Ein Klick auf einen http/https/mailto-Link öffnet ihn im Standard-Browser bzw. Mailprogramm – der Viewer selbst verlässt das Dokument nie
 
 ## Steuerung
 

@@ -4,6 +4,24 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 42 – 2026-10-14
+
+### Security
+- External links (http/https/mailto) now open in the system browser / mail client instead
+  of navigating the app window. Previously a remote website loaded in the app window
+  received the Go bindings. The app window never leaves the document any more
+  (`data:`, `file:` and middle-click navigation are blocked as well).
+- Prevented NTLM hash leaks on Windows via `file://server/…` resources: `style` attributes
+  that load resources (`url()`, `image-set()`, `@import`, CSS escapes …) are dropped,
+  the CSP only allows `data:` images, and UNC image paths are never read.
+
+### Changed
+- Markdown images with an absolute local path are now embedded (previously they only
+  worked for very large documents). Only real image files (png, jpg, gif, webp, svg,
+  bmp, ico, avif) are embedded.
+
+---
+
 ## Build 41 – 2026-10-14
 
 ### Security

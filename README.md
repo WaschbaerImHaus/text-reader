@@ -19,7 +19,8 @@ A simple, fast viewer for Markdown, EPUB, FB2, TXT and HTML with GitHub-like ren
 - **Persistent Settings**: Zoom, theme and layout are preserved across sessions
 - **Last File**: Last opened file is automatically reloaded on startup
 - **Scroll Position**: Scroll position is saved and restored on next launch
-- **Local Images**: Relative image paths are embedded as Base64 Data URIs
+- **Local Images**: Relative and absolute local image paths (png, jpg, gif, webp, svg, bmp, ico, avif) are embedded as Base64 Data URIs; network (UNC) paths are not loaded
+- **External Links**: Clicking an http/https/mailto link opens it in your default browser or mail client – the viewer itself never navigates away
 
 ## Controls
 

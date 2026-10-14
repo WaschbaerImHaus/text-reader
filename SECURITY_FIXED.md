@@ -2,6 +2,20 @@
 
 ## Behoben ✅
 
+### RISK-008: Externe Links öffnen fremde Websites im App-Fenster (Build 42 – 2026-10-14)
+**Problem**: Ein Klick auf einen http(s)-Link navigierte das App-Fenster zur fremden Website; webview_go injiziert die Go-Bindings in jede Seite.
+**Fix**: Neues Paket `extlink` (Typ `Opener`): strenge URL-Prüfung (nur http/https mit Host und mailto, keine Steuer-/Leer-/Anführungszeichen, max. 2048 Zeichen) und Start des Standardprogramms ohne Shell (`xdg-open` bzw. `rundll32 url.dll,FileProtocolHandler`). Neues Binding `openExternal`; der Link-Handler in `scripts.js` verhindert jede Navigation des App-Fensters (auch `data:`, `file:`, Mittelklick) und übergibt nur http/https/mailto an Go. Verifiziert in WebKitGTK mit protokollierendem Fake-`xdg-open`.
+
+**Dateien**: `src/extlink/extlink.go`, `src/bindings.go`, `src/ui/assets/scripts.js`
+**Tests**: `extlink_test.go` (8), `TestScripts_ExternalLinksOpenedNatively`
+
+### RISK-009: NTLM-Hash-Leck über file:-Ressourcen (Build 42 – 2026-10-14)
+**Problem** (Security-Review zu Build 41): `style="background:url(file://server/…)"` aus EPUBs und `img-src file:` in der CSP; Markdown-Bilder mit UNC-Pfad. Unter Windows → SMB-Zugriff auf fremden Server → NTLM-Hash kann abfließen.
+**Fix**: (1) Bereiniger verwirft `style`-Werte mit `url`, `image`, `import`, `expression`, `behavior`, `binding`, `position`, Backslash (CSS-Escapes), `@` oder `/*`; einfache Stile bleiben. (2) CSP `img-src data:` (ohne `file:`/`blob:`). (3) `ResolveImagePaths` bettet jetzt auch absolute lokale Bildpfade ein (funktionieren dadurch überall), liest UNC-/Netzwerkpfade nie und bettet nur echte Bilddateien ein (feste Endungstabelle; vorher wurde jede Datei als „Bild“ eingebettet).
+
+**Dateien**: `src/renderer/sanitize.go`, `src/renderer/images.go`, `src/ui/template.go`
+**Tests**: `TestSanitizeHTML_StyleWithResourceLoadsRemoved`, `TestSanitizeHTML_SimpleStylesKept`, `TestResolveImagePaths{AbsoluteLocalFileEmbedded,UNCNeverRead,OnlyImageTypes}`, `TestBuildInitialHTML_CSPImagesOnlyData`
+
 ### RISK-006/007: Skript-Ausführung über EPUB- und LaTeX-Dateien (Build 41 – 2026-10-14)
 **Problem**: Präparierte EPUB-Dateien (Event-Attribute, `javascript:`-Links, `<iframe srcdoc>`, `<meta refresh>`) und LaTeX-Dateien (ungefilterter Fließtext, `\href{javascript:…}`) konnten JavaScript im Viewer ausführen und die Go-Bindings aufrufen. Nachgewiesen in Chrome-Headless (Build 40: `onerror` lief).
 **Fix (zweistufig)**:

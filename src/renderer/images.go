@@ -1,18 +1,18 @@
 // Package renderer - Auflösung relativer Bildpfade in HTML.
 //
-// Ersetzt relative <img src="..."> Pfade durch base64-kodierte Data-URIs,
-// damit Bilder in der WebView angezeigt werden können ohne Basis-URI.
+// Ersetzt lokale <img src="..."> Pfade (relativ und absolut) durch
+// base64-kodierte Data-URIs, damit Bilder in der WebView angezeigt werden
+// können. Die CSP erlaubt nur noch data:-Bilder (keine file:-URLs).
 //
 // Nur anwendbar wenn der vollständige Dateipfad bekannt ist (CLI-Argument,
 // nicht Drag & Drop - Browser-Sicherheitsbeschränkung verhindert vollen Pfad).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-07
+// Letzte Änderung: 2026-10-14 (absolute Pfade einbetten, UNC nie lesen, nur Bildtypen)
 package renderer
 
 import (
 	"encoding/base64"
-	"mime"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,17 +28,48 @@ var imgSrcDouble = regexp.MustCompile(`(?i)(<img[^>]*?\ssrc\s*=\s*")([^"]+)(")`)
 // imgSrcSingle erkennt <img>-Tags mit einfach-gequotetem src-Attribut.
 var imgSrcSingle = regexp.MustCompile(`(?i)(<img[^>]*?\ssrc\s*=\s*')([^']+)(')`)
 
-// ResolveImagePaths ersetzt relative Bildpfade in HTML durch base64-Data-URIs.
+// embeddableImageTypes ordnet Bild-Dateiendungen ihren MIME-Typ zu.
+// Nur diese Dateien werden eingebettet – ein Dokument soll keine beliebigen
+// Dateien (z. B. Schlüssel) als "Bild" in die Seite laden können. Feste
+// Tabelle statt mime.TypeByExtension: unter Windows liest diese die Registry
+// und liefert je nach System andere Ergebnisse.
+var embeddableImageTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".svg":  "image/svg+xml",
+	".bmp":  "image/bmp",
+	".ico":  "image/x-icon",
+	".avif": "image/avif",
+}
+
+// isNetworkPath erkennt UNC- bzw. Netzwerkpfade (//server/… oder \\server\…).
+//
+// Solche Pfade werden nie gelesen: Unter Windows löst schon das Öffnen einen
+// SMB-Zugriff auf den fremden Server aus, der den NTLM-Hash preisgeben kann.
+//
+// @param src Bildpfad aus dem Dokument.
+// @return true bei Netzwerkpfad.
+func isNetworkPath(src string) bool {
+	return strings.HasPrefix(src, "//") || strings.HasPrefix(src, `\\`) ||
+		strings.HasPrefix(src, `/\`) || strings.HasPrefix(src, `\/`)
+}
+
+// ResolveImagePaths ersetzt lokale Bildpfade in HTML durch base64-Data-URIs.
 //
 // Liest die Bilddatei von Disk und bettet sie als base64-kodierte Data-URI ein.
 // Dies ist notwendig damit Bilder in der WebView funktionieren, wenn HTML via
 // SetHtml() geladen wird (kein Basis-URI gesetzt).
 //
-// Folgende src-Werte werden NICHT verändert:
+// Folgende src-Werte werden NICHT verändert (die CSP blockiert sie ohnehin):
 //   - http:// und https:// URLs
 //   - data: URIs (bereits eingebettet)
 //   - file:// URIs
-//   - Absolute Dateipfade
+//   - UNC-/Netzwerkpfade (werden nie gelesen, siehe isNetworkPath)
+//   - Dateien ohne Bild-Endung (siehe embeddableImageTypes)
+//   - nicht lesbare Dateien
 //
 // @param html    HTML-Text mit möglicherweise relativen Bildpfaden.
 // @param baseDir Verzeichnis der Quelldatei als Basis für relative Pfade.
@@ -73,29 +104,27 @@ func resolveImgSrc(html string, baseDir string, re *regexp.Regexp) string {
 			strings.HasPrefix(lower, "https://") ||
 			strings.HasPrefix(lower, "data:") ||
 			strings.HasPrefix(lower, "file://") ||
-			filepath.IsAbs(src) {
+			isNetworkPath(src) {
 			return match
 		}
 
-		// Absoluten Pfad aus baseDir + relativer src berechnen
-		absPath := filepath.Join(baseDir, filepath.FromSlash(src))
+		// Nur echte Bilddateien einbetten (MIME-Typ aus fester Tabelle)
+		mimeType, isImage := embeddableImageTypes[strings.ToLower(filepath.Ext(src))]
+		if !isImage {
+			return match
+		}
+
+		// Absolute Pfade direkt verwenden, relative an baseDir anhängen
+		absPath := filepath.FromSlash(src)
+		if !filepath.IsAbs(absPath) {
+			absPath = filepath.Join(baseDir, absPath)
+		}
 
 		// Bilddatei lesen
 		data, err := os.ReadFile(absPath)
 		if err != nil {
 			// Datei nicht lesbar → src unverändert lassen (kein Abbruch)
 			return match
-		}
-
-		// MIME-Typ anhand der Dateiendung bestimmen
-		ext := strings.ToLower(filepath.Ext(absPath))
-		mimeType := mime.TypeByExtension(ext)
-		if mimeType == "" {
-			mimeType = "image/png" // Fallback
-		}
-		// Nur den Typ-Teil verwenden (ohne charset= o.ä. Parameter)
-		if idx := strings.Index(mimeType, ";"); idx >= 0 {
-			mimeType = strings.TrimSpace(mimeType[:idx])
 		}
 
 		// Base64-Data-URI zusammenbauen

@@ -434,3 +434,29 @@ func TestBuildInitialHTML_KaTeXLoadedBeforeMainScript(t *testing.T) {
 		t.Error("KaTeX-Auto-Render wird erst nach dem Hauptskript geladen – Formeln bleiben ungerendert")
 	}
 }
+
+// TestScripts_ExternalLinksOpenedNatively prüft RISK-008: Externe Links dürfen
+// das App-Fenster nicht mehr selbst navigieren, sondern werden über das
+// Go-Binding openExternal im System-Browser geöffnet. Mittelklicks auf Links
+// werden ebenfalls abgefangen.
+func TestScripts_ExternalLinksOpenedNatively(t *testing.T) {
+	if !strings.Contains(htmlJavaScript, "window.openExternal(") {
+		t.Error("scripts.js ruft window.openExternal nicht auf")
+	}
+	if strings.Contains(htmlJavaScript, "/^(https?:|mailto:|data:)/i.test(href)) return;") {
+		t.Error("scripts.js lässt externe Links noch im App-Fenster navigieren")
+	}
+	if !strings.Contains(htmlJavaScript, "'auxclick'") {
+		t.Error("Mittelklicks auf Links werden nicht abgefangen")
+	}
+}
+
+// TestBuildInitialHTML_CSPImagesOnlyData prüft (Security-Review Build 41), dass
+// Bilder nur noch als data:-URIs geladen werden dürfen. file: erlaubte z. B.
+// url(file://server/…) → SMB-Zugriff unter Windows (NTLM-Hash-Leck).
+func TestBuildInitialHTML_CSPImagesOnlyData(t *testing.T) {
+	csp := extractCSP(t, BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"}))
+	if got := extractDirective(csp, "img-src"); got != "img-src data:" {
+		t.Errorf("img-src = %q, erwartet \"img-src data:\"", got)
+	}
+}

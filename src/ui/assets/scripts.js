@@ -112,8 +112,12 @@ applyFontSize();
  * EPUB-Kapiteln) würde die WebView zu einer nicht existierenden Datei
  * navigieren lassen → leeres Fenster (Bug Build 38). Daher:
  *   - "#anker"       → sanft zum Ziel scrollen (wie TOC-Links)
- *   - relative Pfade → Klick abfangen, Navigation verhindern
- *   - externe URLs (http/https/mailto) → Standardverhalten
+ *   - externe URLs (http/https/mailto) → im System-Browser bzw. Mailprogramm
+ *     öffnen (Go-Binding openExternal). Das App-Fenster navigiert NIE weg:
+ *     eine fremde Website bekäme sonst die Go-Bindings (RISK-008).
+ *   - alles andere (relative Pfade, data:, file: …) → Klick abfangen
+ *
+ * @lastModified 2026-10-14
  */
 (function initContentLinkHandler() {
   var content = document.getElementById('content');
@@ -141,15 +145,41 @@ applyFontSize();
       return;
     }
 
-    // Externe Protokolle: Standardverhalten beibehalten
-    if (/^(https?:|mailto:|data:)/i.test(href)) return;
-
-    // Relativer Pfad ohne Basis-URL → Navigation würde leeres Fenster
-    // erzeugen → Klick abfangen (Sicherheitsnetz, falls ein Renderer
-    // einen Link nicht umgeschrieben hat)
+    // Ab hier navigiert das App-Fenster nie selbst
     e.preventDefault();
+
+    // Externe Links: über Go im Standardprogramm öffnen (Go prüft die URL
+    // erneut und lehnt alles außer http/https/mailto ab)
+    if (/^(https?:|mailto:)/i.test(href.trim())) {
+      openExternalLink(a.href);
+    }
+    // Relative Pfade, data:, file: usw. werden nur abgefangen (Sicherheitsnetz,
+    // falls ein Renderer einen Link nicht umgeschrieben hat)
+  });
+
+  // Mittelklick (öffnet sonst ggf. ein neues WebView-Fenster) abfangen
+  content.addEventListener('auxclick', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (a && content.contains(a)) e.preventDefault();
   });
 })();
+
+/**
+ * Öffnet einen externen Link über das Go-Binding im System-Browser.
+ *
+ * @param {string} url Absolute URL (a.href, vom Browser normalisiert).
+ * @lastModified 2026-10-14
+ */
+function openExternalLink(url) {
+  if (typeof window.openExternal !== 'function') return;
+  try {
+    var result = window.openExternal(url);
+    // Binding liefert ein Promise; Ablehnung (ungültige URL) still ignorieren
+    if (result && typeof result.catch === 'function') result.catch(function() {});
+  } catch (err) {
+    // Binding nicht verfügbar → nichts tun (Fenster bleibt auf dem Dokument)
+  }
+}
 
 // ============================================================
 // Drag & Drop

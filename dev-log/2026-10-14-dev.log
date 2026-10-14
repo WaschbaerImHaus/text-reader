@@ -13,3 +13,7 @@
 2026-10-14 21:29 – Nebenfund Bug #014: KaTeX lud nach dem Hauptskript → Formeln nie gerendert (auch im alten Build, per Worktree-Vergleich bestätigt). Fix: KaTeX vor Hauptskript.
 2026-10-14 21:29 – Verifikation: Chrome-Headless (LaTeX: 3 Formeln, kein Handler; Probe: Inline-Skript + Handler von CSP blockiert; alter Build: data-pwned="tex"). WebKitGTK/Xvfb: Formeln, Theme, Zoom, TOC, Suche per Klick/Tastatur OK.
 2026-10-14 21:29 – Offen dokumentiert: RISK-008 (externe Links öffnen fremde Seiten im App-Fenster mit Bindings).
+2026-10-14 21:38 – Auftrag: RISK-008 beheben (externe Links im System-Browser).
+2026-10-14 21:38 – TDD: Paket extlink (Opener, Validate, commandFor; 8 Tests), Binding openExternal, Link-Handler in scripts.js (preventDefault für alles, http/https/mailto → openExternal, auxclick abgefangen).
+2026-10-14 21:38 – Security-Review-Befund zu Build 41 (style url(file://…) + img-src file: → NTLM-Leck unter Windows) bestätigt; zusätzlich UNC-Bildpfade in Markdown gefunden → RISK-009. TDD: style-Filter, img-src data:, ResolveImagePaths (absolute Pfade einbetten, UNC nie lesen, nur Bild-Endungen).
+2026-10-14 21:38 – Verifikation WebKitGTK/Xvfb: Linkklick → Fake-xdg-open genau 1× mit korrekter URL, Fenster bleibt auf dem Dokument, Mittelklick ohne Wirkung; Bild mit absolutem Pfad sichtbar.
