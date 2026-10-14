@@ -4,7 +4,7 @@
 // mit korrekten Konfigurationswerten erzeugt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08 (Fix: DefaultFontSize-Feld in UIConfig)
+// Letzte Änderung: 2026-10-14 (Bug #013: Inhalt einmalig, Titel escaped)
 package ui
 
 import (
@@ -201,5 +201,83 @@ func TestBuildInitialHTML_PercentSigns(t *testing.T) {
 	// CSS-Wert muss als einfaches % erscheinen
 	if !strings.Contains(html, "100%") {
 		t.Error("Einfaches % fehlt – CSS-Prozentwerte fehlen")
+	}
+}
+
+// TestBuildInitialHTML_ContentInsertedOnce prüft, dass der Dokumentinhalt
+// genau einmal eingefügt wird – und zwar im #content-Container.
+//
+// Bug #013: Ein HTML-Kommentar im Body-Template enthielt den Platzhalter
+// {{CONTENT_HTML}}. Der Inhalt landete dadurch zusätzlich in einem Kommentar.
+func TestBuildInitialHTML_ContentInsertedOnce(t *testing.T) {
+	content := "<p>EINDEUTIGER-INHALT-4711</p>"
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light", ContentHTML: content})
+	if n := strings.Count(html, "EINDEUTIGER-INHALT-4711"); n != 1 {
+		t.Fatalf("Inhalt %d-mal eingefügt, erwartet genau 1-mal", n)
+	}
+	if !strings.Contains(html, `<div id="content">`+content+`</div>`) {
+		t.Error("Inhalt steht nicht im #content-Container")
+	}
+}
+
+// TestBuildInitialHTML_ContentWithCommentEnd prüft den Sonderfall aus Bug #013:
+// Enthält der Inhalt ein "-->" (z. B. goldmarks "<!-- raw HTML omitted -->"
+// für <Platzhalter> im Fließtext), darf nichts davon vor #content erscheinen.
+// Sonst rendert der Browser den Rest des Dokuments ungestylt oberhalb des
+// eigentlichen Inhalts (Anzeige beginnt mitten im Text).
+func TestBuildInitialHTML_ContentWithCommentEnd(t *testing.T) {
+	content := "<p>Vorher <!-- raw HTML omitted --> NACH-KOMMENTAR</p>"
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "dark", ContentHTML: content})
+	contentStart := strings.Index(html, `<div id="content">`)
+	if contentStart < 0 {
+		t.Fatal("#content-Container fehlt")
+	}
+	if strings.Contains(html[:contentStart], "NACH-KOMMENTAR") {
+		t.Error("Inhalt erscheint vor #content – wird außerhalb des gestylten Bereichs gerendert")
+	}
+}
+
+// TestBuildInitialHTML_EmptyContentPlaceholderRemoved prüft, dass ohne Inhalt
+// (Drop-Zone) kein Platzhalter im Dokument übrig bleibt.
+func TestBuildInitialHTML_EmptyContentPlaceholderRemoved(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"})
+	if strings.Contains(html, "{{CONTENT_HTML}}") {
+		t.Error("Platzhalter {{CONTENT_HTML}} nicht ersetzt")
+	}
+	if !strings.Contains(html, `<div id="content"></div>`) {
+		t.Error("Leerer #content-Container fehlt")
+	}
+}
+
+// TestBuildInitialHTML_TitleEscaped prüft, dass der Seitentitel HTML-escaped wird.
+//
+// Der Titel stammt aus der ersten "# "-Zeile der Datei. Unescaped könnte eine
+// Datei mit "# </title><script>…" Skript ausführen (CSP erlaubt Inline-Skripte)
+// und damit die Go-Bindings aufrufen.
+func TestBuildInitialHTML_TitleEscaped(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{
+		FontSize: 16, DefaultFontSize: 16, Theme: "light",
+		ContentHTML: "<p>x</p>",
+		PageTitle:   `</title><script>alert("x")</script> & "Mehr"`,
+	})
+	if strings.Contains(html, `<script>alert("x")</script>`) {
+		t.Fatal("Skript aus dem Titel unescaped im Dokument")
+	}
+	want := `<title>&lt;/title&gt;&lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt; &amp; &#34;Mehr&#34; – MD Reader</title>`
+	if !strings.Contains(html, want) {
+		t.Errorf("Titel nicht korrekt escaped, erwartet: %s", want)
+	}
+}
+
+// TestBuildInitialHTML_TitleUmlautsUnchanged prüft, dass normale Titel mit
+// Umlauten und Satzzeichen unverändert bleiben (Escaping nur für &<>"').
+func TestBuildInitialHTML_TitleUmlautsUnchanged(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{
+		FontSize: 16, DefaultFontSize: 16, Theme: "light",
+		ContentHTML: "<p>x</p>",
+		PageTitle:   "Offene Fragen (aufgeräumt 14.10.2026 08:03)",
+	})
+	if !strings.Contains(html, "<title>Offene Fragen (aufgeräumt 14.10.2026 08:03) – MD Reader</title>") {
+		t.Error("Titel mit Umlauten wurde verändert")
 	}
 }

@@ -1,0 +1,8 @@
+2026-10-14 19:38 – Bugreport (Screenshot Windows): 2026-10-14-offene-fragen.md wird unformatiert angezeigt und beginnt mitten im Text („nicht erreichbar — …“ aus Frage 151).
+2026-10-14 19:40 – Datei geprüft: UTF-8, LF, kein $ (KaTeX ausgeschlossen); Seite 827 KB → SetHtml-Weg, nicht Temp-Datei.
+2026-10-14 19:42 – debugging/full-html-dump.go: baut Seiten-HTML wie die App. Chrome-Headless reproduziert den Fehler exakt.
+2026-10-14 19:43 – Root Cause: body.html-Kommentar enthält {{CONTENT_HTML}} → Inhalt doppelt eingefügt, davon einmal im Kommentar. goldmark-Ausgabe „<!-- raw HTML omitted -->“ (für <Methode> <URL>) beendet den Kommentar vorzeitig → Rest des Dokuments ungestylt vor #content.
+2026-10-14 19:43 – Nebenfund (Sicherheit, RISK-005): PAGE_TITLE unescaped in <title> → Skript-Injection über „# </title><script>“.
+2026-10-14 19:44 – TDD: 5 neue Tests in ui/template_test.go (3 RED) → Kommentar ohne Platzhalter, html.EscapeString für Titel → GREEN. Alle Tests grün.
+2026-10-14 19:44 – Verifikation Chrome-Headless: Seite beginnt beim H1, voll gestylt, Inhalt einmalig (765 KB statt 827 KB).
+2026-10-14 19:46 – Build 40: BUGS #013, SECURITY_FIXED RISK-005, CHANGELOG; Cross-Builds.

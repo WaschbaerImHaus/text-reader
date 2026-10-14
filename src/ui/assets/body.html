@@ -94,7 +94,10 @@
     <div class="drop-error" id="drop-error"></div>
   </div>
 
-  <!-- Inhaltsbereich: Go bettet gerendertes HTML direkt ein ({{CONTENT_HTML}}) -->
+  <!-- Inhaltsbereich: Go bettet das gerenderte HTML direkt in #content ein.
+       Hier KEINE Platzhalter nennen: der Replacer würde sie auch im Kommentar
+       ersetzen, ein Kommentar-Ende im Inhalt beendet dann diesen Kommentar
+       vorzeitig (Bug #013). -->
   <div id="content-wrapper" style="display:{{CONTENT_WRAPPER_DISPLAY}}">
     <div id="content">{{CONTENT_HTML}}</div>
   </div>

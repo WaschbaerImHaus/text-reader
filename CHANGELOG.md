@@ -4,6 +4,22 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 40 – 2026-10-14
+
+### Fixed
+- Markdown documents could render unstyled and start mid-text: an HTML comment in the
+  page template contained the `{{CONTENT_HTML}}` placeholder, so the document was also
+  inserted into that comment. Any `-->` in the content (e.g. goldmark's
+  `<!-- raw HTML omitted -->` for `<Placeholder>` text) closed the comment early and the
+  rest of the document leaked above the styled `#content` area. The content is now
+  embedded exactly once.
+
+### Security
+- The page title (first `# ` heading of the file) is now HTML-escaped. Previously a
+  heading like `# </title><script>…` could inject script into the viewer.
+
+---
+
 ## Build 39 – 2026-07-04
 
 ### Fixed

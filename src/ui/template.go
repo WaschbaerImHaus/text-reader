@@ -1,10 +1,11 @@
 // Package ui stellt die HTML/CSS/JS-Oberfläche der MD-Reader-App bereit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-28
+// Letzte Änderung: 2026-10-14 (Bug #013: Seitentitel HTML-escapen)
 package ui
 
 import (
+	"html"
 	"strconv"
 	"strings"
 )
@@ -73,7 +74,9 @@ func BuildInitialHTML(cfg UIConfig) string {
 	// Seitentitel: "Dokumentname – MD Reader" oder nur "MD Reader" bei Drop-Zone
 	pageTitle := "MD Reader"
 	if cfg.PageTitle != "" {
-		pageTitle = cfg.PageTitle + " \u2013 MD Reader"
+		// Titel stammt aus der Datei (erste "# "-Zeile) → escapen, sonst könnte
+		// "</title><script>…" aus dem <title>-Element ausbrechen (Bug #013)
+		pageTitle = html.EscapeString(cfg.PageTitle) + " \u2013 MD Reader"
 	}
 
 	// Drop-Zone und Inhaltsbereich abhängig davon ob Inhalt vorhanden ist ein-/ausblenden
