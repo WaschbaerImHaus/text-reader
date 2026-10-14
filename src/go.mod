@@ -1,11 +1,12 @@
 module md-reader
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
 	github.com/yuin/goldmark v1.7.8
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
+	golang.org/x/net v0.61.0
 )
 
 require (

@@ -4,10 +4,11 @@
 // mit korrekten Konfigurationswerten erzeugt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (Bug #013: Inhalt einmalig, Titel escaped)
+// Letzte Änderung: 2026-10-14 (RISK-006/007: CSP mit Nonce, keine Inline-Handler)
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -279,5 +280,157 @@ func TestBuildInitialHTML_TitleUmlautsUnchanged(t *testing.T) {
 	})
 	if !strings.Contains(html, "<title>Offene Fragen (aufgeräumt 14.10.2026 08:03) – MD Reader</title>") {
 		t.Error("Titel mit Umlauten wurde verändert")
+	}
+}
+
+// cspNonceRe findet die Nonce in der script-src-Direktive der CSP.
+var cspNonceRe = regexp.MustCompile(`script-src 'nonce-([A-Za-z0-9+/=_-]+)'`)
+
+// extractCSP liefert den Inhalt des CSP-Meta-Tags.
+func extractCSP(t *testing.T, html string) string {
+	t.Helper()
+	m := regexp.MustCompile(`http-equiv="Content-Security-Policy" content="([^"]*)"`).FindStringSubmatch(html)
+	if m == nil {
+		t.Fatal("CSP-Meta-Tag fehlt")
+	}
+	return m[1]
+}
+
+// extractDirective liefert eine einzelne CSP-Direktive (z. B. "script-src …").
+func extractDirective(csp, name string) string {
+	for _, d := range strings.Split(csp, ";") {
+		d = strings.TrimSpace(d)
+		if strings.HasPrefix(d, name+" ") {
+			return d
+		}
+	}
+	return ""
+}
+
+// TestBuildInitialHTML_CSPScriptSrcStrict prüft RISK-006/007 (CSP-Härtung):
+// script-src erlaubt KEINE Inline-Skripte/Handler mehr, sondern nur Skripte mit
+// Nonce und das Mermaid-Skript von genau einer CDN-Adresse.
+func TestBuildInitialHTML_CSPScriptSrcStrict(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"})
+	scriptSrc := extractDirective(extractCSP(t, html), "script-src")
+	if scriptSrc == "" {
+		t.Fatal("script-src-Direktive fehlt")
+	}
+	if strings.Contains(scriptSrc, "'unsafe-inline'") {
+		t.Errorf("script-src erlaubt noch 'unsafe-inline': %s", scriptSrc)
+	}
+	if strings.Contains(scriptSrc, "'unsafe-eval'") {
+		t.Errorf("script-src erlaubt 'unsafe-eval': %s", scriptSrc)
+	}
+	if !cspNonceRe.MatchString(scriptSrc) {
+		t.Errorf("script-src enthält keine Nonce: %s", scriptSrc)
+	}
+	// Nur die exakte Mermaid-Datei, nicht der ganze CDN-Host
+	for _, src := range strings.Fields(scriptSrc)[1:] {
+		if strings.HasPrefix(src, "https:") && src != "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js" {
+			t.Errorf("Zu weit gefasste Skriptquelle: %s", src)
+		}
+	}
+}
+
+// TestBuildInitialHTML_CSPExtraDirectives prüft die zusätzlichen Schutz-Direktiven.
+func TestBuildInitialHTML_CSPExtraDirectives(t *testing.T) {
+	csp := extractCSP(t, BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"}))
+	for _, want := range []string{"default-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-src 'none'", "connect-src 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP enthält %q nicht: %s", want, csp)
+		}
+	}
+}
+
+// TestBuildInitialHTML_AllScriptsHaveNonce prüft, dass jedes eigene <script>-Tag
+// die Nonce aus der CSP trägt – sonst würde die App selbst blockiert.
+func TestBuildInitialHTML_AllScriptsHaveNonce(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light", ContentHTML: "<p>x</p>"})
+	m := cspNonceRe.FindStringSubmatch(html)
+	if m == nil {
+		t.Fatal("Keine Nonce in der CSP")
+	}
+	nonce := m[1]
+	tags := regexp.MustCompile(`<script[^>]*>`).FindAllString(html, -1)
+	if len(tags) < 3 {
+		t.Fatalf("Erwartet mindestens 3 Skript-Tags (App, KaTeX, Auto-Render), gefunden: %d", len(tags))
+	}
+	for _, tag := range tags {
+		if tag != `<script nonce="`+nonce+`">` {
+			t.Errorf("Skript-Tag ohne passende Nonce: %s", tag)
+		}
+	}
+}
+
+// TestBuildInitialHTML_NonceRandomPerPage prüft, dass jede Seite eine neue,
+// ausreichend lange Zufalls-Nonce bekommt.
+func TestBuildInitialHTML_NonceRandomPerPage(t *testing.T) {
+	cfg := UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"}
+	n1 := cspNonceRe.FindStringSubmatch(BuildInitialHTML(cfg))
+	n2 := cspNonceRe.FindStringSubmatch(BuildInitialHTML(cfg))
+	if n1 == nil || n2 == nil {
+		t.Fatal("Nonce fehlt")
+	}
+	if n1[1] == n2[1] {
+		t.Error("Zwei Seiten haben dieselbe Nonce")
+	}
+	if len(n1[1]) < 22 {
+		t.Errorf("Nonce zu kurz (%d Zeichen, mind. 128 Bit erwartet)", len(n1[1]))
+	}
+}
+
+// TestBuildInitialHTML_NoNoncePlaceholderLeft prüft, dass kein Platzhalter übrig bleibt.
+func TestBuildInitialHTML_NoNoncePlaceholderLeft(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"})
+	if strings.Contains(html, "{{") && strings.Contains(html, "NONCE") {
+		t.Error("Nonce-Platzhalter nicht ersetzt")
+	}
+}
+
+// TestBodyTemplate_NoInlineEventHandlers prüft, dass das eigene Body-Template
+// keine Inline-Handler (onclick=… usw.) mehr enthält – die strikte CSP würde
+// sie blockieren. Alle Handler werden per addEventListener gesetzt.
+func TestBodyTemplate_NoInlineEventHandlers(t *testing.T) {
+	if m := regexp.MustCompile(`(?i)\son[a-z]+\s*=`).FindAllString(htmlBodyHTML, -1); len(m) > 0 {
+		t.Errorf("Inline-Event-Handler im Body-Template: %v", m)
+	}
+	if strings.Contains(strings.ToLower(htmlBodyHTML), "javascript:") {
+		t.Error("javascript:-URL im Body-Template")
+	}
+}
+
+// TestScripts_ButtonsWiredByListener prüft, dass alle früheren Inline-Handler
+// per addEventListener verdrahtet werden (Schutz vor vergessenen Buttons).
+func TestScripts_ButtonsWiredByListener(t *testing.T) {
+	ids := []string{"btn-toc", "btn-open", "btn-layout", "btn-zoom-out", "btn-zoom-in",
+		"btn-search", "btn-theme", "btn-fullscreen", "btn-close", "search-input",
+		"search-prev", "search-next", "search-close", "toc-close"}
+	for _, id := range ids {
+		if !strings.Contains(htmlBodyHTML, `id="`+id+`"`) {
+			t.Errorf("Element mit id=%q fehlt im Body-Template", id)
+		}
+		if !strings.Contains(htmlJavaScript, `'`+id+`'`) {
+			t.Errorf("Element %q wird in scripts.js nicht verdrahtet", id)
+		}
+	}
+}
+
+// TestBuildInitialHTML_KaTeXLoadedBeforeMainScript prüft Bug #014: KaTeX muss
+// VOR dem Hauptskript geladen werden. initEmbeddedContent() ruft initKaTeX()
+// sofort auf – stand KaTeX dahinter, war renderMathInElement noch undefiniert
+// und keine Formel wurde gerendert.
+func TestBuildInitialHTML_KaTeXLoadedBeforeMainScript(t *testing.T) {
+	html := BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light", ContentHTML: "<p>$x$</p>"})
+	autoRender := strings.Index(html, "renderMathInElement=")
+	if autoRender < 0 {
+		autoRender = strings.Index(html, "renderMathInElement")
+	}
+	mainInit := strings.Index(html, "(function initEmbeddedContent()")
+	if autoRender < 0 || mainInit < 0 {
+		t.Fatalf("Marker nicht gefunden (autoRender=%d, mainInit=%d)", autoRender, mainInit)
+	}
+	if autoRender > mainInit {
+		t.Error("KaTeX-Auto-Render wird erst nach dem Hauptskript geladen – Formeln bleiben ungerendert")
 	}
 }

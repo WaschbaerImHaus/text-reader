@@ -15,7 +15,7 @@
 //   - Mathematik: $...$, $$...$$, \[...\], \(...\), equation, align (→ KaTeX)
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-11
+// Letzte Änderung: 2026-10-14 (RISK-007: Ausgabe bereinigt, Formeln escaped, Makros als JSON-Datenblock)
 package renderer
 
 import (
@@ -74,9 +74,10 @@ var reMultiNewlines = regexp.MustCompile(`\n{3,}`)
 //
 // Extrahiert Titel und Dokumentkörper aus der .tex-Datei und wandelt
 // gängige LaTeX-Befehle in HTML-Äquivalente um. Mathematische Ausdrücke
-// werden unverändert ausgegeben, damit KaTeX sie im Browser rendern kann.
-// Custom-Makros (\newcommand, \DeclareMathOperator) werden als window.__latexMacros
-// eingebettet, damit KaTeX sie korrekt rendern kann.
+// werden HTML-escaped ausgegeben, damit KaTeX sie im Browser rendern kann.
+// Custom-Makros (\newcommand, \DeclareMathOperator) werden als JSON-Datenblock
+// (id="latex-macros") eingebettet, damit KaTeX sie korrekt rendern kann.
+// Das Ergebnis wird mit SanitizeHTML bereinigt (RISK-007).
 //
 // @param content  Der LaTeX-Quelltext der Datei.
 // @param filename Dateiname (für den Titel-Fallback).
@@ -248,15 +249,15 @@ func extractLatexMacros(preamble string) map[string]string {
 	return macros
 }
 
-// buildMacrosScript erzeugt einen <script>-Block, der window.__latexMacros
-// für KaTeX mit den extrahierten Makros befüllt.
+// buildMacrosScript erzeugt einen nicht ausführbaren JSON-Datenblock
+// (<script type="application/json" id="latex-macros">) mit den Makros für KaTeX.
 //
-// Das Script wird dem HTML-Inhalt vorangestellt, damit initKaTeX() die
-// Makros beim Rendern der Formeln verwenden kann.
+// Der Block wird dem HTML-Inhalt vorangestellt; initKaTeX() liest ihn per
+// JSON.parse. Ein ausführbares Inline-Skript würde die CSP blockieren.
 //
 // @param macros Map Befehlsname→KaTeX-Definition.
 // @return HTML-Script-Tag oder leer wenn keine Makros vorhanden.
-// @lastModified 2026-03-11
+// @lastModified 2026-10-14
 func buildMacrosScript(macros map[string]string) string {
 	if len(macros) == 0 {
 		return ""
@@ -265,7 +266,10 @@ func buildMacrosScript(macros map[string]string) string {
 	if err != nil {
 		return ""
 	}
-	return `<script>window.__latexMacros=` + string(jsonBytes) + `;</script>`
+	// Nicht ausführbarer JSON-Datenblock: wird von der strikten CSP nicht
+	// blockiert und von initKaTeX() per JSON.parse gelesen. json.Marshal
+	// escaped <, > und & als \u003c usw. → "</script>" kann nicht ausbrechen.
+	return `<script type="application/json" id="latex-macros">` + string(jsonBytes) + `</script>`
 }
 
 // IsLaTeXFile prüft ob ein Dateipfad auf eine LaTeX-Datei (.tex) zeigt.
@@ -449,10 +453,14 @@ func convertLatexToHTML(body, title, author, date string, theorems map[string]st
 	// ---- Schritt 9: Math-Platzhalter wiederherstellen ----
 	body = restoreMath(body, mathPlaceholders)
 
-	// Ergebnis in einen Artikel-Wrapper einbetten
-	// Makros als <script> voranstellen, damit initKaTeX() sie verwenden kann
-	macrosScript := buildMacrosScript(macros)
-	return macrosScript + `<article class="latex-document">` + body + `</article>`
+	// Ergebnis in einen Artikel-Wrapper einbetten und nach dem Whitelist-Prinzip
+	// bereinigen (RISK-007): Der Parser übernimmt Fließtext ungefiltert, eine
+	// präparierte .tex-Datei könnte sonst Event-Handler oder javascript:-Links
+	// einschleusen.
+	article := SanitizeHTML(`<article class="latex-document">` + body + `</article>`)
+	// Makros als JSON-Datenblock voranstellen (erst NACH der Bereinigung, die
+	// <script> entfernen würde), damit initKaTeX() sie verwenden kann
+	return buildMacrosScript(macros) + article
 }
 
 // mathEnvNames enthält die Namen mathematischer LaTeX-Umgebungen.
@@ -631,9 +639,12 @@ func itoa(n int) string {
 }
 
 // restoreMath stellt die geschützten Math-Formeln aus den Platzhaltern wieder her.
+//
+// Die Formeln werden HTML-escaped eingesetzt: "$a<b$" würde sonst ein Tag
+// öffnen. KaTeX liest den Textinhalt des DOM und sieht daher weiterhin "a<b".
 func restoreMath(content string, placeholders []string) string {
 	for i, formula := range placeholders {
-		content = strings.ReplaceAll(content, mathPlaceholderTag(i), formula)
+		content = strings.ReplaceAll(content, mathPlaceholderTag(i), html.EscapeString(formula))
 	}
 	return content
 }

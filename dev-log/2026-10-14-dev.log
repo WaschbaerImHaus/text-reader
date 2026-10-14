@@ -6,3 +6,10 @@
 2026-10-14 19:44 – TDD: 5 neue Tests in ui/template_test.go (3 RED) → Kommentar ohne Platzhalter, html.EscapeString für Titel → GREEN. Alle Tests grün.
 2026-10-14 19:44 – Verifikation Chrome-Headless: Seite beginnt beim H1, voll gestylt, Inhalt einmalig (765 KB statt 827 KB).
 2026-10-14 19:46 – Build 40: BUGS #013, SECURITY_FIXED RISK-005, CHANGELOG; Cross-Builds.
+2026-10-14 21:15 – Sicherheitsprüfung: Scanner-Report (39 Funde) gegengeprüft – HOCH/MITTEL sind Fehlalarme. Eigene Probes: EPUB lässt Event-Handler/javascript:/iframe srcdoc durch (Skriptausführung in Chrome nachgewiesen) → RISK-006; LaTeX escaped Fließtext nicht → RISK-007. MD/TXT/FB2 sicher. In SECURITY_RISKS.md eingetragen.
+2026-10-14 21:29 – Auftrag: RISK-006/007 beheben (1: Bereinigung, 2: CSP-Härtung).
+2026-10-14 21:29 – TDD: renderer/sanitize.go (Whitelist-Bereiniger, x/net/html v0.61.0), 17 Tests; EPUB-Gesamt-HTML bereinigt; LaTeX-Ausgabe bereinigt, restoreMath escaped, Makros als JSON-Datenblock (scripts.js readLatexMacros). Drei zu strenge Tests korrigiert (br/>, leeres img, LaTeX-Entities nicht entschlüsselt).
+2026-10-14 21:29 – TDD: CSP script-src 'nonce-…' + exakte Mermaid-URL, base-uri/form-action/frame-src 'none'; 15 onclick/oninput/onkeydown aus body.html → initUIListeners() in scripts.js.
+2026-10-14 21:29 – Nebenfund Bug #014: KaTeX lud nach dem Hauptskript → Formeln nie gerendert (auch im alten Build, per Worktree-Vergleich bestätigt). Fix: KaTeX vor Hauptskript.
+2026-10-14 21:29 – Verifikation: Chrome-Headless (LaTeX: 3 Formeln, kein Handler; Probe: Inline-Skript + Handler von CSP blockiert; alter Build: data-pwned="tex"). WebKitGTK/Xvfb: Formeln, Theme, Zoom, TOC, Suche per Klick/Tastatur OK.
+2026-10-14 21:29 – Offen dokumentiert: RISK-008 (externe Links öffnen fremde Seiten im App-Fenster mit Bindings).

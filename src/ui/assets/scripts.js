@@ -1,4 +1,7 @@
-<script>
+<!-- KaTeX zuerst laden: initEmbeddedContent() im Hauptskript ruft initKaTeX()
+     sofort auf und braucht renderMathInElement (Bug #014). -->
+{{KATEX_SCRIPTS}}
+<script nonce="{{SCRIPT_NONCE}}">
 // ============================================================
 // Globale Zustandsvariablen
 // ============================================================
@@ -907,9 +910,10 @@ function initKaTeX(container) {
   if (typeof renderMathInElement !== 'function') return;
   try {
     // Custom-Makros aus LaTeX-Präambel (\newcommand, \DeclareMathOperator)
-    // werden von Go als window.__latexMacros={...} in den HTML-Inhalt eingebettet.
-    var userMacros = (typeof window.__latexMacros === 'object' && window.__latexMacros)
-      ? window.__latexMacros : {};
+    // bettet Go als nicht ausführbaren JSON-Datenblock
+    // (script-Element mit type="application/json", id="latex-macros") in den Inhalt ein
+    // (ein ausführbares Inline-Skript würde die strikte CSP blockieren).
+    var userMacros = readLatexMacros(container);
 
     // Benutzer-Makros überschreiben ggf. die eingebauten No-Ops
     var macros = Object.assign({}, userMacros);
@@ -947,10 +951,67 @@ function initKaTeX(container) {
   } catch (e) {
     // KaTeX-Fehler stumm ignorieren (z.B. ungültige Formeln)
   }
-  // Makros zurücksetzen damit nicht-LaTeX-Dateien keinen Makro-Kontext erben
-  window.__latexMacros = null;
+}
+
+/**
+ * Verdrahtet alle Bedienelemente per addEventListener.
+ *
+ * Früher standen die Handler als onclick="…" im HTML. Die strikte CSP
+ * (RISK-006/007, kein 'unsafe-inline') blockiert solche Inline-Handler –
+ * daher werden sie hier zentral gesetzt.
+ *
+ * @lastModified 2026-10-14
+ */
+(function initUIListeners() {
+  // Element-ID → Klick-Funktion
+  var clickHandlers = [
+    ['btn-toc', toggleTOC],
+    ['btn-open', openFile],
+    ['btn-layout', toggleLayout],
+    ['btn-zoom-out', zoomOut],
+    ['btn-zoom-in', zoomIn],
+    ['btn-search', openSearch],
+    ['btn-theme', cycleTheme],
+    ['btn-fullscreen', toggleFullscreen],
+    ['btn-close', closeApp],
+    ['search-prev', searchPrev],
+    ['search-next', searchNext],
+    ['search-close', closeSearch],
+    ['toc-close', closeTOC]
+  ];
+  clickHandlers.forEach(function(entry) {
+    var el = document.getElementById(entry[0]);
+    if (el) el.addEventListener('click', function() { entry[1](); });
+  });
+
+  // Suchfeld: Eingabe und Tastatur (Enter, Umschalt+Enter, Esc)
+  var searchInput = document.getElementById('search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() { onSearchInput(searchInput.value); });
+    searchInput.addEventListener('keydown', function(e) { onSearchKeydown(e); });
+  }
+})();
+
+/**
+ * Liest die LaTeX-Makros aus dem JSON-Datenblock im Inhaltsbereich.
+ *
+ * Der Block gehört zum jeweiligen Dokument und verschwindet mit ihm –
+ * andere Dateien erben daher keinen Makro-Kontext.
+ *
+ * @param {HTMLElement} container Inhaltsbereich.
+ * @returns {Object} Makro-Map (leer wenn kein Block oder ungültiges JSON).
+ * @lastModified 2026-10-14
+ */
+function readLatexMacros(container) {
+  var block = container.querySelector('script[type="application/json"]#latex-macros');
+  if (!block) return {};
+  try {
+    var parsed = JSON.parse(block.textContent);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (e) {
+    return {};
+  }
 }
 </script>
-{{KATEX_SCRIPTS}}
 </body>
 </html>

@@ -1,10 +1,11 @@
 // Package ui stellt die HTML/CSS/JS-Oberfläche der MD-Reader-App bereit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (Bug #013: Seitentitel HTML-escapen)
+// Letzte Änderung: 2026-10-14 (RISK-006/007: strikte CSP mit Skript-Nonce)
 package ui
 
 import (
+	"crypto/rand"
 	"html"
 	"strconv"
 	"strings"
@@ -32,14 +33,23 @@ type UIConfig struct {
 	ScrollPos int
 }
 
-// htmlDocHeadTemplate ist der Dokumentkopf mit Platzhaltern für Favicon, Titel und KaTeX-CSS.
-// font-src data: ist nötig damit die eingebetteten KaTeX-Schriften (base64 data URIs) geladen werden.
+// htmlDocHeadTemplate ist der Dokumentkopf mit Platzhaltern für Favicon, Titel, Nonce und KaTeX-CSS.
+//
+// CSP (RISK-006/007):
+//   - script-src: nur eigene Skripte mit Zufalls-Nonce und exakt das Mermaid-Skript.
+//     KEIN 'unsafe-inline' → eingeschleuste Inline-Handler (onerror=…) und
+//     javascript:-URLs werden vom Browser blockiert, selbst wenn die
+//     Bereinigung etwas übersehen sollte.
+//   - font-src data: ist nötig, damit die eingebetteten KaTeX-Schriften laden.
+//   - object-src data: wird für die PDF-Anzeige per <embed> (Windows) benötigt.
+//   - base-uri/form-action/frame-src 'none': keine Basis-URL-Umlenkung,
+//     keine Formular-Ziele, keine Frames.
 const htmlDocHeadTemplate = `<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob: file:; font-src data:; object-src data:; connect-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{{SCRIPT_NONCE}}' https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js; style-src 'unsafe-inline'; img-src data: blob: file:; font-src data:; object-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none';">
 <link rel="icon" type="image/svg+xml" href="{{FAVICON_URI}}">
 <title>{{PAGE_TITLE}}</title>
 <style>
@@ -56,6 +66,10 @@ const htmlDocHeadTemplate = `<!DOCTYPE html>
 // @param cfg UIConfig mit den initialen Einstellungswerten.
 // @return Vollständiges HTML-Dokument als String.
 func BuildInitialHTML(cfg UIConfig) string {
+	// Neue Zufalls-Nonce je Seite (128 Bit, Base32). Nur Skript-Tags mit dieser
+	// Nonce dürfen laufen – eingeschleuste Skripte kennen sie nicht.
+	nonce := rand.Text()
+
 	// Theme-Klasse für das <body>-Tag bestimmen
 	themeClass := ""
 	if cfg.Theme == "dark" || cfg.Theme == "retro" {
@@ -99,6 +113,7 @@ func BuildInitialHTML(cfg UIConfig) string {
 		"{{CONTENT_HTML}}", cfg.ContentHTML,
 		"{{INITIAL_SCROLL_POS}}", strconv.Itoa(cfg.ScrollPos),
 		"{{INITIAL_FILE_HASH}}", cfg.FileHash,
+		"{{SCRIPT_NONCE}}", nonce,
 	)
 
 	// Favicon und KaTeX-CSS in den Dokumentkopf einsetzen
@@ -108,8 +123,10 @@ func BuildInitialHTML(cfg UIConfig) string {
 	head = r.Replace(head)
 
 	// KaTeX JS + Auto-Render JS als Inline-Skripte
-	katexScripts := "<script>\n" + KaTeXJS() + "\n</script>\n" +
-		"<script>\n" + KaTeXAutoRenderJS() + "\n</script>"
+	// (mit Nonce, sonst blockiert die CSP sie)
+	scriptOpen := `<script nonce="` + nonce + `">`
+	katexScripts := scriptOpen + "\n" + KaTeXJS() + "\n</script>\n" +
+		scriptOpen + "\n" + KaTeXAutoRenderJS() + "\n</script>"
 
 	mainJS := r.Replace(htmlJavaScript)
 	mainJS = strings.ReplaceAll(mainJS, "{{KATEX_SCRIPTS}}", katexScripts)

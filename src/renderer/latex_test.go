@@ -4,7 +4,7 @@
 // Listen, Umgebungen, Mathematik und Sonderfälle.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-11
+// Letzte Änderung: 2026-10-14 (RISK-007: Bereinigung, Makros als JSON-Datenblock)
 package renderer_test
 
 import (
@@ -327,7 +327,8 @@ Dritte Zeile.
 		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
 	}
 	// \\ und \newline sollten in <br> umgewandelt werden
-	if !strings.Contains(result.HTML, "<br>") {
+	// (seit Build 41 vom Bereiniger als <br/> ausgegeben – gleichwertig)
+	if !strings.Contains(result.HTML, "<br") {
 		t.Error("HTML enthält kein <br> für \\\\ oder \\newline")
 	}
 }
@@ -439,7 +440,9 @@ Dies ist ein Beweis.
 	}
 }
 
-// TestParseLaTeXNewcommandMacros prüft dass Custom-Makros als window.__latexMacros eingebettet werden.
+// TestParseLaTeXNewcommandMacros prüft dass Custom-Makros als nicht ausführbarer
+// JSON-Datenblock (<script type="application/json" id="latex-macros">) eingebettet
+// werden. Ein ausführbares Inline-Skript würde von der strikten CSP blockiert.
 func TestParseLaTeXNewcommandMacros(t *testing.T) {
 	content := `\documentclass{article}
 \newcommand{\N}{\mathbb{N}}
@@ -453,9 +456,12 @@ Es gilt $n \in \N$.
 	if err != nil {
 		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
 	}
-	// Makros müssen als script-Tag im HTML erscheinen
-	if !strings.Contains(result.HTML, `window.__latexMacros`) {
-		t.Error("HTML enthält kein window.__latexMacros Script für Custom-Makros")
+	// Makros müssen als JSON-Datenblock im HTML erscheinen
+	if !strings.Contains(result.HTML, `<script type="application/json" id="latex-macros">`) {
+		t.Error("HTML enthält keinen JSON-Datenblock für Custom-Makros")
+	}
+	if strings.Contains(result.HTML, `window.__latexMacros`) {
+		t.Error("HTML enthält noch das ausführbare window.__latexMacros-Skript")
 	}
 	if !strings.Contains(result.HTML, `\\N`) {
 		t.Error("HTML enthält nicht das Makro \\N")
@@ -478,9 +484,9 @@ Einfacher Text ohne Makros.
 	if err != nil {
 		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
 	}
-	// Ohne Custom-Makros kein window.__latexMacros Script
-	if strings.Contains(result.HTML, `window.__latexMacros`) {
-		t.Error("HTML enthält window.__latexMacros obwohl keine Makros definiert wurden")
+	// Ohne Custom-Makros kein Makro-Datenblock
+	if strings.Contains(result.HTML, `latex-macros`) || strings.Contains(result.HTML, `<script`) {
+		t.Error("HTML enthält einen Makro-Block obwohl keine Makros definiert wurden")
 	}
 }
 
@@ -503,5 +509,85 @@ func TestIsSupportedFileWithTex(t *testing.T) {
 				t.Errorf("IsSupportedFile(%q) = %v, erwartet %v", tt.path, got, tt.expected)
 			}
 		})
+	}
+}
+
+// latexSecurityHTML rendert ein LaTeX-Dokument und gibt das HTML zurück.
+func latexSecurityHTML(t *testing.T, body string) string {
+	t.Helper()
+	result, err := renderer.ParseLaTeXContent("\\documentclass{article}\n\\begin{document}\n"+body+"\n\\end{document}", "x.tex")
+	if err != nil {
+		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
+	}
+	return result.HTML
+}
+
+// TestParseLaTeXRawHTMLSanitized prüft RISK-007: HTML im LaTeX-Fließtext, in
+// Abschnitten und Formatierungsbefehlen darf keine Event-Handler einschleusen.
+func TestParseLaTeXRawHTMLSanitized(t *testing.T) {
+	got := latexSecurityHTML(t, `Text <img src=x onerror=alert(1)> weiter.
+
+\section{<b onmouseover=alert(2)>Abschnitt</b>}
+\textbf{<i onclick=alert(3)>fett</i>}
+<iframe srcdoc="x"></iframe><script>alert(4)</script>`)
+	lower := strings.ToLower(got)
+	// Ein leeres <img/> ohne Attribute ist harmlos – entscheidend ist, dass
+	// keine Handler und kein Skript übrig bleiben.
+	for _, bad := range []string{"onerror", "onmouseover", "onclick", "iframe", "alert(", "src="} {
+		if strings.Contains(lower, bad) {
+			t.Errorf("Gefährliches Muster %q im LaTeX-HTML:\n%s", bad, got)
+		}
+	}
+	for _, want := range []string{"Text", "weiter.", "Abschnitt", "fett"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Erwarteter Text %q fehlt:\n%s", want, got)
+		}
+	}
+}
+
+// TestParseLaTeXJavascriptLinksRemoved prüft, dass \href und \url keine
+// javascript:-Links erzeugen, normale Links aber erhalten bleiben.
+func TestParseLaTeXJavascriptLinksRemoved(t *testing.T) {
+	got := latexSecurityHTML(t, `\href{javascript:alert(1)}{Klick} \url{javascript:alert(2)} \href{JaVa&#115;cript:alert(3)}{K3} \href{https://example.org}{Beispiel}`)
+	// K3: LaTeX entschlüsselt keine HTML-Entities – der Browser sieht wörtlich
+	// "JaVa&#115;cript:…", das ist kein gültiges Schema (& ist unzulässig)
+	// und wird zum harmlosen relativen Pfad.
+	if strings.Contains(strings.ToLower(got), `href="javascript`) {
+		t.Errorf("javascript:-Link im LaTeX-HTML:\n%s", got)
+	}
+	if !strings.Contains(got, `<a href="https://example.org">Beispiel</a>`) {
+		t.Errorf("Normaler Link fehlt:\n%s", got)
+	}
+	if !strings.Contains(got, "Klick") {
+		t.Errorf("Linktext fehlt:\n%s", got)
+	}
+}
+
+// TestParseLaTeXMathEscaped prüft, dass Formeln HTML-escaped ausgegeben werden:
+// "$a<b$" darf kein Tag öffnen, und HTML in Formeln darf nichts einschleusen.
+// KaTeX liest den Textinhalt, sieht also weiterhin "a<b".
+func TestParseLaTeXMathEscaped(t *testing.T) {
+	got := latexSecurityHTML(t, `Es gilt $a<b$ und $x<img src=y onerror=alert(1)>$.`)
+	if !strings.Contains(got, `$a&lt;b$`) {
+		t.Errorf("Formel a<b nicht escaped:\n%s", got)
+	}
+	if strings.Contains(strings.ToLower(got), "<img") {
+		t.Errorf("HTML aus Formel eingeschleust:\n%s", got)
+	}
+}
+
+// TestParseLaTeXMacrosJSONEscaped prüft, dass Makro-Definitionen den JSON-Block
+// nicht mit "</script>" verlassen können.
+func TestParseLaTeXMacrosJSONEscaped(t *testing.T) {
+	content := "\\documentclass{article}\n\\newcommand{\\X}{</script><img src=x onerror=alert(1)>}\n\\begin{document}\n$\\X$\n\\end{document}"
+	result, err := renderer.ParseLaTeXContent(content, "x.tex")
+	if err != nil {
+		t.Fatalf("ParseLaTeXContent() Fehler: %v", err)
+	}
+	if strings.Count(result.HTML, "</script>") != 1 {
+		t.Errorf("Makro-Block wurde vorzeitig beendet:\n%s", result.HTML)
+	}
+	if strings.Contains(strings.ToLower(result.HTML), "<img") {
+		t.Errorf("HTML aus Makro eingeschleust:\n%s", result.HTML)
 	}
 }

@@ -4,6 +4,24 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 41 – 2026-10-14
+
+### Security
+- EPUB and LaTeX files could execute JavaScript in the viewer (event handler attributes,
+  `javascript:` links, `<iframe srcdoc>`, unescaped LaTeX text). All EPUB HTML and LaTeX
+  output now passes through a new allowlist HTML sanitizer (`golang.org/x/net/html`).
+- Strict Content Security Policy: inline scripts and inline event handlers are no longer
+  allowed. The viewer's own scripts carry a random per-page nonce; the only external
+  script is the exact Mermaid file. Added `base-uri`, `form-action` and `frame-src 'none'`.
+  All toolbar/search handlers are now attached via `addEventListener`.
+
+### Fixed
+- Math formulas (KaTeX) were never rendered when opening a file: the KaTeX scripts were
+  loaded after the main script that already tried to use them.
+- LaTeX: formulas containing `<` (e.g. `$a<b$`) broke the surrounding HTML.
+
+---
+
 ## Build 40 – 2026-10-14
 
 ### Fixed

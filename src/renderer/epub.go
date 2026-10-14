@@ -9,7 +9,7 @@
 //   - XHTML-Dateien → eigentliche Kapitelinhalte
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-04
+// Letzte Änderung: 2026-10-14 (RISK-006: Kapitel-HTML wird bereinigt)
 package renderer
 
 import (
@@ -221,7 +221,10 @@ func ParseEpub(data []byte, filename string) (*Result, error) {
 	}
 
 	return &Result{
-		HTML:       htmlBuilder.String(),
+		// Gesamtes Kapitel-HTML nach dem Whitelist-Prinzip bereinigen (RISK-006):
+		// EPUBs sind fremde Dateien und können Event-Handler, javascript:-Links,
+		// iframes oder meta-Refresh enthalten.
+		HTML:       SanitizeHTML(htmlBuilder.String()),
 		Title:      title,
 		RawContent: "", // Binärdaten werden nicht als RawContent gespeichert
 	}, nil

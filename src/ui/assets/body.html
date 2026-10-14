@@ -8,51 +8,51 @@
   <div id="toolbar-center">
 
     <!-- TOC-Button (nur sichtbar wenn Überschriften vorhanden) -->
-    <button class="toolbar-btn" id="btn-toc" onclick="toggleTOC()"
+    <button class="toolbar-btn" id="btn-toc"
             title="Inhaltsverzeichnis" style="display:none">&#9776;</button>
 
     <div class="toolbar-separator" id="sep-toc" style="display:none"></div>
 
     <!-- Datei öffnen (nativer Dialog, Strg+O) -->
-    <button class="toolbar-btn" id="btn-open" onclick="openFile()"
+    <button class="toolbar-btn" id="btn-open"
             title="Datei öffnen (Strg+O)">&#128194;</button>
 
     <div class="toolbar-separator"></div>
 
     <!-- Hochformat / Querformat -->
-    <button class="toolbar-btn" id="btn-layout" onclick="toggleLayout()"
+    <button class="toolbar-btn" id="btn-layout"
             title="Hochformat / Querformat umschalten">&#9647;</button>
 
     <div class="toolbar-separator"></div>
 
     <!-- Zoom -->
-    <button class="toolbar-btn" id="btn-zoom-out" onclick="zoomOut()"
+    <button class="toolbar-btn" id="btn-zoom-out"
             title="Schrift verkleinern (Strg+-)">&#8854;</button>
     <span id="zoom-label">100%</span>
-    <button class="toolbar-btn" id="btn-zoom-in" onclick="zoomIn()"
+    <button class="toolbar-btn" id="btn-zoom-in"
             title="Schrift vergrößern (Strg++)">&#8853;</button>
 
     <div class="toolbar-separator"></div>
 
     <!-- Suche -->
-    <button class="toolbar-btn" id="btn-search" onclick="openSearch()"
+    <button class="toolbar-btn" id="btn-search"
             title="Suchen (Strg+F)">&#128269;</button>
 
     <div class="toolbar-separator"></div>
 
     <!-- Theme-Wechsel -->
-    <button class="toolbar-btn" id="btn-theme" onclick="cycleTheme()"
+    <button class="toolbar-btn" id="btn-theme"
             title="Dunkelmodus einschalten">&#9790;</button>
 
     <div class="toolbar-separator"></div>
 
     <!-- Vollbild -->
-    <button class="toolbar-btn" id="btn-fullscreen" onclick="toggleFullscreen()"
+    <button class="toolbar-btn" id="btn-fullscreen"
             title="Vollbild (F11)">&#9634;</button>
 
   </div>
   <!-- Schließen-Button rechts -->
-  <button class="toolbar-btn" id="btn-close" onclick="closeApp()"
+  <button class="toolbar-btn" id="btn-close"
           title="Schließen">&#10005;</button>
 </div>
 
@@ -61,12 +61,11 @@
      ============================================================ -->
 <div id="search-bar">
   <input type="text" id="search-input" placeholder="Suchen..."
-         autocomplete="off" oninput="onSearchInput(this.value)"
-         onkeydown="onSearchKeydown(event)">
+         autocomplete="off">
   <span id="search-count"></span>
-  <button class="toolbar-btn" onclick="searchPrev()" title="Vorheriges (Umschalt+Enter)">&#8593;</button>
-  <button class="toolbar-btn" onclick="searchNext()" title="N&#228;chstes (Enter)">&#8595;</button>
-  <button class="toolbar-btn" onclick="closeSearch()" title="Suche schlie&#223;en (Esc)">&#10005;</button>
+  <button class="toolbar-btn" id="search-prev" title="Vorheriges (Umschalt+Enter)">&#8593;</button>
+  <button class="toolbar-btn" id="search-next" title="N&#228;chstes (Enter)">&#8595;</button>
+  <button class="toolbar-btn" id="search-close" title="Suche schlie&#223;en (Esc)">&#10005;</button>
 </div>
 
 <!-- ============================================================
@@ -75,7 +74,7 @@
 <div id="toc-sidebar">
   <div id="toc-header">
     <span>Inhalt</span>
-    <button class="toolbar-btn" onclick="closeTOC()" title="Schlie&#223;en"
+    <button class="toolbar-btn" id="toc-close" title="Schlie&#223;en"
             style="min-width:24px;height:24px;font-size:13px;">&#10005;</button>
   </div>
   <ul id="toc-list"></ul>

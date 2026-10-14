@@ -1,7 +1,7 @@
 // Tests für das EPUB-Datei-Rendering.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-04
+// Letzte Änderung: 2026-10-14 (RISK-006: Bereinigung fremden HTMLs)
 package renderer_test
 
 import (
@@ -592,5 +592,46 @@ func TestParseEpubSVGImageNotFound(t *testing.T) {
 	}
 	if !strings.Contains(result.HTML, "Vor dem SVG.") {
 		t.Error("Kapitelinhalt fehlt nach Verarbeitung mit fehlendem SVG-Bild")
+	}
+}
+
+// TestParseEpubMaliciousContentSanitized prüft RISK-006: Ein präpariertes EPUB
+// darf weder Event-Handler noch javascript:-Links, iframes oder meta-Refresh
+// in die Seite bringen. Normaler Text und Formatierung bleiben erhalten.
+func TestParseEpubMaliciousContentSanitized(t *testing.T) {
+	ch1 := `<p>Anfang <em>kursiv</em></p>` +
+		`<img src="x" onerror="window.loadNativeFile('/etc/passwd')"/>` +
+		`<a href="javascript:alert(1)">Link</a>` +
+		`<svg onload="alert(2)"></svg>` +
+		`<iframe srcdoc="&lt;script&gt;alert(3)&lt;/script&gt;"></iframe>` +
+		`<meta http-equiv="refresh" content="0;url=https://evil.example"/>` +
+		`<p onclick="alert(4)">Ende</p>`
+	result, err := renderer.ParseEpub(buildTestEPUB("Böse", ch1, "<p>Kapitel 2</p>"), "boese.epub")
+	if err != nil {
+		t.Fatalf("Unerwarteter Fehler: %v", err)
+	}
+	lower := strings.ToLower(result.HTML)
+	for _, bad := range []string{"onerror", "onload", "onclick", "javascript:", "iframe", "srcdoc", "<meta", "refresh", "loadnativefile", "alert("} {
+		if strings.Contains(lower, bad) {
+			t.Errorf("Gefährliches Muster %q im EPUB-HTML:\n%s", bad, result.HTML)
+		}
+	}
+	for _, want := range []string{"Anfang <em>kursiv</em>", ">Link</a>", "Ende", "Kapitel 2"} {
+		if !strings.Contains(result.HTML, want) {
+			t.Errorf("Erwarteter Inhalt %q fehlt:\n%s", want, result.HTML)
+		}
+	}
+}
+
+// TestParseEpubMaliciousBodyID prüft, dass eine präparierte <body id> nicht aus
+// dem id-Attribut des wieder eingefügten Ankers ausbrechen kann.
+func TestParseEpubMaliciousBodyID(t *testing.T) {
+	ch1 := `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body id="x&quot;&gt;&lt;img src=y onerror=alert(1)&gt;"><p>Text</p></body></html>`
+	result, err := renderer.ParseEpub(buildTestEPUBRaw("T", ch1, `<html><body><p>b</p></body></html>`), "t.epub")
+	if err != nil {
+		t.Fatalf("Unerwarteter Fehler: %v", err)
+	}
+	if strings.Contains(strings.ToLower(result.HTML), "<img") {
+		t.Errorf("Body-ID bricht aus dem Attribut aus:\n%s", result.HTML)
 	}
 }
