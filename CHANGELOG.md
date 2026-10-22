@@ -4,6 +4,16 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 44 – 2026-10-22
+
+### Security
+- Windows device names in image paths can no longer be smuggled past the check:
+  every path segment is checked, segments ending in a space or dot are rejected
+  (Windows strips them, so `COM1 .png` is COM1), and `CONIN$`, `CONOUT$`, `CLOCK$`
+  and superscript variants (`COM¹`) were added.
+
+---
+
 ## Build 43 – 2026-10-14
 
 ### Security

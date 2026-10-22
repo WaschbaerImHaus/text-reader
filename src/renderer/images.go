@@ -8,7 +8,7 @@
 // nicht Drag & Drop - Browser-Sicherheitsbeschränkung verhindert vollen Pfad).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (Pfadprüfung als Erlaubnisliste, fail closed)
+// Letzte Änderung: 2026-10-22 (Gerätenamen je Segment, Windows-Namensnormalisierung)
 package renderer
 
 import (
@@ -48,7 +48,9 @@ var embeddableImageTypes = map[string]string{
 // reservedDeviceNames sind Windows-Gerätenamen, die auch mit Dateiendung
 // (z. B. "COM1.png") auf ein Gerät zeigen. Lesen könnte die App blockieren.
 var reservedDeviceNames = toSet(
-	"con", "prn", "aux", "nul",
+	"con", "prn", "aux", "nul", "conin$", "conout$", "clock$",
+	// Hochgestellte Ziffern gelten unter Windows ebenfalls als Gerätenamen
+	"com¹", "com²", "com³", "lpt¹", "lpt²", "lpt³",
 	"com0", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
 	"lpt0", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 )
@@ -90,12 +92,39 @@ func isReadableImagePath(src string) bool {
 	if strings.Contains(rest, ":") {
 		return false
 	}
-	// Reservierte Gerätenamen (Name vor dem ersten Punkt zählt)
-	base := rest[strings.LastIndex(rest, `\`)+1:]
-	if dot := strings.Index(base, "."); dot >= 0 {
-		base = base[:dot]
+	// Jedes Pfadsegment einzeln prüfen
+	for _, segment := range strings.Split(rest, `\`) {
+		if !isSafePathSegment(segment) {
+			return false
+		}
 	}
-	return !reservedDeviceNames[strings.ToLower(base)]
+	return true
+}
+
+// isSafePathSegment prüft ein einzelnes Pfadsegment.
+//
+// Windows entfernt Leerzeichen und Punkte am Segmentende ("COM1 .png" wird
+// zu COM1, "bild.png." zu bild.png) – solche Segmente werden daher abgelehnt.
+// Ein Gerätename wird am Teil vor dem ersten Punkt erkannt (ohne Leerzeichen
+// am Ende), in jedem Segment, nicht nur im Dateinamen.
+//
+// @param segment Pfadsegment ohne Trenner.
+// @return true wenn das Segment unbedenklich ist.
+// @lastModified 2026-10-22
+func isSafePathSegment(segment string) bool {
+	// Leere Segmente (führender Trenner) sowie "." und ".." sind normale Pfadteile
+	if segment == "" || segment == "." || segment == ".." {
+		return true
+	}
+	if strings.HasSuffix(segment, " ") || strings.HasSuffix(segment, ".") {
+		return false
+	}
+	name := segment
+	if dot := strings.Index(name, "."); dot >= 0 {
+		name = name[:dot]
+	}
+	name = strings.TrimRight(name, " ")
+	return !reservedDeviceNames[strings.ToLower(name)]
 }
 
 // isASCIILetter prüft, ob ein Byte ein ASCII-Buchstabe ist.

@@ -2,12 +2,18 @@
 
 ## Offen ⚠️
 
-(Keine offenen Sicherheitsrisiken – Stand Build 43, 2026-10-14)
+(Keine offenen Sicherheitsrisiken – Stand Build 44, 2026-10-22)
 
 ### Hinweis zu RISK-003
 Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzwischen 10 Bindings, u. a. `loadNativeFile(path)`. Seit Build 41 schützen Bereinigung (EPUB/LaTeX) und strikte CSP (Nonce) davor, dass Dokumentinhalte sie aufrufen; seit Build 42 verlässt das App-Fenster die eigene Seite nicht mehr (RISK-008), fremde Websites erhalten die Bindings also nicht.
 
 ## Mitigiert / Behoben
+
+### RISK-011: Umgehung der Gerätenamen-Sperre bei Bildpfaden (BEHOBEN – Build 44)
+**Beschreibung**: `COM1 .png`, `CONIN$`, `COM¹` u. ä. umgingen die Gerätenamen-Prüfung (DoS durch blockierendes Lesen).
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
 
 ### RISK-010: Umgehung der Netzwerkpfad-Erkennung bei Bildpfaden (BEHOBEN – Build 43)
 **Beschreibung**: Sperrlisten-Prüfung für UNC-Pfade war unter Windows umgehbar (`\??\UNC\…`).

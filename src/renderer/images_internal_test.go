@@ -6,7 +6,7 @@
 // plattformunabhängig, damit die Windows-Fälle auch unter Linux testbar sind.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14
+// Letzte Änderung: 2026-10-22 (Gerätenamen-Umgehungen)
 package renderer
 
 import "testing"
@@ -66,6 +66,38 @@ func TestIsReadableImagePath_DeviceNamesRejected(t *testing.T) {
 	}
 	// Gegenprobe: Namen, die nur ähnlich sind, bleiben erlaubt
 	for _, src := range []string{"console.png", "com10.png", "nulle.png"} {
+		if !isReadableImagePath(src) {
+			t.Errorf("isReadableImagePath(%q) = false, erwartet true", src)
+		}
+	}
+}
+
+// TestIsReadableImagePath_DeviceNameEvasionsRejected prüft (Security-Review zu
+// Build 43), dass Gerätenamen nicht über Windows-Namensnormalisierung umgangen
+// werden: Windows entfernt Leerzeichen/Punkte am Segmentende ("COM1 .png" →
+// COM1). Dazu die selteneren Gerätenamen und hochgestellte Ziffern.
+func TestIsReadableImagePath_DeviceNameEvasionsRejected(t *testing.T) {
+	for _, src := range []string{
+		"COM1 .png",
+		"nul  .gif",
+		"CONIN$.png",
+		"conout$.jpg",
+		"CLOCK$.png",
+		"COM¹.png",
+		"lpt³.png",
+		"CON/bild.png",
+		`img\AUX\bild.png`,
+		"img./bild.png",
+		"img /bild.png",
+		"bild.png.",
+		"bild.png ",
+	} {
+		if isReadableImagePath(src) {
+			t.Errorf("isReadableImagePath(%q) = true, erwartet false", src)
+		}
+	}
+	// Gegenprobe: Leerzeichen und Punkte INNERHALB von Namen bleiben erlaubt
+	for _, src := range []string{"mein bild.png", "img/v1.2/bild.png", "../a b/c.d.png"} {
 		if !isReadableImagePath(src) {
 			t.Errorf("isReadableImagePath(%q) = false, erwartet true", src)
 		}

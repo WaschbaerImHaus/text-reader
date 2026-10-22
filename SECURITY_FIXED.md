@@ -2,6 +2,13 @@
 
 ## Behoben ✅
 
+### RISK-011: Umgehung der Gerätenamen-Sperre bei Bildpfaden (Build 44 – 2026-10-22)
+**Problem** (Security-Review zu Build 43): Windows entfernt Leerzeichen/Punkte am Segmentende – `COM1 .png` zeigt trotzdem auf die serielle Schnittstelle; `CONIN$`, `CONOUT$`, `CLOCK$` und hochgestellte Ziffern (`COM¹`) fehlten; nur der Dateiname, nicht die Verzeichnisse wurden geprüft. Folge: Lesen eines Geräts kann die App blockieren (DoS).
+**Fix**: `isSafePathSegment` prüft jedes Pfadsegment: Segmente mit Leerzeichen/Punkt am Ende werden abgelehnt (außer `.`/`..`), Gerätename = Teil vor dem ersten Punkt ohne Leerzeichen am Ende; Sperrliste um `conin$`, `conout$`, `clock$`, `com¹²³`, `lpt¹²³` ergänzt.
+
+**Datei**: `src/renderer/images.go`
+**Tests**: `TestIsReadableImagePath_DeviceNameEvasionsRejected`
+
 ### RISK-010: Umgehung der Netzwerkpfad-Erkennung bei Bildpfaden (Build 43 – 2026-10-14)
 **Problem** (Security-Review zu Build 42): `isNetworkPath` arbeitete als Sperrliste (`//`, `\\` …). Unter Windows führen weitere Schreibweisen ins Netzwerk, z. B. `\??\UNC\server\share\x.png` (Go hält ihn für absolut, Windows reicht ihn an SMB weiter) → NTLM-Hash-Leck. Für Markdown praktisch nicht ausnutzbar (goldmark kodiert Backslashes als `%5C`), aber nicht robust.
 **Fix**: `isReadableImagePath` als plattformunabhängige Erlaubnisliste (fail closed): nur relative Pfade, Laufwerksbuchstabe mit Trenner (`C:\…`) oder einfacher Wurzel-Trenner; abgelehnt werden `\\…`, `//…`, `\??\…` (inkl. `\\?\`, `\\.\`), laufwerksrelative Pfade (`C:bild.png`), NTFS-Datenströme (`bild.png:x`) und reservierte Gerätenamen (`COM1.png`, `NUL.png` …).

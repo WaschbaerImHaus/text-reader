@@ -1,0 +1,1 @@
+2026-10-22 10:32 – Security-Review zu Build 43: Gerätenamen-Umgehung (COM1 .png, CONIN$, COM¹) → RISK-011. TDD: isSafePathSegment (jedes Segment, Leerzeichen/Punkt am Ende abgelehnt). Build 44.
