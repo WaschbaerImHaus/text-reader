@@ -4,6 +4,16 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 43 – 2026-10-14
+
+### Security
+- Image path check is now an allowlist (fail closed): only relative paths, drive-letter
+  paths and single-root paths are read. All network, NT object and device paths
+  (`\\server\…`, `//server/…`, `\??\UNC\…`, `\\?\…`, `\\.\…`), drive-relative paths,
+  NTFS alternate data streams and reserved device names (`COM1.png` …) are rejected.
+
+---
+
 ## Build 42 – 2026-10-14
 
 ### Security

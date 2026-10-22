@@ -8,7 +8,7 @@
 // nicht Drag & Drop - Browser-Sicherheitsbeschränkung verhindert vollen Pfad).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (absolute Pfade einbetten, UNC nie lesen, nur Bildtypen)
+// Letzte Änderung: 2026-10-14 (Pfadprüfung als Erlaubnisliste, fail closed)
 package renderer
 
 import (
@@ -45,16 +45,65 @@ var embeddableImageTypes = map[string]string{
 	".avif": "image/avif",
 }
 
-// isNetworkPath erkennt UNC- bzw. Netzwerkpfade (//server/… oder \\server\…).
+// reservedDeviceNames sind Windows-Gerätenamen, die auch mit Dateiendung
+// (z. B. "COM1.png") auf ein Gerät zeigen. Lesen könnte die App blockieren.
+var reservedDeviceNames = toSet(
+	"con", "prn", "aux", "nul",
+	"com0", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+	"lpt0", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+)
+
+// isReadableImagePath entscheidet nach dem Erlaubnislisten-Prinzip (fail closed),
+// ob ein Bildpfad aus dem Dokument gelesen werden darf.
 //
-// Solche Pfade werden nie gelesen: Unter Windows löst schon das Öffnen einen
-// SMB-Zugriff auf den fremden Server aus, der den NTLM-Hash preisgeben kann.
+// Erlaubt sind nur relative Pfade, Pfade mit Laufwerksbuchstaben ("C:\…") und
+// Pfade mit einfachem Wurzel-Trenner ("/home/…", "\Users\…"). Abgelehnt werden
+// alle Netzwerk-, NT- und Gerätepfade ("\\server\…", "//server/…",
+// "\??\UNC\…", "\\?\…", "\\.\…"): Unter Windows löst schon das Öffnen
+// einen SMB-Zugriff aus, der den NTLM-Hash preisgeben kann. Ebenso abgelehnt:
+// laufwerksrelative Pfade ("C:bild.png"), NTFS-Datenströme ("bild.png:x")
+// und reservierte Gerätenamen ("COM1.png").
 //
-// @param src Bildpfad aus dem Dokument.
-// @return true bei Netzwerkpfad.
-func isNetworkPath(src string) bool {
-	return strings.HasPrefix(src, "//") || strings.HasPrefix(src, `\\`) ||
-		strings.HasPrefix(src, `/\`) || strings.HasPrefix(src, `\/`)
+// Die Prüfung ist bewusst plattformunabhängig ("/" und "\" gelten beide als
+// Trenner), damit sie überall gleich wirkt und testbar ist.
+//
+// @param src Bildpfad aus dem src-Attribut.
+// @return true wenn der Pfad gelesen werden darf.
+func isReadableImagePath(src string) bool {
+	norm := strings.ReplaceAll(src, "/", `\`)
+	if norm == "" {
+		return false
+	}
+	// Netzwerk-, NT-Objekt- und Gerätepfade
+	if strings.HasPrefix(norm, `\\`) || strings.HasPrefix(norm, `\??\`) {
+		return false
+	}
+	// Laufwerksbuchstabe: muss von einem Trenner gefolgt sein
+	rest := norm
+	if len(norm) >= 2 && norm[1] == ':' && isASCIILetter(norm[0]) {
+		if len(norm) < 3 || norm[2] != '\\' {
+			return false
+		}
+		rest = norm[3:]
+	}
+	// Weitere Doppelpunkte: NTFS-Datenströme oder ungültige Pfade
+	if strings.Contains(rest, ":") {
+		return false
+	}
+	// Reservierte Gerätenamen (Name vor dem ersten Punkt zählt)
+	base := rest[strings.LastIndex(rest, `\`)+1:]
+	if dot := strings.Index(base, "."); dot >= 0 {
+		base = base[:dot]
+	}
+	return !reservedDeviceNames[strings.ToLower(base)]
+}
+
+// isASCIILetter prüft, ob ein Byte ein ASCII-Buchstabe ist.
+//
+// @param b Zu prüfendes Byte.
+// @return true bei A–Z oder a–z.
+func isASCIILetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // ResolveImagePaths ersetzt lokale Bildpfade in HTML durch base64-Data-URIs.
@@ -67,7 +116,8 @@ func isNetworkPath(src string) bool {
 //   - http:// und https:// URLs
 //   - data: URIs (bereits eingebettet)
 //   - file:// URIs
-//   - UNC-/Netzwerkpfade (werden nie gelesen, siehe isNetworkPath)
+//   - Netzwerk-, Geräte- und sonstige nicht erlaubte Pfade (werden nie
+//     gelesen, siehe isReadableImagePath)
 //   - Dateien ohne Bild-Endung (siehe embeddableImageTypes)
 //   - nicht lesbare Dateien
 //
@@ -104,7 +154,7 @@ func resolveImgSrc(html string, baseDir string, re *regexp.Regexp) string {
 			strings.HasPrefix(lower, "https://") ||
 			strings.HasPrefix(lower, "data:") ||
 			strings.HasPrefix(lower, "file://") ||
-			isNetworkPath(src) {
+			!isReadableImagePath(src) {
 			return match
 		}
 

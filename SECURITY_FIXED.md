@@ -2,6 +2,13 @@
 
 ## Behoben ✅
 
+### RISK-010: Umgehung der Netzwerkpfad-Erkennung bei Bildpfaden (Build 43 – 2026-10-14)
+**Problem** (Security-Review zu Build 42): `isNetworkPath` arbeitete als Sperrliste (`//`, `\\` …). Unter Windows führen weitere Schreibweisen ins Netzwerk, z. B. `\??\UNC\server\share\x.png` (Go hält ihn für absolut, Windows reicht ihn an SMB weiter) → NTLM-Hash-Leck. Für Markdown praktisch nicht ausnutzbar (goldmark kodiert Backslashes als `%5C`), aber nicht robust.
+**Fix**: `isReadableImagePath` als plattformunabhängige Erlaubnisliste (fail closed): nur relative Pfade, Laufwerksbuchstabe mit Trenner (`C:\…`) oder einfacher Wurzel-Trenner; abgelehnt werden `\\…`, `//…`, `\??\…` (inkl. `\\?\`, `\\.\`), laufwerksrelative Pfade (`C:bild.png`), NTFS-Datenströme (`bild.png:x`) und reservierte Gerätenamen (`COM1.png`, `NUL.png` …).
+
+**Datei**: `src/renderer/images.go`
+**Tests**: `images_internal_test.go` (3 Tests, inkl. Windows-Fälle unter Linux)
+
 ### RISK-008: Externe Links öffnen fremde Websites im App-Fenster (Build 42 – 2026-10-14)
 **Problem**: Ein Klick auf einen http(s)-Link navigierte das App-Fenster zur fremden Website; webview_go injiziert die Go-Bindings in jede Seite.
 **Fix**: Neues Paket `extlink` (Typ `Opener`): strenge URL-Prüfung (nur http/https mit Host und mailto, keine Steuer-/Leer-/Anführungszeichen, max. 2048 Zeichen) und Start des Standardprogramms ohne Shell (`xdg-open` bzw. `rundll32 url.dll,FileProtocolHandler`). Neues Binding `openExternal`; der Link-Handler in `scripts.js` verhindert jede Navigation des App-Fensters (auch `data:`, `file:`, Mittelklick) und übergibt nur http/https/mailto an Go. Verifiziert in WebKitGTK mit protokollierendem Fake-`xdg-open`.

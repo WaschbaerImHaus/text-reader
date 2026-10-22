@@ -2,12 +2,18 @@
 
 ## Offen ⚠️
 
-(Keine offenen Sicherheitsrisiken – Stand Build 42, 2026-10-14)
+(Keine offenen Sicherheitsrisiken – Stand Build 43, 2026-10-14)
 
 ### Hinweis zu RISK-003
 Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzwischen 10 Bindings, u. a. `loadNativeFile(path)`. Seit Build 41 schützen Bereinigung (EPUB/LaTeX) und strikte CSP (Nonce) davor, dass Dokumentinhalte sie aufrufen; seit Build 42 verlässt das App-Fenster die eigene Seite nicht mehr (RISK-008), fremde Websites erhalten die Bindings also nicht.
 
 ## Mitigiert / Behoben
+
+### RISK-010: Umgehung der Netzwerkpfad-Erkennung bei Bildpfaden (BEHOBEN – Build 43)
+**Beschreibung**: Sperrlisten-Prüfung für UNC-Pfade war unter Windows umgehbar (`\??\UNC\…`).
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
 
 ### RISK-008: Externe Links öffneten fremde Websites IM App-Fenster (BEHOBEN – Build 42)
 **Beschreibung**: Ein Klick auf einen http(s)-Link navigierte den WebView zur fremden Seite, die dort die Go-Bindings erhielt.

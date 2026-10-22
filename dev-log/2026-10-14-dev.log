@@ -17,3 +17,5 @@
 2026-10-14 21:38 – TDD: Paket extlink (Opener, Validate, commandFor; 8 Tests), Binding openExternal, Link-Handler in scripts.js (preventDefault für alles, http/https/mailto → openExternal, auxclick abgefangen).
 2026-10-14 21:38 – Security-Review-Befund zu Build 41 (style url(file://…) + img-src file: → NTLM-Leck unter Windows) bestätigt; zusätzlich UNC-Bildpfade in Markdown gefunden → RISK-009. TDD: style-Filter, img-src data:, ResolveImagePaths (absolute Pfade einbetten, UNC nie lesen, nur Bild-Endungen).
 2026-10-14 21:38 – Verifikation WebKitGTK/Xvfb: Linkklick → Fake-xdg-open genau 1× mit korrekter URL, Fenster bleibt auf dem Dokument, Mittelklick ohne Wirkung; Bild mit absolutem Pfad sichtbar.
+2026-10-14 21:43 – Security-Review zu Build 42: Netzwerkpfad-Sperrliste unter Windows umgehbar (\??\UNC\…) → RISK-010. TDD: isReadableImagePath als plattformunabhängige Erlaubnisliste (images_internal_test.go, 3 Tests). Build 43.
+2026-10-22 09:03 – Nutzer bestätigt: Linkklick unter Windows öffnet den Browser (RISK-008 in der Praxis verifiziert). Build 43 gebaut (alle vier Ziele + Setup), Tests grün.
