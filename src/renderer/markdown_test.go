@@ -225,3 +225,37 @@ func TestLoadFileValid(t *testing.T) {
 		t.Error("HTML enthält keine H1-Überschrift")
 	}
 }
+
+// TestIsTextOnlyFile prüft, für welche Formate der Text-Modus gilt:
+// alle Textformate inkl. EPUB, nicht aber PDF und PostScript (Seitenbilder).
+func TestIsTextOnlyFile(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"a.md", true},
+		{"a.markdown", true},
+		{"a.txt", true},
+		{"a.fb2", true},
+		{"buch.epub", true},
+		{"a.tex", true},
+		{"seite.html", true},
+		{"seite.htm", true},
+		{"/pfad/zu/GROSS.EPUB", true},
+		{`C:\Bücher\Roman.Md`, true},
+		{"a.pdf", false},
+		{"a.ps", false},
+		{"A.PDF", false},
+		{"bild.png", false},
+		{"ohne-endung", false},
+		{"", false},
+		{".md", true},
+		{"a.md.pdf", false},
+		{"a.pdf.md", true},
+	}
+	for _, tt := range tests {
+		if got := renderer.IsTextOnlyFile(tt.path); got != tt.want {
+			t.Errorf("IsTextOnlyFile(%q) = %v, erwartet %v", tt.path, got, tt.want)
+		}
+	}
+}

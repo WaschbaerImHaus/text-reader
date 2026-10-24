@@ -4,6 +4,23 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 45 – 2026-10-24
+
+### Added
+- Text-only mode (⌨ toolbar button) for text documents (Markdown, TXT, FB2, EPUB,
+  LaTeX, HTML): everything is shown in the embedded C64-style pixel font
+  "Press Start 2P" (SIL OFL, Latin/Greek/Cyrillic), all text the same size,
+  headings bold.
+- Layout: 50 columns and 32 lines with 1.5 line spacing; the font size follows the
+  shorter side of the content area (1920×1080 and 1080×1090 look the same).
+- Images are 1-bit dithered (ordered Bayer 8×8, one image pixel = one font pixel),
+  tables are drawn with lines, formulas and diagrams are rendered as hard 1-bit graphics.
+- Foreground and background color can be chosen freely via two color boxes in the
+  toolbar (default: C64 light blue on blue). Mode and colors are saved.
+- PDF and PostScript are not affected; zoom is disabled while the mode is active.
+
+---
+
 ## Build 44 – 2026-10-22
 
 ### Security

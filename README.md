@@ -14,6 +14,7 @@ A simple, fast viewer for Markdown, EPUB, FB2, TXT and HTML with GitHub-like ren
 - **Fullscreen**: Native fullscreen mode (F11 or button)
 - **Dark Mode**: GitHub Dark theme (☽ → ▓)
 - **Retro Mode**: CRT phosphor green (▓ → ☀)
+- **Text-Only Mode** (⌨): C64-style view for text documents (Markdown, TXT, FB2, EPUB, LaTeX, HTML) – everything in one pixel monospace font, same size, headings bold; 50 columns and 32 lines with 1.5 line spacing, sized from the shorter window side; images 1-bit dithered, tables drawn with lines, formulas as 1-bit graphics; foreground and background color freely selectable
 - **TOC Sidebar**: Automatic table of contents (☰), shown only when headings are present
 - **Search**: Ctrl+F opens search bar with match navigation and highlighting
 - **Persistent Settings**: Zoom, theme and layout are preserved across sessions
@@ -34,6 +35,8 @@ A simple, fast viewer for Markdown, EPUB, FB2, TXT and HTML with GitHub-like ren
 | `100%` | Current zoom level |
 | `⊕`   | Double font size (max. 400%) |
 | `☽` / `▓` / `☀` | Switch theme (Light → Dark → Retro) |
+| `⌨`   | Toggle text-only mode (text formats only) |
+| two color boxes | Text and background color (visible in text-only mode) |
 | `☐`   | Toggle fullscreen |
 | `✕`   | Close window |
 
@@ -155,3 +158,7 @@ make test
 - **goldmark-highlighting** – Syntax highlighting (GitHub style)
 - **KaTeX** – Offline LaTeX math rendering
 - **WebKitGTK 4.1** (Linux) / **Edge WebView2** (Windows) – Browser engine
+
+## Fonts
+
+The text-only mode uses the pixel font **Press Start 2P** by CodeMan38 (Cody "CodeMan38" Boisclair), licensed under the SIL Open Font License 1.1 (`src/ui/assets/fonts/OFL.txt`).

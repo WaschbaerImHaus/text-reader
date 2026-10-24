@@ -161,6 +161,23 @@ func IsSupportedFile(path string) bool {
 	return false
 }
 
+// IsTextOnlyFile prüft, ob für eine Datei der Text-Modus gilt.
+//
+// Text-Modus heißt: alles in der Pixel-Monospace-Schrift, Bilder 1-Bit-gerastert.
+// Das ergibt nur bei Textformaten Sinn (auch EPUB). PDF und PostScript werden
+// als Seitenbilder angezeigt und bleiben deshalb unverändert.
+//
+// @param path Dateipfad oder Dateiname (Groß-/Kleinschreibung der Endung egal).
+// @return true für .md, .markdown, .txt, .fb2, .epub, .tex, .html und .htm.
+// @lastModified 2026-10-24
+func IsTextOnlyFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".txt", ".fb2", ".epub", ".tex", ".html", ".htm":
+		return true
+	}
+	return false
+}
+
 // extractTitle ermittelt den Titel aus dem Markdown-Inhalt.
 //
 // @param content  Der Markdown-Quelltext.

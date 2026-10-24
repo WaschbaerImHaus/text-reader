@@ -38,6 +38,7 @@
 - **Nativer Dateidialog**: 📂-Button / Strg+O öffnet OS-nativen Datei-Öffnen-Dialog (Lösung für WebView2-Einschränkung)
 - [x] PDF-Anzeige (.pdf) – Linux: pdftoppm → PNG-Bilder (Build 36); Windows: Edge WebView2 embed (Build 34)
 - [x] PostScript-Anzeige (.ps) – gs rendert direkt zu PNG-Bildern (Build 37); Fallback: Hinweis + Quelltext
+- [x] **Text-Modus** (Build 45): C64-ähnliche Ansicht für Textformate inkl. EPUB – Pixelschrift „Press Start 2P“ (OFL, eingebettet, Latein/Griechisch/Kyrillisch), alles gleich groß, Überschriften fett, 50 Spalten × 32 Zeilen (1,5-facher Zeilenabstand) nach der kürzeren Seite des Inhaltsbereichs, Bilder 1-Bit-gerastert (Bayer 8×8, Bildpunkt = Schrift-Pixel), Tabellen mit Linien, Formeln/Diagramme als 1-Bit-Grafik, Schrift- und Hintergrundfarbe per Farbfeld in der Toolbar, Einstellung gespeichert
 
 ## Geplant 📋
 

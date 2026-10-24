@@ -13,6 +13,7 @@ Ein einfacher, schneller Betrachter für Markdown, EPUB, FB2, TXT und HTML mit G
 - **Vollbild**: Nativer Vollbild-Modus (F11 oder Button)
 - **Dark Mode**: GitHub-Dark-Theme (☽ → ▓)
 - **Retro Mode**: CRT-Phosphor-Grün (▓ → ☀)
+- **Text-Modus** (⌨): Ansicht wie am C64 für Textdokumente (Markdown, TXT, FB2, EPUB, LaTeX, HTML) – alles in einer Pixel-Monospace-Schrift, gleich groß, Überschriften fett; 50 Spalten und 32 Zeilen mit 1,5-fachem Zeilenabstand, Größe nach der kürzeren Fensterseite; Bilder 1-Bit-gerastert, Tabellen mit Linien, Formeln als 1-Bit-Grafik; Schrift- und Hintergrundfarbe frei wählbar
 - **TOC-Seitenleiste**: Automatisches Inhaltsverzeichnis (☰), nur wenn Überschriften vorhanden
 - **Suche**: Strg+F öffnet Suchleiste mit Treffernavigation und Highlighting
 - **Persistente Einstellungen**: Zoom, Theme und Layout bleiben über Starts erhalten
@@ -33,6 +34,8 @@ Ein einfacher, schneller Betrachter für Markdown, EPUB, FB2, TXT und HTML mit G
 | `100%` | Aktuelle Zoomstufe |
 | `⊕`   | Schriftgröße verdoppeln (max. 400%) |
 | `☽` / `▓` / `☀` | Theme wechseln (Hell → Dark → Retro) |
+| `⌨`   | Text-Modus ein/aus (nur bei Textformaten) |
+| zwei Farbfelder | Schrift- und Hintergrundfarbe (im Text-Modus sichtbar) |
 | `☐`   | Vollbild ein/aus |
 | `✕`   | Fenster schließen |
 
@@ -138,3 +141,7 @@ make test
 - **goldmark** – Markdown-Parser mit GFM-Unterstützung
 - **goldmark-highlighting** – Syntax-Highlighting (GitHub-Stil)
 - **WebKitGTK 4.1** (Linux) / **Edge WebView2** (Windows) – Browser-Engine
+
+## Schriften
+
+Der Text-Modus nutzt die Pixelschrift **Press Start 2P** von CodeMan38 (Cody „CodeMan38“ Boisclair) unter der SIL Open Font License 1.1 (`src/ui/assets/fonts/OFL.txt`).

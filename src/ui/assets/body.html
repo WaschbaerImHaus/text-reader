@@ -1,5 +1,5 @@
 </head>
-<body class="{{THEME_CLASS}}">
+<body class="{{BODY_CLASS}}">
 
 <!-- ============================================================
      Toolbar
@@ -46,6 +46,16 @@
 
     <div class="toolbar-separator"></div>
 
+    <!-- Text-Modus (nur bei Textformaten sichtbar, JS blendet ein) -->
+    <button class="toolbar-btn" id="btn-textmode"
+            title="Text-Modus einschalten" style="display:none">&#9000;</button>
+    <span id="tm-colors">
+      <input type="color" id="tm-fg" value="{{TEXT_MODE_FG}}" title="Schriftfarbe (Text-Modus)">
+      <input type="color" id="tm-bg" value="{{TEXT_MODE_BG}}" title="Hintergrundfarbe (Text-Modus)">
+    </span>
+
+    <div class="toolbar-separator" id="sep-textmode" style="display:none"></div>
+
     <!-- Vollbild -->
     <button class="toolbar-btn" id="btn-fullscreen"
             title="Vollbild (F11)">&#9634;</button>
@@ -79,6 +89,54 @@
   </div>
   <ul id="toc-list"></ul>
 </div>
+
+<!-- ============================================================
+     SVG-Filter für den Text-Modus: schneiden Formeln, Diagramme und
+     SVG-Bilder hart auf zwei Farben (1 Bit). Die Farbwerte setzt
+     textmode.js (updateTextModeFilters). Alpha-Schwelle 25 % statt 50 %,
+     damit dünne Striche (z. B. das Gleichheitszeichen) erhalten bleiben.
+     ============================================================ -->
+<svg id="tm-filters" width="0" height="0" aria-hidden="true" focusable="false"
+     style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <!-- Nur Kantenglättung entfernen (Formeln sind schon in Schriftfarbe) -->
+    <filter id="tm-filter-alpha" color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncA type="discrete" tableValues="0 1 1 1"/>
+      </feComponentTransfer>
+    </filter>
+    <!-- Dunkle Striche auf hellem Grund: dunkel → Schriftfarbe, hell → Hintergrund -->
+    <filter id="tm-filter-ink-dark" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+        <feFuncA type="discrete" tableValues="0 1 1 1"/>
+      </feComponentTransfer>
+    </filter>
+    <!-- Helle Striche auf dunklem Grund: hell → Schriftfarbe, dunkel → Hintergrund -->
+    <filter id="tm-filter-ink-light" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+        <feFuncA type="discrete" tableValues="0 1 1 1"/>
+      </feComponentTransfer>
+    </filter>
+    <!-- Bilder in SVG (z. B. EPUB-Cover): hell → hellere, dunkel → dunklere Farbe -->
+    <filter id="tm-filter-photo" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+        <feFuncA type="discrete" tableValues="0 1 1 1"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+</svg>
 
 <!-- ============================================================
      Haupt-Inhaltsbereich

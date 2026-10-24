@@ -1,7 +1,7 @@
 // Package ui stellt die HTML/CSS/JS-Oberfläche der MD-Reader-App bereit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (RISK-006/007: strikte CSP mit Skript-Nonce)
+// Letzte Änderung: 2026-10-24 (Text-Modus: Body-Klasse, Farben, Schrift, Skript)
 package ui
 
 import (
@@ -31,6 +31,13 @@ type UIConfig struct {
 	FileHash string
 	// ScrollPos ist die Anfangs-Scroll-Position in Pixeln (0 = Anfang).
 	ScrollPos int
+
+	// TextMode enthält die gespeicherten Text-Modus-Einstellungen
+	// (werden hier erneut geprüft, siehe TextMode.Normalized).
+	TextMode TextMode
+	// TextModeAvailable gibt an, ob das Dokument ein Textformat ist
+	// (nicht PDF/PS). Ohne Inhalt ist der Modus nie verfügbar.
+	TextModeAvailable bool
 }
 
 // htmlDocHeadTemplate ist der Dokumentkopf mit Platzhaltern für Favicon, Titel, Nonce und KaTeX-CSS.
@@ -78,6 +85,15 @@ func BuildInitialHTML(cfg UIConfig) string {
 		themeClass = cfg.Theme
 	}
 
+	// Text-Modus: Farben erneut prüfen (die Werte landen ungeschützt in CSS/JS)
+	// und nur bei Textformaten mit Inhalt aktivieren.
+	textMode := cfg.TextMode.Normalized()
+	textModeAvailable := cfg.TextModeAvailable && cfg.ContentHTML != ""
+	bodyClass := themeClass
+	if textMode.Enabled && textModeAvailable {
+		bodyClass = strings.TrimSpace(bodyClass + " textmode")
+	}
+
 	// isPortrait als JS-Boolean-String
 	portraitStr := "false"
 	if cfg.IsPortrait {
@@ -108,7 +124,11 @@ func BuildInitialHTML(cfg UIConfig) string {
 		"{{FONT_SIZE}}", fontSizeStr,
 		"{{DEFAULT_FONT_SIZE}}", defaultFontSizeStr,
 		"{{IS_PORTRAIT}}", portraitStr,
-		"{{THEME_CLASS}}", themeClass,
+		"{{BODY_CLASS}}", bodyClass,
+		"{{TEXT_MODE_ENABLED}}", strconv.FormatBool(textMode.Enabled),
+		"{{TEXT_MODE_AVAILABLE}}", strconv.FormatBool(textModeAvailable),
+		"{{TEXT_MODE_FG}}", textMode.Foreground,
+		"{{TEXT_MODE_BG}}", textMode.Background,
 		"{{PAGE_TITLE}}", pageTitle,
 		"{{DROP_ZONE_DISPLAY}}", dropZoneDisplay,
 		"{{CONTENT_WRAPPER_DISPLAY}}", contentWrapperDisplay,
@@ -130,11 +150,25 @@ func BuildInitialHTML(cfg UIConfig) string {
 	katexScripts := scriptOpen + "\n" + KaTeXJS() + "\n</script>\n" +
 		scriptOpen + "\n" + KaTeXAutoRenderJS() + "\n</script>"
 
+	// Text-Modus-Skript als eigener Block VOR dem Hauptskript (das Hauptskript
+	// ruft initTextMode() sofort auf). Erst nach r.Replace einsetzen, damit
+	// textmode.js nie Platzhalter-Ersetzungen abbekommt.
+	textModeScript := scriptOpen + "\n" + textModeJS + "\n</script>"
+
 	mainJS := r.Replace(htmlJavaScript)
 	mainJS = strings.ReplaceAll(mainJS, "{{KATEX_SCRIPTS}}", katexScripts)
+	mainJS = strings.ReplaceAll(mainJS, "{{TEXTMODE_SCRIPT}}", textModeScript)
+
+	// Schrift und Regeln des Text-Modus nur bei Textformaten einbetten:
+	// spart bei PDF/PS und der Drop-Zone rund 160 KB je Seite.
+	textModeStyle := ""
+	if textModeAvailable {
+		textModeStyle = textModeStyleBlock()
+	}
 
 	return head +
 		r.Replace(htmlCSS) +
+		textModeStyle +
 		r.Replace(htmlBodyHTML) +
 		mainJS
 }

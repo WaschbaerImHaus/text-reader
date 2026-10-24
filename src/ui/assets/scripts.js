@@ -1,6 +1,7 @@
 <!-- KaTeX zuerst laden: initEmbeddedContent() im Hauptskript ruft initKaTeX()
      sofort auf und braucht renderMathInElement (Bug #014). -->
 {{KATEX_SCRIPTS}}
+{{TEXTMODE_SCRIPT}}
 <script nonce="{{SCRIPT_NONCE}}">
 // ============================================================
 // Globale Zustandsvariablen
@@ -26,6 +27,16 @@ var isFullscreen = false;
 
 /** Aktuelles Theme: 'light', 'dark' oder 'retro' */
 var currentTheme = 'light';
+
+/** Text-Modus eingeschaltet? (gespeicherte Einstellung, siehe textmode.js) */
+var textModeEnabled = {{TEXT_MODE_ENABLED}};
+
+/** Text-Modus für dieses Dokument möglich? (Textformat, nicht PDF/PS) */
+var textModeAvailable = {{TEXT_MODE_AVAILABLE}};
+
+/** Schrift- und Hintergrundfarbe des Text-Modus ("#rrggbb", von Go geprüft) */
+var textModeForeground = '{{TEXT_MODE_FG}}';
+var textModeBackground = '{{TEXT_MODE_BG}}';
 
 /** Hash des aktuell angezeigten Dateiinhalts (FNV-64a, von Go berechnet) */
 var currentFileHash = '{{INITIAL_FILE_HASH}}';
@@ -80,6 +91,9 @@ applyFontSize();
   }
   updateThemeButton();
 })();
+
+/** Text-Modus wiederherstellen (Funktionen aus textmode.js) */
+initTextMode();
 
 /**
  * Inhalt initialisieren wenn Go via SetHtml() Inhalt direkt eingebettet hat.
@@ -368,6 +382,8 @@ function hideDropError() {
 // ============================================================
 
 function zoomIn() {
+  // Im Text-Modus folgt die Größe dem Fenster – kein Zoom
+  if (isTextModeActive()) return;
   if (fontSize >= maxFontSize) return;
   fontSize = Math.min(fontSize * 2, maxFontSize);
   applyFontSize();
@@ -375,6 +391,7 @@ function zoomIn() {
 }
 
 function zoomOut() {
+  if (isTextModeActive()) return;
   if (fontSize <= minFontSize) return;
   fontSize = Math.max(fontSize / 2, minFontSize);
   applyFontSize();
@@ -383,6 +400,7 @@ function zoomOut() {
 
 /** Setzt Schriftgröße auf Standard zurück (Strg+0) */
 function resetZoom() {
+  if (isTextModeActive()) return;
   fontSize = defaultFontSize;
   applyFontSize();
   saveState();
@@ -916,6 +934,10 @@ function initMermaid() {
 function renderMermaid() {
   var theme = currentTheme === 'dark' ? 'dark' : currentTheme === 'retro' ? 'base' : 'default';
   mermaid.initialize({ startOnLoad: false, theme: theme, securityLevel: 'strict' });
+  // Text-Modus: Beim dunklen Mermaid-Theme sind die Striche hell → anderer 1-Bit-Filter
+  document.querySelectorAll('.mermaid').forEach(function(d) {
+    d.classList.toggle('ink-light', theme === 'dark');
+  });
   mermaid.run({ querySelector: '.mermaid' });
 }
 
@@ -1002,6 +1024,7 @@ function initKaTeX(container) {
     ['btn-zoom-in', zoomIn],
     ['btn-search', openSearch],
     ['btn-theme', cycleTheme],
+    ['btn-textmode', toggleTextMode],
     ['btn-fullscreen', toggleFullscreen],
     ['btn-close', closeApp],
     ['search-prev', searchPrev],

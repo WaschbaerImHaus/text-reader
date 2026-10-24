@@ -1,0 +1,172 @@
+/* ========================================================
+	Text-Modus (C64-ähnliche Monospace-Ansicht)
+
+	Wird nur bei Textformaten eingebettet (siehe ui/textmode.go) und wirkt
+	nur, wenn der Body die Klasse "textmode" trägt. Alles im Inhalt erscheint in einer
+	Pixelschrift, gleich groß, in zwei Farben (--tm-fg, --tm-bg).
+	--tm-font-size berechnet textmode.js aus der kürzeren Fensterseite:
+	50 Spalten, 32 Zeilen mit 1,5-fachem Zeilenabstand.
+	Ein "Pixel" der Schrift (--tm-px) ist ein Achtel der Schriftgröße,
+	weil die Zeichen in einem 8x8-Raster gezeichnet sind.
+
+	Autor: Kurt Ingwer
+	Letzte Änderung: 2026-10-24
+	======================================================== */
+
+body.textmode {
+	--tm-px: calc(var(--tm-font-size) / 8);
+	--tm-font: "MDR Press Start 2P", "Noto Sans Mono", "DejaVu Sans Mono", Consolas, "Courier New", monospace;
+}
+
+/* Inhaltsbereich in Hintergrundfarbe, Retro-Scanlines aus (nur zwei Farben) */
+body.textmode #main { background-color: var(--tm-bg); }
+body.textmode #main::after { display: none; }
+body.textmode #main::-webkit-scrollbar-thumb { background-color: var(--tm-fg); }
+body.textmode #content-wrapper { padding: 16px; }
+
+/* Textblock: genau 50 Spalten breit (die Schrift ist quadratisch: 1 Zeichen = 1em) */
+body.textmode #content {
+	max-width: calc(var(--tm-font-size) * 50) !important;
+	margin: 0 auto;
+	font-family: var(--tm-font) !important;
+	font-size: var(--tm-font-size) !important;
+	line-height: 1.5 !important;
+	color: var(--tm-fg) !important;
+	background: transparent !important;
+	text-shadow: none !important;
+	overflow-wrap: anywhere;
+	-webkit-font-smoothing: none;
+	/* Eigene Ebene → Chromium glättet in Graustufen statt mit farbigen
+	   Subpixel-Säumen (ClearType/LCD); bei nur zwei Farben stören Farbsäume */
+	will-change: transform;
+}
+
+/* Alles im Inhalt gleich groß, gleiche Schrift und Farbe. :where() hält die
+   Spezifität klein, damit die Einzelregeln unten gewinnen. KaTeX und SVG
+   behalten ihre eigenen Schriften/Maße (sonst zerfallen Formeln). */
+body.textmode #content :where(*:not(.katex, .katex *, svg, svg *)) {
+	font-family: inherit !important;
+	font-size: inherit !important;
+	line-height: inherit !important;
+	color: inherit !important;
+	background: transparent !important;
+	text-shadow: none !important;
+	letter-spacing: normal !important;
+	border-color: var(--tm-fg) !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+}
+
+/* Abstände im Zeilenraster: ein Absatz = eine Leerzeile */
+body.textmode #content p,
+body.textmode #content ul,
+body.textmode #content ol,
+body.textmode #content pre,
+body.textmode #content table,
+body.textmode #content blockquote,
+body.textmode #content dl,
+body.textmode #content .katex-display {
+	margin: 0 0 1.5em 0 !important;
+}
+
+/* Überschriften: nur fett, gleiche Größe, ohne Linien */
+body.textmode #content h1,
+body.textmode #content h2,
+body.textmode #content h3,
+body.textmode #content h4,
+body.textmode #content h5,
+body.textmode #content h6 {
+	font-weight: bold !important;
+	border: none !important;
+	padding: 0 !important;
+	margin: 1.5em 0 1.5em 0 !important;
+}
+body.textmode #content > :first-child { margin-top: 0 !important; }
+
+/* Listen: 2 Spalten Einzug */
+body.textmode #content ul,
+body.textmode #content ol { padding-left: 2em !important; }
+body.textmode #content li { margin: 0 !important; }
+
+/* Code: kein Kasten, umbrechen statt waagerecht scrollen */
+body.textmode #content pre {
+	white-space: pre-wrap !important;
+	overflow: visible !important;
+	padding: 0 !important;
+	border: none !important;
+}
+body.textmode #content code { padding: 0 !important; white-space: pre-wrap; }
+
+/* Links unterstrichen, Zitate mit Linie (ein Schrift-Pixel breit) */
+body.textmode #content a { text-decoration: underline !important; }
+body.textmode #content blockquote {
+	border-left: var(--tm-px) solid var(--tm-fg) !important;
+	padding: 0 0 0 1em !important;
+	margin-left: 0 !important;
+}
+body.textmode #content hr {
+	height: 0 !important;
+	border: none !important;
+	border-top: var(--tm-px) solid var(--tm-fg) !important;
+	margin: 0 0 1.5em 0 !important;
+}
+
+/* Tabellen: Linien in Schriftfarbe, ein Schrift-Pixel dick */
+body.textmode #content table {
+	display: table !important;
+	width: auto !important;
+	max-width: 100%;
+	border-collapse: collapse !important;
+}
+body.textmode #content th,
+body.textmode #content td {
+	border: var(--tm-px) solid var(--tm-fg) !important;
+	padding: 0 0.5em !important;
+}
+body.textmode #content th { font-weight: bold !important; }
+
+/* Suchtreffer invertiert (sonst unsichtbar bei nur zwei Farben) */
+body.textmode #content mark.search-match {
+	background: var(--tm-fg) !important;
+	color: var(--tm-bg) !important;
+}
+body.textmode #content mark.search-match.current { outline: var(--tm-px) solid var(--tm-fg); }
+body.textmode #content ::selection { background: var(--tm-fg); color: var(--tm-bg); }
+
+/* Bilder: textmode.js rastert sie 1-Bit (Klasse tm-dithered) und vergrößert
+   jeden Bildpunkt auf ein Schrift-Pixel – ohne Glättung. Bis dahin (oder falls
+   die Rasterung scheitert) schneidet ein Filter sie hart auf zwei Farben. */
+body.textmode #content img {
+	image-rendering: pixelated;
+	image-rendering: crisp-edges;
+	max-width: 100%;
+	height: auto;
+}
+body.textmode #content img.tm-dithered { image-rendering: pixelated; }
+body.textmode #content img:not(.tm-dithered) { filter: url(#tm-filter-photo); }
+
+/* SVG-Bilder (z. B. EPUB-Cover) und Mermaid-Diagramme: hart auf zwei Farben */
+body.textmode #content svg { filter: url(#tm-filter-photo); }
+body.textmode #content svg.tm-dithered-svg { filter: none; }
+body.textmode #content svg image.tm-dithered { image-rendering: pixelated; }
+body.textmode #content .mermaid svg { filter: url(#tm-filter-ink-dark); }
+body.textmode #content .mermaid.ink-light svg { filter: url(#tm-filter-ink-light); }
+
+/* Formeln: optisch so groß wie der Text (die Pixelschrift füllt das ganze em,
+   KaTeX-Buchstaben nur etwa zwei Drittel → 1.4em), Schriftfarbe, ohne
+   Kantenglättung. inline-block ist nötig: Chromium wendet filter nicht auf
+   reine Inline-Elemente an. */
+body.textmode #content .katex {
+	font-size: 1.4em !important;
+	color: var(--tm-fg) !important;
+	filter: url(#tm-filter-alpha);
+}
+body.textmode #content :not(.katex-display) > .katex { display: inline-block; }
+body.textmode #content .katex svg { filter: none; }
+
+/* Zoom gibt es im Text-Modus nicht: die Größe folgt dem Fenster.
+   visibility statt display: Die Toolbar behält ihre Breite, der Text-Modus-
+   Knopf bleibt beim Umschalten unter dem Mauszeiger. */
+body.textmode #btn-zoom-out,
+body.textmode #btn-zoom-in,
+body.textmode #zoom-label { visibility: hidden !important; }

@@ -5,7 +5,7 @@
 // Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (RISK-008: openExternal-Binding)
+// Letzte Änderung: 2026-10-24 (Text-Modus: persistTextMode-Binding, Verfügbarkeit je Format)
 package main
 
 import (
@@ -93,7 +93,9 @@ func scrollPosForHash(hash string) int {
 // @param title      Dokumenttitel.
 // @param hash       FNV-64a-Hash des Dateiinhalts (für Scroll-History).
 // @param scrollPos  Gespeicherte Scroll-Position in Pixeln.
-func renderAndDisplay(w webview.WebView, contentHTML, title, hash string, scrollPos int) {
+// @param fileName   Dateiname oder Pfad (entscheidet, ob der Text-Modus gilt).
+// @lastModified 2026-10-24
+func renderAndDisplay(w webview.WebView, contentHTML, title, hash string, scrollPos int, fileName string) {
 	uiCfg := ui.UIConfig{
 		FontSize:        app.config.FontSize,
 		DefaultFontSize: defaultFontSize,
@@ -103,6 +105,9 @@ func renderAndDisplay(w webview.WebView, contentHTML, title, hash string, scroll
 		PageTitle:       title,
 		FileHash:        hash,
 		ScrollPos:       scrollPos,
+		// Text-Modus nur bei Textformaten (auch EPUB), nicht bei PDF/PS
+		TextMode:          app.config.textModeSettings(),
+		TextModeAvailable: renderer.IsTextOnlyFile(fileName),
 	}
 	fullHTML := ui.BuildInitialHTML(uiCfg)
 	// SetHtml/Navigate muss auf dem GTK/WebView-Hauptthread ausgeführt werden
@@ -185,7 +190,7 @@ func loadFileNative(w webview.WebView, filePath string) {
 	saveConfig(app.config)
 
 	// Vollständiges HTML bauen und an WebView übergeben
-	renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+	renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos, filePath)
 }
 
 // registerBindings registriert alle Go→JS-Bindings am WebView.
@@ -232,7 +237,7 @@ func registerBindings(w webview.WebView) {
 		}
 		hash := computeHash([]byte(content))
 		scrollPos := scrollPosForHash(hash)
-		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos, filename)
 	})
 
 	// processEpub: Konvertiert eine EPUB-Datei (Base64-kodiert) zu HTML.
@@ -255,7 +260,8 @@ func registerBindings(w webview.WebView) {
 		}
 		hash := computeHash(data)
 		scrollPos := scrollPosForHash(hash)
-		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+		// Inhalt ist immer EPUB, auch wenn der übergebene Name anders endet
+		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos, "book.epub")
 	})
 
 	// processBinaryFile: Konvertiert binäre Dateiinhalte (EPUB, PDF, PS) zu HTML.
@@ -293,7 +299,7 @@ func registerBindings(w webview.WebView) {
 		}
 		hash := computeHash(data)
 		scrollPos := scrollPosForHash(hash)
-		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos)
+		renderAndDisplay(w, result.HTML, result.Title, hash, scrollPos, filename)
 	})
 
 	// persistState: Speichert Zoom, Theme und Layout.
@@ -301,6 +307,19 @@ func registerBindings(w webview.WebView) {
 		app.config.FontSize = int(fontSize)
 		app.config.Theme = theme
 		app.config.Layout = layout
+		saveConfig(app.config)
+	})
+
+	// persistTextMode: Speichert den Text-Modus und seine Farben.
+	//
+	// Die Farben kommen aus den Farbfeldern im WebView und werden hier erneut
+	// streng geprüft ("#rrggbb"), weil sie später in CSS und JS der Seite landen.
+	//
+	// @param enabled    Text-Modus eingeschaltet?
+	// @param foreground Schriftfarbe.
+	// @param background Hintergrundfarbe.
+	w.Bind("persistTextMode", func(enabled bool, foreground string, background string) {
+		app.config.setTextMode(enabled, foreground, background)
 		saveConfig(app.config)
 	})
 

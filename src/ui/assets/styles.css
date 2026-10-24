@@ -22,6 +22,10 @@
   --toolbar-height: 44px;
   --toc-width: 280px;
   --search-bar-height: 44px;
+  /* Text-Modus: Farben aus der Konfiguration, Größe setzt textmode.js */
+  --tm-fg: {{TEXT_MODE_FG}};
+  --tm-bg: {{TEXT_MODE_BG}};
+  --tm-font-size: 16px;
 }
 
 html, body { height: 100%; width: 100%; overflow: hidden; background-color: var(--bg-color); color: var(--text-color); }
@@ -54,6 +58,15 @@ html, body { height: 100%; width: 100%; overflow: hidden; background-color: var(
 .toolbar-btn:active { background-color: rgba(175,184,193,0.4); }
 #btn-close:hover { background-color: #ff5f5740; border-color: #ff5f57; color: #cc0000; }
 .toolbar-separator { width: 1px; height: 20px; background-color: var(--border-color); margin: 0 4px; }
+/* Text-Modus-Farbfelder: Platz belegen sie bei jedem Textformat (JS setzt
+   display), sichtbar sind sie nur bei aktivem Text-Modus. So verrutscht die
+   Toolbar beim Umschalten nicht unter dem Mauszeiger. */
+#tm-colors { display: none; visibility: hidden; align-items: center; gap: 4px; padding: 0 4px; }
+body.textmode #tm-colors { visibility: visible; }
+#tm-colors input[type="color"] {
+  -webkit-app-region: no-drag; width: 28px; height: 24px; padding: 0;
+  border: 1px solid var(--border-color); border-radius: 4px; background: transparent; cursor: pointer;
+}
 #zoom-label { font-size: 12px; color: var(--blockquote-color); min-width: 40px; text-align: center; padding: 0 4px; }
 
 /* ========================================================
