@@ -1,6 +1,6 @@
 # MD Reader
 
-A simple, fast viewer for Markdown, EPUB, FB2, TXT and HTML with GitHub-like rendering.
+A simple, fast viewer for Markdown, EPUB, FB2, TXT and HTML with GitHub-like rendering – for Windows, Linux and macOS.
 
 ## Features
 
@@ -50,9 +50,12 @@ A simple, fast viewer for Markdown, EPUB, FB2, TXT and HTML with GitHub-like ren
 | `Ctrl+-`      | Zoom out |
 | `Ctrl+0`      | Reset zoom |
 | `Ctrl+Scroll` | Zoom with mouse wheel |
+| `Ctrl+O`      | Open file |
 | `↑↓`          | Scroll |
 | `PageUp/Down` | Page scroll |
 | `Home/End`    | Jump to top/bottom |
+
+On macOS use `Cmd` instead of `Ctrl`; `Cmd+C`, `Cmd+A`, `Cmd+Q` work via the menu bar.
 
 ## Installation
 
@@ -86,6 +89,24 @@ chmod +x md-reader
 **Requirements:**
 - WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`)
 - GTK 3 (`libgtk-3-0`)
+
+### macOS
+
+Download `md-reader-macos.zip` from the [Releases](https://github.com/WaschbaerImHaus/text-reader/releases) page (it appears a few minutes after the other files), unzip it and move `MD Reader.app` to *Applications*.
+
+The app is not notarized by Apple. On first start macOS refuses to open it:
+open *System Settings → Privacy & Security*, scroll down and click **Open Anyway**.
+Alternatively in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/MD Reader.app"
+```
+
+**Requirements:**
+- macOS 13 (Ventura) or newer, Apple Silicon or Intel
+- Optional for PDF/PostScript: `brew install poppler ghostscript`
+
+The Linux files `md-reader-linux-arm64` / `-armhf` do **not** run on a Mac – they are Linux programs.
 
 ## Usage
 
@@ -148,6 +169,9 @@ make windows
 
 # Run tests
 make test
+
+# macOS app bundle (only on a Mac with Xcode Command Line Tools)
+make macos
 ```
 
 ## Technology
@@ -157,7 +181,7 @@ make test
 - **goldmark** – Markdown parser with GFM support
 - **goldmark-highlighting** – Syntax highlighting (GitHub style)
 - **KaTeX** – Offline LaTeX math rendering
-- **WebKitGTK 4.1** (Linux) / **Edge WebView2** (Windows) – Browser engine
+- **WebKitGTK 4.1** (Linux) / **Edge WebView2** (Windows) / **WKWebView** (macOS) – Browser engine
 
 ## Fonts
 

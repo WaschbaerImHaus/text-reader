@@ -2,7 +2,14 @@
 
 ## Offen ⚠️
 
-(Keine offenen Sicherheitsrisiken – Stand Build 44, 2026-10-22)
+### RISK-012: macOS-App nicht notarisiert (OFFEN, akzeptiert – Build 46)
+**Beschreibung**: `md-reader-macos.zip` ist nur ad hoc signiert (`codesign -s -`), nicht mit einer Apple-Developer-ID und nicht notarisiert. Gatekeeper blockiert den ersten Start; Nutzer müssen „Dennoch öffnen“ wählen bzw. das Quarantäne-Attribut entfernen. Damit lässt sich für Nutzer nicht prüfen, ob die ZIP-Datei unverändert vom Projekt stammt (keine Herkunftsgarantie wie bei notarisierten Apps).
+
+**Warum nicht automatisch behebbar**: Notarisierung braucht ein kostenpflichtiges Apple-Developer-Konto (99 $/Jahr) und dessen Zertifikate als Workflow-Geheimnisse – Entscheidung des Nutzers.
+
+**Mitigierung**: Download nur über die GitHub-Releases des Projekts; das ZIP wird auf dem GitHub-Runner aus dem getaggten Quellstand gebaut (nachvollziehbar im Workflow-Log); Anleitung in README.
+
+(Sonst keine offenen Sicherheitsrisiken – Stand Build 46, 2026-10-24)
 
 ### Hinweis zu RISK-003
 Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzwischen 10 Bindings, u. a. `loadNativeFile(path)`. Seit Build 41 schützen Bereinigung (EPUB/LaTeX) und strikte CSP (Nonce) davor, dass Dokumentinhalte sie aufrufen; seit Build 42 verlässt das App-Fenster die eigene Seite nicht mehr (RISK-008), fremde Websites erhalten die Bindings also nicht.

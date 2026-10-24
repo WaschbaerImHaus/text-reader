@@ -549,7 +549,7 @@
 			<span class="badge green">Build 27</span>
 			<span class="badge blue">Go 1.26</span>
 			<span class="badge blue">WebKitGTK 4.1 · Edge WebView2</span>
-			<span class="badge orange">Linux · Windows · ARM</span>
+			<span class="badge orange">Linux · Windows · macOS · ARM</span>
 		</div>
 	</div>
 </section>
@@ -622,7 +622,7 @@
 			<div class="feature-card">
 				<div class="feature-icon">🖥</div>
 				<h3>Native OS Integration</h3>
-				<p>GTK fullscreen (Linux) and WinAPI fullscreen (Windows). Native file dialogs. Correct window icon in taskbar and Alt+Tab.</p>
+				<p>GTK fullscreen (Linux), WinAPI fullscreen (Windows) and native macOS fullscreen. Native file dialogs. Correct window icon in taskbar and Alt+Tab.</p>
 			</div>
 		</div>
 	</div>
@@ -697,6 +697,24 @@
 				<p class="dl-note">Installer creates start menu entry + optional desktop icon.</p>
 			</div>
 
+			<!-- macOS -->
+			<div class="download-card">
+				<div class="dl-platform">
+					<div class="dl-icon">🍎</div>
+					<div>
+						<h3>macOS</h3>
+						<div class="arch">macOS 13+ · Apple Silicon and Intel (universal)</div>
+					</div>
+				</div>
+				<div class="dl-files">
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader-macos.zip">
+						<span class="name">md-reader-macos.zip</span>
+						<span class="arrow">↓</span>
+					</a>
+				</div>
+				<p class="dl-note">Not notarized: on first start choose <em>System Settings → Privacy &amp; Security → Open Anyway</em>.</p>
+			</div>
+
 			<!-- Linux x86_64 -->
 			<div class="download-card">
 				<div class="dl-platform">
@@ -721,7 +739,7 @@
 					<div class="dl-icon">🐧</div>
 					<div>
 						<h3>Linux ARM64</h3>
-						<div class="arch">Raspberry Pi 4/5 · Apple M-series (Linux)</div>
+						<div class="arch">Raspberry Pi 4/5 · ARM64 boards (Linux only, not macOS)</div>
 					</div>
 				</div>
 				<div class="dl-files">

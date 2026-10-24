@@ -29,9 +29,9 @@
 - **Suchfunktion**: Strg+F öffnet Suchleiste mit Treffernavigation, Counter, Highlighting
 - **Dark Mode**: GitHub Dark (☽ → ▓)
 - **Retro Mode**: CRT-Phosphor Grün (▓ → ☀)
-- **Cross-Platform**: Linux (WebKitGTK) und Windows (Edge WebView2)
+- **Cross-Platform**: Linux (WebKitGTK), Windows (Edge WebView2) und macOS (WKWebView, ab Build 46)
 - **ARM64-Build**: Linux-ARM64-Binary via Cross-Compilation (aarch64-linux-gnu-gcc)
-- **Tastaturkürzel**: F11 Vollbild, Strg+F Suche, Strg+/- Zoom
+- **Tastaturkürzel**: F11 Vollbild, Strg+F Suche, Strg+/- Zoom (unter macOS ⌘ statt Strg)
 - **Mermaid.js**: Flowcharts, Sequenzdiagramme und andere Diagramme in Markdown (via CDN, fallback auf Code-Block bei fehlender Verbindung)
 - **KaTeX LaTeX** (Build 19): Inline-Formeln `$...$`, Block-Formeln `$$...$$`, `\(...\)`, `\[...\]` – vollständig offline eingebettet (keine CDN-Abhängigkeit), alle Schriften als base64-Data-URIs
 - **Scroll-History**: Scroll-Position wird pro Datei (FNV-64a Hash) gespeichert; beim Wiedereröffnen wird automatisch die letzte Leseposition wiederhergestellt (max. 200 Einträge)
@@ -39,6 +39,8 @@
 - [x] PDF-Anzeige (.pdf) – Linux: pdftoppm → PNG-Bilder (Build 36); Windows: Edge WebView2 embed (Build 34)
 - [x] PostScript-Anzeige (.ps) – gs rendert direkt zu PNG-Bildern (Build 37); Fallback: Hinweis + Quelltext
 - [x] **Text-Modus** (Build 45): C64-ähnliche Ansicht für Textformate inkl. EPUB – Pixelschrift „Press Start 2P“ (OFL, eingebettet, Latein/Griechisch/Kyrillisch), alles gleich groß, Überschriften fett, 50 Spalten × 32 Zeilen (1,5-facher Zeilenabstand) nach der kürzeren Seite des Inhaltsbereichs, Bilder 1-Bit-gerastert (Bayer 8×8, Bildpunkt = Schrift-Pixel), Tabellen mit Linien, Formeln/Diagramme als 1-Bit-Grafik, Schrift- und Hintergrundfarbe per Farbfeld in der Toolbar, Einstellung gespeichert
+
+- [x] **macOS** (Build 46): Universal-App (Apple Silicon + Intel, ab macOS 13) als `md-reader-macos.zip`, gebaut auf einem GitHub-Mac-Runner (Workflow `macos.yml`, Tests + Rauchtest mit Bildschirmfotos) und automatisch ans Release gehängt; Menüleiste (⌘C/⌘V/⌘A/⌘Q), NSOpenPanel, natives Vollbild, Dock-Icon; pdftoppm/gs auch aus Homebrew; ad hoc signiert, nicht notarisiert
 
 ## Geplant 📋
 

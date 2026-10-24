@@ -4,6 +4,26 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 46 – 2026-10-24
+
+### Added
+- macOS support (macOS 13 or newer, Apple Silicon and Intel): `md-reader-macos.zip`
+  contains a universal `MD Reader.app`, built and smoke-tested on a GitHub macOS runner
+  and attached to the release automatically.
+- macOS menu bar (MD Reader, Edit, Window) so that Cmd+C, Cmd+V, Cmd+A, Cmd+Q, Cmd+W
+  and Cmd+M work; native file dialog (NSOpenPanel), native fullscreen, Dock icon.
+- Keyboard shortcuts accept Cmd as well as Ctrl (Cmd+O, Cmd+F, Cmd+±, Cmd+scroll).
+- pdftoppm and Ghostscript are also found in Homebrew/MacPorts locations
+  (`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`); PDFs are rendered as page
+  images on macOS too; the Ghostscript hint suggests `brew install ghostscript`.
+
+### Notes
+- The macOS build is ad-hoc signed but not notarized: on first start, allow it in
+  System Settings → Privacy & Security ("Open Anyway").
+- The Linux ARM binaries cannot run on macOS; they are for Linux on ARM devices.
+
+---
+
 ## Build 45 – 2026-10-24
 
 ### Added

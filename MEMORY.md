@@ -40,7 +40,8 @@ PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 go test ./renderer/... 
 - **WebView statt Fyne**: Für echtes GitHub-ähnliches Rendering (HTML/CSS/JS im Browser)
 - **Goldmark**: GFM-Support + Syntax-Highlighting
 - **Inline HTML**: Gesamtes UI (Toolbar + Markdown-Bereich) als ein HTML-Template
-- **Build Tags**: platform_linux.go / platform_windows.go für native Fullscreen-APIs
+- **Build Tags**: platform_linux.go / platform_windows.go / platform_darwin.go für native APIs
+- **macOS-Build nur auf echtem Mac** (GitHub-Runner macos-15): Das macOS-SDK ist auf Linux nicht lizenzkonform nutzbar (osxcross wäre technisch möglich, verstößt aber gegen die Xcode-Lizenz)
 
 ## Sitzungsverlauf
 - 2026-03-05: Erstversion. Go 1.26 installiert. App implementiert mit WebView.
@@ -54,3 +55,4 @@ PKG_CONFIG_PATH=pkgconfig:$PKG_CONFIG_PATH CGO_ENABLED=1 go test ./renderer/... 
 - 2026-10-14 (Build 40–43): Bug #013 (Inhalt im HTML-Kommentar → unformatiert, Start mitten im Text), Bug #014 (KaTeX lud nach dem Hauptskript), RISK-005 bis RISK-010: Seitentitel escaped, Whitelist-Bereiniger für EPUB/LaTeX, strikte CSP mit Nonce, externe Links im System-Browser (extlink), img-src nur data:, Bildpfade als Erlaubnisliste. GitHub-Pages-Workflow aktiv.
 - 2026-10-22 (Build 44): RISK-011 (Gerätenamen-Umgehung bei Bildpfaden). Agent-Struktur eingeführt: 20 Agents in .claude/agents/ (lead-vorarbeiter, 6 specialists, 5 analysts, 3 worker, 5 helper), gemeinsame Regeln und überschneidungsfreie Zuständigkeiten in .claude/agents-shared/, Projektwissen aufgeteilt in .claude/rules/ (7 Dateien), Stop-/SessionStart-Hook check-project-structure.py prüft Eigentümer je Datei, Modell je Ebene, CLAUDE.md-Länge und Testzahl. Start als Vorarbeiter: `claude --agent lead-vorarbeiter`.
 - 2026-10-24 (Build 45): Text-Modus (C64-Stil) für Textformate inkl. EPUB: Pixelschrift Press Start 2P (OFL) eingebettet, 50 Spalten/32 Zeilen ×1,5 nach kürzerer Seite, Bilder 1-Bit-gerastert (Bayer 8×8, auch SVG-Cover), Tabellen mit Linien, Formeln per SVG-Filter 1-Bit (Alpha-Schwelle 25 %), Farben frei wählbar (Toolbar-Farbfelder, Binding persistTextMode, Farben dreifach geprüft). Neue Dateien: ui/textmode.go, assets/textmode.css/.js, assets/fonts/, ui/testdata/textmode_test.js (JS-Tests per Node). 184 Tests.
+- 2026-10-24 (Build 46): macOS-Port auf Nutzerwunsch (MacBook Pro 14: Linux-ARM-Binaries liefen dort natürlich nicht). platform_darwin.go (Cocoa: Menüleiste, NSOpenPanel, Vollbild, Dock-Icon), Tastenkürzel mit ⌘ (hasCommandModifier), renderer/tools.go (Homebrew-Suchorte, pdftoppm auch unter darwin), große Seiten unter macOS direkt per SetHtml. installer/macos/build-app.sh baut Universal-.app (ad hoc signiert, macOS 13+), Workflow .github/workflows/macos.yml baut/testet/macht Bildschirmfotos und hängt md-reader-macos.zip ans Release. 195 Tests.

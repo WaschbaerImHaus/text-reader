@@ -49,9 +49,12 @@ Ein einfacher, schneller Betrachter für Markdown, EPUB, FB2, TXT und HTML mit G
 | `Strg+-`    | Zoom verkleinern |
 | `Strg+0`    | Zoom zurücksetzen |
 | `Strg+Scroll` | Zoom per Mausrad |
+| `Strg+O`    | Datei öffnen |
 | `↑↓`        | Scrollen |
 | `PageUp/Down` | Seitenweise scrollen |
 | `Home/End`  | Anfang/Ende der Seite |
+
+Unter macOS gilt `⌘` statt `Strg`; `⌘C`, `⌘A`, `⌘Q` laufen über die Menüleiste.
 
 ## Installation
 
@@ -74,6 +77,24 @@ build\md-reader.exe [optionale-datei.md]
 **Systemvoraussetzungen:**
 - Windows 10 oder neuer (WebView2 ist vorinstalliert)
 - Ältere Systeme: [WebView2 Runtime installieren](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+
+### macOS
+
+`md-reader-macos.zip` von der [Releases](https://github.com/WaschbaerImHaus/text-reader/releases)-Seite laden (erscheint einige Minuten nach den übrigen Dateien), entpacken und `MD Reader.app` in den Ordner *Programme* ziehen.
+
+Die App ist nicht von Apple notarisiert. Beim ersten Start verweigert macOS das Öffnen:
+*Systemeinstellungen → Datenschutz & Sicherheit* öffnen, nach unten scrollen und **Dennoch öffnen** klicken.
+Alternativ im Terminal:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/MD Reader.app"
+```
+
+**Systemvoraussetzungen:**
+- macOS 13 (Ventura) oder neuer, Apple Silicon oder Intel
+- Optional für PDF/PostScript: `brew install poppler ghostscript`
+
+Die Linux-Dateien `md-reader-linux-arm64` / `-armhf` laufen auf dem Mac **nicht** – das sind Linux-Programme.
 
 ## Verwendung
 
@@ -132,6 +153,9 @@ make windows
 
 # Tests ausführen
 make test
+
+# macOS-App-Bundle (nur auf einem Mac mit Xcode Command Line Tools)
+make macos
 ```
 
 ## Technologie
@@ -140,7 +164,7 @@ make test
 - **webview_go** – Plattformübergreifende WebView-Integration
 - **goldmark** – Markdown-Parser mit GFM-Unterstützung
 - **goldmark-highlighting** – Syntax-Highlighting (GitHub-Stil)
-- **WebKitGTK 4.1** (Linux) / **Edge WebView2** (Windows) – Browser-Engine
+- **WebKitGTK 4.1** (Linux) / **Edge WebView2** (Windows) / **WKWebView** (macOS) – Browser-Engine
 
 ## Schriften
 
