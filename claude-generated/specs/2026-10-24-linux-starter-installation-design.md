@@ -38,7 +38,7 @@ weil MD Reader fremde Dokumente anzeigt.
   `md-reader --install` und `md-reader --uninstall`.
 - G4: Die Installation erfolgt nur für den Benutzer, ohne Root:
   - Programm nach `~/.local/bin/md-reader`
-  - Desktop-Eintrag nach `~/.local/share/applications/io.github.waschbaerimhaus.md-reader.desktop`
+  - Desktop-Eintrag nach `~/.local/share/applications/md-reader.desktop`
   - Icons nach `~/.local/share/icons/hicolor/{16x16,32x32,48x48,256x256}/apps/` und `scalable/apps/`
   - Kategorie **Office** (KDE: „Büro“)
   - `MimeType=` für md, markdown, txt, epub, fb2, tex, html, htm, pdf und ps, sodass
@@ -134,9 +134,14 @@ weil MD Reader fremde Dokumente anzeigt.
      per `go:embed` eingebettet.
 5. **Woran die Installation erkennt, dass sie schon läuft:** die App läuft schon aus
    `~/.local/bin` oder aus `/usr/bin` (Paketinstallation). In beiden Fällen keine Frage.
-6. **App-ID für G7:** `g_set_prgname("io.github.waschbaerimhaus.md-reader")` vor dem
-   Fensteraufbau in `platform_linux.go` (oder Gleichwertiges) und
-   `StartupWMClass=` in der Desktop-Datei passend dazu.
+6. **App-ID für G7 (bei der Planung geändert, Claude):** Desktop-ID ist `md-reader`
+   (`md-reader.desktop`), nicht die zuerst vorgeschlagene Reverse-DNS-ID.
+   - Die GUI ruft vor `webview.New` auf Linux fest `g_set_prgname("md-reader")` auf.
+     Damit stimmen WM_CLASS und Wayland-App-ID mit der Desktop-Datei überein, auch wenn
+     die Datei umbenannt wurde (`md-reader-linux-arm64`).
+   - Die WebKit-Datenordner (`~/.cache/md-reader`, `~/.local/share/md-reader`) bleiben dabei
+     unverändert.
+   - `StartupWMClass=md-reader` steht in der Desktop-Datei.
 7. **`.deb`-Inhalt:** die reine GUI-Binärdatei ohne Starter. apt garantiert die
    Abhängigkeiten, die Frage nach Installation entfällt. Abhängigkeiten siehe 8a.5.
    - Paketname `md-reader`, Version `1.0.<build>`
@@ -149,8 +154,8 @@ weil MD Reader fremde Dokumente anzeigt.
 ## 8a. Nach dem Bauer-Check von mir entschieden (Claude, zur Prüfung durch den Nutzer)
 
 1. **Selbst-Installation und `.deb` nebeneinander:**
-   - Beide verwenden dieselbe Desktop-ID `io.github.waschbaerimhaus.md-reader`.
-   - Ist das `.deb` installiert (`/usr/share/applications/io.github.waschbaerimhaus.md-reader.desktop`
+   - Beide verwenden dieselbe Desktop-ID `md-reader`.
+   - Ist das `.deb` installiert (`/usr/share/applications/md-reader.desktop`
      existiert), stellt die heruntergeladene Datei **keine** Installationsfrage.
    - `--install` bricht dann mit einem Hinweis ab, die Paketinstallation zu nutzen.
      Ein `--install --force` setzt sich trotzdem darüber.
@@ -175,12 +180,7 @@ weil MD Reader fremde Dokumente anzeigt.
      Die Ausgabe nennt diese Pfade, damit der Nutzer sie bei Bedarf selbst löscht.
    - Damit ist das Anti-Ziel „liegengebliebene Dateien“ so zu lesen: nichts, was **nicht**
      genannt wird.
-   - WebKit-Datenordner sollen trotz App-ID-Wechsel beim Programmnamen `md-reader`
-     bleiben. `g_set_prgname` nur so setzen, dass die Datenpfade (`~/.cache/md-reader`,
-     `~/.local/share/md-reader`) unverändert bleiben. Das heißt: eigene
-     `WebKitWebsiteDataManager`-Pfade setzen oder die Wayland-App-ID gezielt per
-     `gdk_set_program_class` / `g_set_application_name` regeln. Die genaue Lösung
-     bleibt dem Bauer überlassen, die Datenpfade dürfen sich nicht ändern.
+   - Die WebKit-Datenordner bleiben unverändert, siehe 8.6.
 5. **Zielsysteme (Nutzer, 2026-10-24: „es reicht wenn zwei jahre alte distributionen damit
    funktionieren“):**
    - Untergrenze sind Distributionen ab etwa Oktober 2024: Ubuntu 24.04 und KDE neon
@@ -202,7 +202,7 @@ weil MD Reader fremde Dokumente anzeigt.
    - Die Angabe „Debian 12+“ in `.claude/rules/build-release.md` und README wird
      korrigiert.
 6. **Maintainer-Adresse im `.deb`:** `Kurt Ingwer <WaschbaerImHaus@users.noreply.github.com>`.
-   Das ist mein Vorschlag, der Nutzer hat ihm nicht widersprochen. Nicht die private Adresse.
+   Vom Nutzer bestätigt (2026-10-24: „nimm die vorgeschlagene emailadresse“). Nicht die private Adresse.
 
 ## 9. Abnahme
 
