@@ -4,7 +4,7 @@
 // mit korrekten Konfigurationswerten erzeugt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (RISK-006/007: CSP mit Nonce, keine Inline-Handler)
+// Letzte Änderung: 2026-10-24 (⌘-Tastenkürzel für macOS)
 package ui
 
 import (
@@ -458,5 +458,26 @@ func TestBuildInitialHTML_CSPImagesOnlyData(t *testing.T) {
 	csp := extractCSP(t, BuildInitialHTML(UIConfig{FontSize: 16, DefaultFontSize: 16, Theme: "light"}))
 	if got := extractDirective(csp, "img-src"); got != "img-src data:" {
 		t.Errorf("img-src = %q, erwartet \"img-src data:\"", got)
+	}
+}
+
+// TestScripts_CommandKeyWorksOnMac prüft, dass alle Tastenkürzel auch mit ⌘
+// (metaKey, macOS) funktionieren: Der Handler fragt die Modifikatortaste nur
+// über hasCommandModifier ab, nie mehr direkt über e.ctrlKey.
+func TestScripts_CommandKeyWorksOnMac(t *testing.T) {
+	if !regexp.MustCompile(`function hasCommandModifier\(e\)\s*\{\s*return e\.ctrlKey \|\| e\.metaKey;`).MatchString(htmlJavaScript) {
+		t.Error("hasCommandModifier(e) mit ctrlKey || metaKey fehlt in scripts.js")
+	}
+	if strings.Contains(htmlJavaScript, "if (e.ctrlKey") {
+		t.Error("scripts.js prüft e.ctrlKey noch direkt (⌘ unter macOS wirkungslos)")
+	}
+	for _, shortcut := range []string{
+		"hasCommandModifier(e) && e.key === 'o'",
+		"hasCommandModifier(e) && e.key === 'f'",
+		"hasCommandModifier(e) && !inInput",
+	} {
+		if !strings.Contains(htmlJavaScript, shortcut) {
+			t.Errorf("Tastenkürzel %q fehlt", shortcut)
+		}
 	}
 }

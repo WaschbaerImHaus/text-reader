@@ -802,6 +802,17 @@ function closeApp() {
 // Tastatur-Shortcuts
 // ============================================================
 
+/**
+ * Prüft die Befehlstaste für Tastenkürzel: Strg unter Linux/Windows,
+ * ⌘ (metaKey) unter macOS.
+ *
+ * @param {KeyboardEvent|WheelEvent} e - Tastatur- oder Mausrad-Ereignis.
+ * @returns {boolean} true wenn Strg oder ⌘ gedrückt ist.
+ */
+function hasCommandModifier(e) {
+  return e.ctrlKey || e.metaKey;
+}
+
 document.addEventListener('keydown', function(e) {
   var tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
   var inInput = (tag === 'input' || tag === 'textarea');
@@ -809,14 +820,14 @@ document.addEventListener('keydown', function(e) {
   // Vollbild: F11
   if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); return; }
 
-  // Datei öffnen: Strg+O
-  if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openFile(); return; }
+  // Datei öffnen: Strg+O bzw. ⌘O
+  if (hasCommandModifier(e) && e.key === 'o') { e.preventDefault(); openFile(); return; }
 
-  // Suche öffnen: Strg+F
-  if (e.ctrlKey && e.key === 'f') { e.preventDefault(); openSearch(); return; }
+  // Suche öffnen: Strg+F bzw. ⌘F
+  if (hasCommandModifier(e) && e.key === 'f') { e.preventDefault(); openSearch(); return; }
 
   // Zoom-Shortcuts (nur außerhalb von Eingabefeldern)
-  if (e.ctrlKey && !inInput) {
+  if (hasCommandModifier(e) && !inInput) {
     if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); return; }
     if (e.key === '-')                  { e.preventDefault(); zoomOut(); return; }
     if (e.key === '0')                  { e.preventDefault(); resetZoom(); return; }
@@ -845,11 +856,11 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ============================================================
-// Strg+Mausrad → Zoom
+// Strg/⌘+Mausrad → Zoom
 // ============================================================
 
 document.addEventListener('wheel', function(e) {
-  if (e.ctrlKey) {
+  if (hasCommandModifier(e)) {
     e.preventDefault();
     if (e.deltaY < 0) zoomIn(); else zoomOut();
   }

@@ -5,7 +5,7 @@
 //           lokale Bilder, persistente Einstellungen, letzte Datei öffnen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-04
+// Letzte Änderung: 2026-10-24 (macOS-Menüleiste)
 package main
 
 import (
@@ -85,6 +85,9 @@ func main() {
 	// Nativen GTK-Drag&Drop-Handler einrichten (Linux: WebKitGTK liefert
 	// im JS-Drop-Event keine Dateipfade – GTK-Signal direkt abfangen)
 	setupNativeFileDrop(w)
+
+	// Menüleiste (nur macOS: ohne sie wirken ⌘C, ⌘V, ⌘A und ⌘Q nicht)
+	setupPlatformMenu(w)
 
 	// ----------------------------------------------------------------
 	// Go→JS Bindings registrieren (aus bindings.go)

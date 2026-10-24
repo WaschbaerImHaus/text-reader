@@ -1,0 +1,47 @@
+# Baut MD Reader für macOS (Universal: Apple Silicon + Intel) auf einem
+# GitHub-Mac-Runner, führt alle Tests und einen Rauchtest aus und hängt
+# md-reader-macos.zip an das veröffentlichte Release.
+#
+# Grund: webview_go braucht Cocoa/WebKit über CGo; das macOS-SDK ist auf
+# Linux nicht lizenzkonform verfügbar, deshalb baut ein echter Mac.
+#
+# Autor: Kurt Ingwer
+# Letzte Änderung: 2026-10-24
+name: macOS build
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache-dependency-path: src/go.sum
+      - name: Vet and test
+        working-directory: src
+        run: go vet ./... && go test ./...
+      - name: Build app bundle
+        run: installer/macos/build-app.sh
+      - name: Smoke test
+        run: debugging/macos/smoke-test.sh
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: md-reader-macos
+          path: |
+            build/md-reader-macos.zip
+            build/macos-*.png
+            build/macos-*.log
+          if-no-files-found: warn
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" build/md-reader-macos.zip --clobber -R "${{ github.repository }}"

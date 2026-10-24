@@ -1,8 +1,9 @@
 # Makefile für MD Reader
 # Cross-Compilation für Linux x86_64, Linux ARM64, Linux ARMhf, Windows x86_64
+# macOS (Universal) nur auf einem Mac: make macos (sonst GitHub-Workflow macos.yml)
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-03-14
+# Letzte Änderung: 2026-10-24 (macOS-Ziel, macOS in Release Notes)
 
 PROJECT     := md-reader
 BUILD_DIR   := build
@@ -42,7 +43,7 @@ GITHUB_REPO := WaschbaerImHaus/text-reader
 LDFLAGS_LINUX := -s -w -extldflags '-static-libstdc++ -static-libgcc'
 LDFLAGS_WIN   := -s -w -H windowsgui
 
-.PHONY: all linux windows linux-arm64 linux-armhf installer release test clean increment-build help
+.PHONY: all linux windows linux-arm64 linux-armhf installer macos release test clean increment-build help
 
 ## all: Kompiliert für Linux x86_64, Windows und Linux ARM64/ARMhf
 all: increment-build test linux windows linux-arm64 linux-armhf installer
@@ -120,6 +121,10 @@ installer: $(BUILD_DIR)/$(PROJECT).exe
 		echo "  Installation: sudo apt-get install nsis"; \
 	fi
 
+## macos: Baut "MD Reader.app" + build/md-reader-macos.zip (nur unter macOS)
+macos:
+	installer/macos/build-app.sh
+
 ## release: Kompiliert alles und erstellt ein GitHub Release
 release: all
 	@echo "→ Erstelle GitHub Release v1.0.$(NEXT_BUILD)..."
@@ -152,11 +157,13 @@ release-notes:
 	@echo "| \`md-reader\` | Linux x86_64 |"
 	@echo "| \`md-reader-linux-arm64\` | Linux ARM64 |"
 	@echo "| \`md-reader-linux-armhf\` | Linux ARMhf (32-bit) |"
+	@echo "| \`md-reader-macos.zip\` | macOS 12+ – Apple Silicon and Intel (attached by CI a few minutes after release) |"
 	@echo ""
 	@echo "### Requirements"
 	@echo ""
 	@echo "**Windows:** Windows 10 or newer (WebView2 pre-installed)"
 	@echo "**Linux:** \`libwebkit2gtk-4.1-0\`, \`libgtk-3-0\`"
+	@echo "**macOS:** macOS 12 or newer; unsigned build – on first start allow it in System Settings → Privacy & Security (\"Open Anyway\")"
 
 ## test: Führt alle Tests aus
 test:

@@ -13,7 +13,7 @@
 // mit einem Installationshinweis.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-04-15
+// Letzte Änderung: 2026-10-24 (macOS: Homebrew-Suchorte, brew-Hinweis)
 package renderer
 
 import (
@@ -44,7 +44,8 @@ func findGhostscriptExecutable() string {
 	// Kandidaten in Prioritätsreihenfolge (gs zuerst für Linux-Kompatibilität)
 	candidates := []string{"gs", "gswin64c", "gswin64", "gswin32c", "gswin32"}
 	for _, name := range candidates {
-		if path, err := exec.LookPath(name); err == nil {
+		// lookupTool durchsucht unter macOS zusätzlich die Homebrew-Orte
+		if path := lookupTool(name); path != "" {
 			return path
 		}
 	}
@@ -240,14 +241,7 @@ func renderPSToImages(gsExe string, data []byte, filename string) (*Result, erro
 // @return Result mit Hinweis-HTML.
 func parsePSNoGhostscript(data []byte, filename string) (*Result, error) {
 	// Betriebssystem-spezifische Installationsanweisung
-	var installHint string
-	switch runtime.GOOS {
-	case "windows":
-		installHint = `Install Ghostscript via the MD Reader Setup (optional component "Ghostscript") ` +
-			`or download from <b>ghostscript.com</b>.`
-	default:
-		installHint = `Install Ghostscript: <code>sudo apt-get install ghostscript</code>`
-	}
+	installHint := ghostscriptInstallHint(runtime.GOOS)
 
 	hintHTML := fmt.Sprintf(
 		`<div class="ps-no-gs-hint" style="background:var(--blockquote-bg,#f6f8fa);border-left:4px solid #e36209;`+

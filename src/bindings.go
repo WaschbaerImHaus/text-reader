@@ -5,7 +5,7 @@
 // Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Text-Modus: persistTextMode-Binding, Verfügbarkeit je Format)
+// Letzte Änderung: 2026-10-24 (macOS: große Seiten direkt laden)
 package main
 
 import (
@@ -17,6 +17,7 @@ import (
 	"md-reader/ui"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -122,14 +123,15 @@ func renderAndDisplay(w webview.WebView, contentHTML, title, hash string, scroll
 // mit vielen eingebetteten Bildern) überschreiten das 2-MB-Limit von
 // WebView2s NavigateToString (Windows) → dort bliebe das Fenster leer
 // (Bug #012). Deshalb werden sie in eine Temp-Datei geschrieben und per
-// file://-URL geladen – das hat kein Größenlimit.
+// file://-URL geladen – das hat kein Größenlimit. macOS (WKWebView) kennt
+// das Limit nicht und lädt immer direkt.
 //
 // Muss auf dem GTK/WebView-Hauptthread aufgerufen werden.
 //
 // @param w        Die WebView-Instanz.
 // @param fullHTML Vollständiges Seiten-HTML.
 func displayFullHTML(w webview.WebView, fullHTML string) {
-	if ui.NeedsFileNavigation(fullHTML) {
+	if ui.NeedsFileNavigationFor(runtime.GOOS, fullHTML) {
 		fileURL, err := ui.WriteTempViewFile(fullHTML)
 		if err == nil {
 			w.Navigate(fileURL)

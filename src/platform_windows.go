@@ -6,7 +6,7 @@
 //   - Icon-Setzung aus go:embed (CreateIconFromResourceEx + SetClassLongPtrW)
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-08
+// Letzte Änderung: 2026-10-24 (setupPlatformMenu als No-Op)
 
 //go:build windows
 
@@ -226,3 +226,9 @@ func setAppIcon(w webview.WebView) {
 //
 // @param w Die WebView-Instanz (nicht verwendet).
 func setupNativeFileDrop(w webview.WebView) {}
+
+// setupPlatformMenu ist hier ein No-Op: Die App hat kein Menü, nur die Toolbar.
+// Nur macOS braucht eine Menüleiste (Tastenkürzel ⌘C/⌘V/⌘Q, siehe platform_darwin.go).
+//
+// @param w Die WebView-Instanz (nicht verwendet).
+func setupPlatformMenu(w webview.WebView) {}

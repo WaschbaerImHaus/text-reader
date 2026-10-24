@@ -8,7 +8,7 @@
 // und WebView2 (Windows) und hat kein Größenlimit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-04
+// Letzte Änderung: 2026-10-24 (macOS lädt direkt)
 package ui
 
 import (
@@ -36,6 +36,21 @@ var tempViewFilePath string
 // @return true wenn das Dokument per file://-URL geladen werden muss.
 func NeedsFileNavigation(html string) bool {
 	return len(html) > MaxInlineHTMLSize
+}
+
+// NeedsFileNavigationFor entscheidet wie NeedsFileNavigation, berücksichtigt
+// aber das Betriebssystem: Unter macOS hat WKWebView kein 2-MB-Limit bei
+// loadHTMLString, und file://-URLs per loadRequest sind dort unzuverlässig.
+// Deshalb lädt macOS jede Seite direkt.
+//
+// @param goos Betriebssystem (wie runtime.GOOS).
+// @param html Vollständiges Seiten-HTML.
+// @return true wenn das Dokument per file://-URL geladen werden muss.
+func NeedsFileNavigationFor(goos, html string) bool {
+	if goos == "darwin" {
+		return false
+	}
+	return NeedsFileNavigation(html)
 }
 
 // TempViewFilePath gibt den Pfad der Temp-Ansichtsdatei zurück.

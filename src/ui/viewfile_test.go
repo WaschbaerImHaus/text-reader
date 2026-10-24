@@ -5,7 +5,7 @@
 // file://-URL geladen werden.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-07-04
+// Letzte Änderung: 2026-10-24 (macOS ohne Temp-Datei)
 package ui_test
 
 import (
@@ -29,6 +29,28 @@ func TestNeedsFileNavigation(t *testing.T) {
 	// Der Schwellwert selbst muss sicher unter dem 2-MB-Limit von WebView2 liegen
 	if ui.MaxInlineHTMLSize >= 2*1024*1024 {
 		t.Errorf("MaxInlineHTMLSize (%d) muss unter dem 2-MB-Limit von WebView2 liegen", ui.MaxInlineHTMLSize)
+	}
+}
+
+// TestNeedsFileNavigationFor prüft die Entscheidung je Betriebssystem:
+// Linux und Windows laden große Seiten per Temp-Datei, macOS (WKWebView,
+// kein 2-MB-Limit, file:// per loadRequest unzuverlässig) immer direkt.
+func TestNeedsFileNavigationFor(t *testing.T) {
+	big := strings.Repeat("a", ui.MaxInlineHTMLSize+1)
+	small := strings.Repeat("a", 1000)
+	for _, goos := range []string{"linux", "windows"} {
+		if !ui.NeedsFileNavigationFor(goos, big) {
+			t.Errorf("%s: großes HTML muss per Temp-Datei geladen werden", goos)
+		}
+		if ui.NeedsFileNavigationFor(goos, small) {
+			t.Errorf("%s: kleines HTML braucht keine Temp-Datei", goos)
+		}
+	}
+	if ui.NeedsFileNavigationFor("darwin", big) {
+		t.Error("darwin: großes HTML muss direkt per SetHtml geladen werden")
+	}
+	if ui.NeedsFileNavigationFor("darwin", small) {
+		t.Error("darwin: kleines HTML braucht keine Temp-Datei")
 	}
 }
 

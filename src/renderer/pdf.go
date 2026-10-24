@@ -1,7 +1,7 @@
 // Package renderer – PDF-Datei-Rendering für den WebView.
 //
 // Strategie nach Plattform:
-//   - Linux: pdftoppm (aus poppler-utils) rendert jede Seite als PNG.
+//   - Linux/macOS: pdftoppm (poppler-utils bzw. brew install poppler) rendert jede Seite als PNG.
 //            Seiten werden als base64-Data-URI-Bilder eingebettet.
 //            Kein Browser-Plugin nötig, funktioniert in WebKitGTK.
 //   - Windows: <embed type="application/pdf"> mit base64-Data-URI.
@@ -9,7 +9,7 @@
 //   - Fallback (kein pdftoppm, kein Embed-Support): Fehlermeldung + Text.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-04-15
+// Letzte Änderung: 2026-10-24 (macOS: pdftoppm auch unter darwin)
 package renderer
 
 import (
@@ -39,7 +39,7 @@ func IsPDFFile(path string) bool {
 // ParsePDF konvertiert PDF-Binärdaten zu HTML.
 //
 // Ablauf:
-//  1. Linux: pdftoppm-Konvertierung (PNG-Bilder pro Seite) → Bild-HTML
+//  1. Linux/macOS: pdftoppm-Konvertierung (PNG-Bilder pro Seite) → Bild-HTML
 //  2. Windows: <embed type="application/pdf"> mit base64-Data-URI
 //  3. Fallback: Fehlermeldung mit Installationshinweis
 //
@@ -47,8 +47,8 @@ func IsPDFFile(path string) bool {
 // @param filename Dateiname für den Titel (ohne Pfad).
 // @return Result mit HTML-Inhalt und Metadaten, oder Fehler.
 func ParsePDF(data []byte, filename string) (*Result, error) {
-	// Linux-Pfad: pdftoppm rendert Seiten zu PNG-Bildern
-	if runtime.GOOS == "linux" {
+	// Linux/macOS: pdftoppm rendert Seiten zu PNG-Bildern
+	if pdfUsesPageImages(runtime.GOOS) {
 		if result, err := renderPDFWithPdftoppm(data, filename); err == nil {
 			return result, nil
 		} else {
@@ -74,9 +74,10 @@ func ParsePDF(data []byte, filename string) (*Result, error) {
 // @return Result mit Bild-HTML oder Fehler wenn pdftoppm nicht verfügbar.
 func renderPDFWithPdftoppm(data []byte, filename string) (*Result, error) {
 	// Verfügbarkeit von pdftoppm prüfen
-	pdftoppmPath, err := exec.LookPath("pdftoppm")
-	if err != nil {
-		return nil, fmt.Errorf("pdftoppm nicht gefunden: %w", err)
+	// lookupTool durchsucht unter macOS zusätzlich die Homebrew-Orte
+	pdftoppmPath := lookupTool("pdftoppm")
+	if pdftoppmPath == "" {
+		return nil, fmt.Errorf("pdftoppm nicht gefunden (PATH und Zusatzorte)")
 	}
 
 	// PDF in temporäre Datei schreiben

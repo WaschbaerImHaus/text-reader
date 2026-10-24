@@ -10,7 +10,7 @@
 // goFileDropCallback() auf (definiert in platform_linux_drop.go via //export).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-03-28
+// Letzte Änderung: 2026-10-24 (setupPlatformMenu als No-Op)
 
 //go:build linux
 
@@ -364,3 +364,9 @@ func openFilePickerBlocking(w webview.WebView) string {
 	})
 	return <-ch
 }
+
+// setupPlatformMenu ist hier ein No-Op: Die App hat kein Menü, nur die Toolbar.
+// Nur macOS braucht eine Menüleiste (Tastenkürzel ⌘C/⌘V/⌘Q, siehe platform_darwin.go).
+//
+// @param w Die WebView-Instanz (nicht verwendet).
+func setupPlatformMenu(w webview.WebView) {}
