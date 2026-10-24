@@ -23,6 +23,8 @@ APP_NAME="MD Reader"
 APP="$BUILD_DIR/$APP_NAME.app"
 BUILD_NUM="$(cat "$ROOT/src/build.txt")"
 VERSION="1.0.$BUILD_NUM"
+# Go 1.27 setzt macOS 13 (Ventura) voraus
+MIN_MACOS="13.0"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -37,7 +39,12 @@ mkdir -p "$BUILD_DIR"
 cd "$ROOT/src"
 for arch in arm64 amd64; do
 	echo "→ Kompiliere für macOS $arch..."
-	CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" MACOSX_DEPLOYMENT_TARGET=12.0 \
+	# Mindestversion auch an den C/Objective-C-Teil (CGo) weitergeben,
+	# sonst baut clang für die Runner-Version und der Linker warnt
+	CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" \
+		CGO_CFLAGS="-O2 -g -mmacosx-version-min=$MIN_MACOS" \
+		CGO_CXXFLAGS="-O2 -g -mmacosx-version-min=$MIN_MACOS" \
+		CGO_LDFLAGS="-mmacosx-version-min=$MIN_MACOS" \
 		go build -ldflags="-s -w" -o "$WORK/md-reader-$arch" .
 done
 lipo -create -output "$WORK/md-reader" "$WORK/md-reader-arm64" "$WORK/md-reader-amd64"
@@ -74,7 +81,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>CFBundleShortVersionString</key><string>$VERSION</string>
 	<key>CFBundleVersion</key><string>$BUILD_NUM</string>
 	<key>CFBundleDevelopmentRegion</key><string>de</string>
-	<key>LSMinimumSystemVersion</key><string>12.0</string>
+	<key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSHumanReadableCopyright</key><string>Kurt Ingwer</string>

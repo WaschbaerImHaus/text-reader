@@ -157,13 +157,13 @@ release-notes:
 	@echo "| \`md-reader\` | Linux x86_64 |"
 	@echo "| \`md-reader-linux-arm64\` | Linux ARM64 |"
 	@echo "| \`md-reader-linux-armhf\` | Linux ARMhf (32-bit) |"
-	@echo "| \`md-reader-macos.zip\` | macOS 12+ – Apple Silicon and Intel (attached by CI a few minutes after release) |"
+	@echo "| \`md-reader-macos.zip\` | macOS 13+ – Apple Silicon and Intel (attached by CI a few minutes after release) |"
 	@echo ""
 	@echo "### Requirements"
 	@echo ""
 	@echo "**Windows:** Windows 10 or newer (WebView2 pre-installed)"
 	@echo "**Linux:** \`libwebkit2gtk-4.1-0\`, \`libgtk-3-0\`"
-	@echo "**macOS:** macOS 12 or newer; unsigned build – on first start allow it in System Settings → Privacy & Security (\"Open Anyway\")"
+	@echo "**macOS:** macOS 13 or newer; unsigned build – on first start allow it in System Settings → Privacy & Security (\"Open Anyway\")"
 
 ## test: Führt alle Tests aus
 test:
