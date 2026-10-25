@@ -9,7 +9,7 @@
 //  4. Text auf stderr (diese Datei) – ohne Antwortmöglichkeit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 4: Texte und Nachfragen)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde: Knopf-Konvention, Inform-Zeitlimit)
 package linuxsetup
 
 import (
@@ -33,13 +33,23 @@ type Button struct {
 }
 
 // Asker stellt dem Nutzer Fragen oder zeigt ihm Hinweise.
+//
+// Konvention für die Knöpfe: Der LETZTE Knopf der Liste ist der harmlose
+// (z. B. „Später“, „Abbrechen“, „Nicht jetzt“). Schließen, Escape oder
+// Zeitablauf liefern bei jeder Umsetzung entweder genau diesen letzten Key
+// oder "" – nie einen anderen Knopf. Aufrufer müssen "" und den letzten Key
+// gleich behandeln.
 type Asker interface {
 	// Ask zeigt eine Frage mit 1 bis 3 Knöpfen und wartet höchstens timeout
-	// (0 = ohne Zeitlimit). Rückgabe ist der Key des gewählten Knopfes; ein
-	// leerer Key bedeutet „keine Antwort“ (Zeitablauf, Fenster geschlossen,
-	// keine Antwortmöglichkeit). err nur bei technischen Fehlern.
+	// (0 = ohne Zeitlimit; Aufrufer sollten immer ein Zeitlimit setzen).
+	// Rückgabe ist der Key des gewählten Knopfes; ein leerer Key bedeutet
+	// „keine Antwort“ (Zeitablauf, Nachricht geschlossen, keine
+	// Antwortmöglichkeit). kdialog/zenity liefern beim Schließen des Fensters
+	// den letzten Key. err nur bei technischen Fehlern.
 	Ask(title, body string, buttons []Button, timeout time.Duration) (key string, err error)
-	// Inform zeigt einen Hinweis; Fehler werden ignoriert.
+	// Inform zeigt einen Hinweis; Fehler werden ignoriert. Bei kdialog/zenity
+	// blockiert Inform, bis der Nutzer OK drückt, höchstens jedoch 120 s
+	// (informTimeout). Die D-Bus-Benachrichtigung und stderr kehren sofort zurück.
 	Inform(title, body string)
 }
 

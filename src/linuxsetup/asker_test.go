@@ -3,7 +3,7 @@
 // D-Bus-Benachrichtigung gegen einen privaten Session-Bus.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 4: Texte und Nachfragen)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde: Knopf-Konvention, Absender, hängender Dienst)
 package linuxsetup
 
 import (
@@ -100,27 +100,31 @@ func TestSessionBusAddress(t *testing.T) {
 
 // dialogCall merkt sich einen Aufruf des Dialogprogramms.
 type dialogCall struct {
-	name string
-	args []string
+	name    string
+	args    []string
+	timeout time.Duration
 }
 
 // fakeRun liefert eine run-Funktion mit fester Antwort und protokolliert die Aufrufe.
 func fakeRun(calls *[]dialogCall, code int, out string, err error) func(string, []string, time.Duration) (int, string, error) {
-	return func(name string, args []string, _ time.Duration) (int, string, error) {
-		*calls = append(*calls, dialogCall{name, append([]string(nil), args...)})
+	return func(name string, args []string, timeout time.Duration) (int, string, error) {
+		*calls = append(*calls, dialogCall{name, append([]string(nil), args...), timeout})
 		return code, out, err
 	}
 }
 
-// threeButtons sind die Knöpfe des Installationsangebots.
-var threeButtons = []Button{{"yes", "Ja"}, {"later", "Später"}, {"never", "Nie"}}
+// threeButtons sind die Knöpfe des Installationsangebots. Nach der
+// Konvention steht der harmlose Knopf („Später“) zuletzt.
+var threeButtons = []Button{{"yes", "Ja"}, {"never", "Nie"}, {"later", "Später"}}
 
 // TestDialogAsker_ArgsAndMapping prüft Argumente und Zuordnung von Exit-Code
-// bzw. Ausgabe zum Button-Schlüssel für kdialog und zenity.
+// bzw. Ausgabe zum Button-Schlüssel für kdialog und zenity. Konvention: Der
+// letzte Knopf ist der harmlose; Schließen/Escape muss genau ihn liefern.
 func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 	evil := "Text $(rm -rf ~) `id` ; | & \"x\""
+	two := []Button{{"install", "Jetzt installieren"}, {"cancel", "Abbrechen"}}
 
-	// kdialog, drei Knöpfe: --yesnocancel.
+	// kdialog, drei Knöpfe: --yesnocancel, yes=erster, no=mittlerer, cancel=letzter.
 	var calls []dialogCall
 	a := &dialogAsker{tool: "kdialog", path: "/usr/bin/kdialog", run: fakeRun(&calls, 0, "", nil)}
 	key, err := a.Ask("Titel", evil, threeButtons, time.Minute)
@@ -128,34 +132,39 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 		t.Errorf("kdialog exit 0: (%q, %v), erwartet yes", key, err)
 	}
 	wantArgs := []string{"--title", "Titel", "--yesnocancel", evil,
-		"--yes-label", "Ja", "--no-label", "Später", "--cancel-label", "Nie"}
+		"--yes-label", "Ja", "--no-label", "Nie", "--cancel-label", "Später"}
 	if len(calls) != 1 || calls[0].name != "/usr/bin/kdialog" || !reflect.DeepEqual(calls[0].args, wantArgs) {
 		t.Errorf("kdialog Aufruf = %#v,\nerwartet %q %#v", calls, "/usr/bin/kdialog", wantArgs)
 	}
-	for code, want := range map[int]string{0: "yes", 1: "later", 2: "never", 3: "", -1: "", 255: ""} {
+	if len(calls) == 1 && calls[0].timeout != time.Minute {
+		t.Errorf("kdialog Zeitlimit = %v, erwartet 1m", calls[0].timeout)
+	}
+	// Exit 2 ist auch Escape/Schließen → letzter (harmloser) Knopf.
+	for code, want := range map[int]string{0: "yes", 1: "never", 2: "later", 3: "", -1: "", 255: ""} {
 		a.run = fakeRun(&calls, code, "", nil)
 		if key, err := a.Ask("Titel", "Text", threeButtons, time.Minute); err != nil || key != want {
-			t.Errorf("kdialog exit %d: (%q, %v), erwartet %q", code, key, err, want)
+			t.Errorf("kdialog drei Knöpfe exit %d: (%q, %v), erwartet %q", code, key, err, want)
 		}
 	}
 
-	// kdialog, zwei Knöpfe: --yesno, Exit 2 gibt es dort nicht.
+	// kdialog, zwei Knöpfe: --yesno, yes=erster, no=letzter (auch Schließen = Exit 1).
 	calls = nil
-	two := []Button{{"install", "Jetzt installieren"}, {"cancel", "Abbrechen"}}
 	a.run = fakeRun(&calls, 1, "", nil)
 	if key, _ := a.Ask("T", "B", two, time.Minute); key != "cancel" {
-		t.Errorf("kdialog zwei Knöpfe exit 1: %q", key)
+		t.Errorf("kdialog zwei Knöpfe exit 1 (geschlossen): %q, erwartet cancel", key)
 	}
 	wantArgs = []string{"--title", "T", "--yesno", "B", "--yes-label", "Jetzt installieren", "--no-label", "Abbrechen"}
 	if len(calls) == 0 || !reflect.DeepEqual(calls[0].args, wantArgs) {
-		t.Errorf("kdialog --yesno Argumente = %#v", calls)
+		t.Errorf("kdialog --yesno Argumente = %#v,\nerwartet %#v", calls, wantArgs)
 	}
-	a.run = fakeRun(&calls, 2, "", nil)
-	if key, _ := a.Ask("T", "B", two, time.Minute); key != "" {
-		t.Errorf("kdialog zwei Knöpfe exit 2: %q, erwartet leer", key)
+	for code, want := range map[int]string{0: "install", 1: "cancel", 2: "", -1: ""} {
+		a.run = fakeRun(&calls, code, "", nil)
+		if key, _ := a.Ask("T", "B", two, time.Minute); key != want {
+			t.Errorf("kdialog zwei Knöpfe exit %d: %q, erwartet %q", code, key, want)
+		}
 	}
 
-	// zenity, drei Knöpfe: --question mit --extra-button.
+	// zenity, drei Knöpfe: ok=erster, cancel=letzter, extra=mittlerer.
 	calls = nil
 	z := &dialogAsker{tool: "zenity", path: "/usr/bin/zenity", run: fakeRun(&calls, 0, "", nil)}
 	if key, err := z.Ask("Titel", evil, threeButtons, time.Minute); err != nil || key != "yes" {
@@ -172,9 +181,11 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 		want string
 	}{
 		{0, "", "yes"},
-		{1, "", "later"},
-		{1, "Nie\n", "never"},
+		{1, "", "later"}, // Abbrechen-Knopf oder Fenster geschlossen → letzter Knopf
+		{1, "\n", "later"},
+		{1, "Nie\n", "never"}, // Extra-Knopf → mittlerer Knopf
 		{1, "Nie", "never"},
+		{1, "Später\n", ""}, // Ausgabe passt zu keinem Extra-Knopf
 		{1, "Anderes\n", ""},
 		{5, "", ""},  // zenity-Zeitablauf
 		{-1, "", ""}, // abgebrochen (Zeitlimit des Aufrufers)
@@ -182,11 +193,11 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 	for _, c := range cases {
 		z.run = fakeRun(&calls, c.code, c.out, nil)
 		if key, err := z.Ask("T", "B", threeButtons, time.Minute); err != nil || key != c.want {
-			t.Errorf("zenity exit %d, Ausgabe %q: (%q, %v), erwartet %q", c.code, c.out, key, err, c.want)
+			t.Errorf("zenity drei Knöpfe exit %d, Ausgabe %q: (%q, %v), erwartet %q", c.code, c.out, key, err, c.want)
 		}
 	}
 
-	// zenity, zwei Knöpfe: ohne --extra-button.
+	// zenity, zwei Knöpfe: ok=erster, cancel=letzter, ohne --extra-button.
 	calls = nil
 	z.run = fakeRun(&calls, 0, "", nil)
 	if key, _ := z.Ask("T", "B", two, time.Minute); key != "install" {
@@ -195,7 +206,17 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 	wantArgs = []string{"--question", "--no-markup", "--title", "T", "--text", "B",
 		"--ok-label", "Jetzt installieren", "--cancel-label", "Abbrechen"}
 	if len(calls) == 0 || !reflect.DeepEqual(calls[0].args, wantArgs) {
-		t.Errorf("zenity zwei Knöpfe Argumente = %#v", calls)
+		t.Errorf("zenity zwei Knöpfe Argumente = %#v,\nerwartet %#v", calls, wantArgs)
+	}
+	for _, c := range []struct {
+		code int
+		out  string
+		want string
+	}{{0, "", "install"}, {1, "", "cancel"}, {1, "Abbrechen\n", ""}, {5, "", ""}} {
+		z.run = fakeRun(&calls, c.code, c.out, nil)
+		if key, _ := z.Ask("T", "B", two, time.Minute); key != c.want {
+			t.Errorf("zenity zwei Knöpfe exit %d, Ausgabe %q: %q, erwartet %q", c.code, c.out, key, c.want)
+		}
 	}
 }
 
@@ -247,6 +268,15 @@ func TestDialogAsker_OneButtonAndInform(t *testing.T) {
 	for i := range want {
 		if !reflect.DeepEqual(calls[i].args, want[i]) {
 			t.Errorf("Aufruf %d = %#v, erwartet %#v", i, calls[i].args, want[i])
+		}
+	}
+	// Inform blockiert höchstens informTimeout (120 s), nie ohne Grenze.
+	if informTimeout != 120*time.Second {
+		t.Errorf("informTimeout = %v, erwartet 120s", informTimeout)
+	}
+	for _, i := range []int{1, 3} {
+		if calls[i].timeout != informTimeout {
+			t.Errorf("Inform-Aufruf %d: Zeitlimit %v, erwartet %v", i, calls[i].timeout, informTimeout)
 		}
 	}
 }
@@ -321,13 +351,18 @@ func TestStderrAsker(t *testing.T) {
 // fakeNotifyServer spielt org.freedesktop.Notifications nach.
 type fakeNotifyServer struct {
 	conn *dbus.Conn
+	// impostor ist eine zweite Verbindung, die Antworten fälschen will.
+	impostor *dbus.Conn
 
 	mu sync.Mutex
 	// caps ist die Antwort auf GetCapabilities.
 	caps []string
 	// reply bestimmt, welches Signal nach Notify gesendet wird:
-	// "action:<key>", "closed" oder "" (keins).
+	// "action:<key>", "closed", "impostor:<key>" (erst gefälschte Antwort
+	// "install" von fremder Verbindung, dann die echte) oder "" (keins).
 	reply string
+	// capsDelay verzögert GetCapabilities (simuliert einen hängenden Dienst).
+	capsDelay time.Duration
 	// delay verzögert das Signal (simuliert einen Nutzer, der sich Zeit lässt).
 	delay time.Duration
 	// notifies und closed protokollieren die Aufrufe.
@@ -345,13 +380,15 @@ type fakeNotify struct {
 // GetCapabilities liefert die eingestellten Fähigkeiten.
 func (s *fakeNotifyServer) GetCapabilities() ([]string, *dbus.Error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.caps, nil
+	caps, delay := s.caps, s.capsDelay
+	s.mu.Unlock()
+	time.Sleep(delay)
+	return caps, nil
 }
 
 // Notify protokolliert den Aufruf, liefert ID 7 und sendet je nach Einstellung
 // zuerst ein Signal mit fremder ID (muss ignoriert werden) und dann das passende.
-func (s *fakeNotifyServer) Notify(appName string, replaces uint32, appIcon, summary, body string,
+func (s *fakeNotifyServer) Notify(sender dbus.Sender, appName string, replaces uint32, appIcon, summary, body string,
 	actions []string, hints map[string]dbus.Variant, expire int32) (uint32, *dbus.Error) {
 	s.mu.Lock()
 	s.notifies = append(s.notifies, fakeNotify{appName, appIcon, summary, body, actions, expire})
@@ -365,6 +402,22 @@ func (s *fakeNotifyServer) Notify(appName string, replaces uint32, appIcon, summ
 		case strings.HasPrefix(reply, "action:"):
 			_ = s.conn.Emit(path, "org.freedesktop.Notifications.ActionInvoked", uint32(99), "cancel")
 			_ = s.conn.Emit(path, "org.freedesktop.Notifications.ActionInvoked", uint32(7), strings.TrimPrefix(reply, "action:"))
+		case strings.HasPrefix(reply, "impostor:"):
+			// Gezieltes Signal einer fremden Verbindung an den Fragenden – muss ignoriert werden.
+			fake := &dbus.Message{
+				Type: dbus.TypeSignal,
+				Headers: map[dbus.HeaderField]dbus.Variant{
+					dbus.FieldPath:        dbus.MakeVariant(path),
+					dbus.FieldInterface:   dbus.MakeVariant("org.freedesktop.Notifications"),
+					dbus.FieldMember:      dbus.MakeVariant("ActionInvoked"),
+					dbus.FieldDestination: dbus.MakeVariant(string(sender)),
+					dbus.FieldSignature:   dbus.MakeVariant(dbus.SignatureOf(uint32(0), "")),
+				},
+				Body: []any{uint32(7), "install"},
+			}
+			s.impostor.Send(fake, nil)
+			time.Sleep(150 * time.Millisecond)
+			_ = s.conn.Emit(path, "org.freedesktop.Notifications.ActionInvoked", uint32(7), strings.TrimPrefix(reply, "impostor:"))
 		case reply == "closed":
 			_ = s.conn.Emit(path, "org.freedesktop.Notifications.NotificationClosed", uint32(99), uint32(2))
 			_ = s.conn.Emit(path, "org.freedesktop.Notifications.NotificationClosed", uint32(7), uint32(2))
@@ -390,7 +443,7 @@ func (s *fakeNotifyServer) GetServerInformation() (string, string, string, strin
 func (s *fakeNotifyServer) set(caps []string, reply string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.caps, s.reply, s.delay, s.notifies, s.closed = caps, reply, 0, nil, nil
+	s.caps, s.reply, s.delay, s.capsDelay, s.notifies, s.closed = caps, reply, 0, 0, nil, nil
 }
 
 // snapshot liefert eine Kopie des Protokolls.
@@ -468,7 +521,12 @@ func startFakeNotifyServer(t *testing.T, addr string) *fakeNotifyServer {
 		t.Fatalf("Verbindung zum privaten Bus: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	s := &fakeNotifyServer{conn: conn}
+	impostor, err := dbus.Connect(addr)
+	if err != nil {
+		t.Fatalf("zweite Verbindung: %v", err)
+	}
+	t.Cleanup(func() { _ = impostor.Close() })
+	s := &fakeNotifyServer{conn: conn, impostor: impostor}
 	if err := conn.Export(s, "/org/freedesktop/Notifications", "org.freedesktop.Notifications"); err != nil {
 		t.Fatal(err)
 	}
@@ -581,6 +639,33 @@ func TestDBusAsker(t *testing.T) {
 		}
 		if _, closed := server.snapshot(); !reflect.DeepEqual(closed, []uint32{7}) {
 			t.Errorf("CloseNotification-Aufrufe = %v, erwartet [7]", closed)
+		}
+	})
+
+	t.Run("ImpostorSignalIgnored", func(t *testing.T) {
+		// Nur der Eigentümer von org.freedesktop.Notifications darf antworten.
+		server.set([]string{"actions"}, "impostor:cancel")
+		key, err := NewAsker(fakeLookPath()).Ask("T", "B", buttons, 5*time.Second)
+		if err != nil || key != "cancel" {
+			t.Errorf("Ask = (%q, %v), erwartet cancel (gefälschtes install ignoriert)", key, err)
+		}
+	})
+
+	t.Run("ProbeHangingService", func(t *testing.T) {
+		// Ein hängender Dienst darf den Start nicht aufhalten.
+		server.set([]string{"actions"}, "")
+		server.mu.Lock()
+		server.capsDelay = 3 * time.Second
+		server.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		caps, ok := probeNotifications(ctx, addr)
+		if ok || caps != nil {
+			t.Errorf("probeNotifications = (%v, %v), erwartet (nil, false)", caps, ok)
+		}
+		if d := time.Since(start); d >= time.Second {
+			t.Errorf("probeNotifications dauerte %v, erwartet < 1 s", d)
 		}
 	})
 

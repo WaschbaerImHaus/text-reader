@@ -7,7 +7,7 @@
 // wie es ist.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 4: Texte und Nachfragen)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde: Standardpfade für MsgUninstalled)
 package linuxsetup
 
 import "strings"
@@ -72,7 +72,8 @@ const (
 	// Keine Argumente.
 	MsgPackageInstalled
 	// MsgUninstalled: Bestätigung nach --uninstall.
-	// Argument 1: behaltene Pfade, mit "\n" verbunden.
+	// Argument 1: behaltene Pfade, mit "\n" verbunden (ohne Argument die
+	// drei Standardpfade ~/.config, ~/.cache und ~/.local/share je mit md-reader).
 	MsgUninstalled
 
 	// messageCount ist die Anzahl der Nachrichten (nur für Tests und Prüfungen).
@@ -175,7 +176,7 @@ var messagesEN = map[MessageID]message{
 var defaultArgs = map[MessageID]string{
 	MsgWebKitMissing: "libwebkit2gtk-4.1.so.0",
 	MsgWebKitHint:    "sudo apt install " + WebKitPackage,
-	MsgUninstalled:   "-",
+	MsgUninstalled:   "~/.config/md-reader\n~/.cache/md-reader\n~/.local/share/md-reader",
 }
 
 // Text liefert Titel und Text einer Nachricht in der gewünschten Sprache.

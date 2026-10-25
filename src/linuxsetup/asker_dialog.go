@@ -5,15 +5,22 @@
 // Argument; zenity bekommt zusätzlich --no-markup, damit "<" und "&" in
 // Pfaden nicht als Pango-Auszeichnung gelesen werden.
 //
+// Konvention (siehe Asker): Der LETZTE Knopf ist der harmlose. Schließen bzw.
+// Escape liefert bei beiden Programmen genau diesen Knopf.
+//
 // Zuordnung der Antworten:
-//   - kdialog: Exit 0 → 1. Knopf, 1 → 2. Knopf, 2 → 3. Knopf (nur bei drei Knöpfen).
-//     Achtung: kdialog meldet auch Escape/Schließen bei --yesnocancel als 2.
-//   - zenity: Exit 0 → 1. Knopf; Exit 1 mit Ausgabe gleich der Extra-Beschriftung
-//     → 3. Knopf; Exit 1 ohne Ausgabe (auch Schließen) → 2. Knopf.
+//   - kdialog, 2 Knöpfe (--yesno): yes = erster, no = letzter.
+//     Exit 0 → erster, 1 → letzter (auch Schließen).
+//   - kdialog, 3 Knöpfe (--yesnocancel): yes = erster, no = mittlerer,
+//     cancel = letzter. Exit 0 → erster, 1 → mittlerer, 2 → letzter (auch Schließen).
+//   - zenity (--question): ok = erster, cancel = letzter, bei 3 Knöpfen
+//     --extra-button = mittlerer. Exit 0 → erster; Exit 1 mit Ausgabe gleich
+//     der Extra-Beschriftung → mittlerer; Exit 1 ohne Ausgabe (Abbrechen oder
+//     Schließen) → letzter.
 //   - Alles andere (Zeitablauf, unbekannte Codes) → "" (keine Antwort).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 4: Texte und Nachfragen)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde: letzter Knopf ist der harmlose, Inform mit Zeitlimit)
 package linuxsetup
 
 import (
@@ -28,6 +35,10 @@ import (
 // maxDialogButtons ist die höchste Zahl an Knöpfen, die kdialog und zenity
 // zuverlässig darstellen.
 const maxDialogButtons = 3
+
+// informTimeout begrenzt, wie lange ein Hinweis (Inform) höchstens offen
+// bleibt; danach wird das Dialogprogramm beendet.
+const informTimeout = 120 * time.Second
 
 // dialogAsker fragt über kdialog oder zenity.
 type dialogAsker struct {
@@ -69,7 +80,8 @@ func (a *dialogAsker) Ask(title, body string, buttons []Button, timeout time.Dur
 	return a.mapAnswer(code, out, buttons), nil
 }
 
-// Inform zeigt einen Hinweis mit OK-Knopf und wartet, bis er geschlossen wird.
+// Inform zeigt einen Hinweis mit OK-Knopf und wartet, bis er geschlossen
+// wird – höchstens informTimeout (120 s), dann wird das Programm beendet.
 //
 // @param title Titel des Fensters.
 // @param body Hinweistext.
@@ -80,10 +92,11 @@ func (a *dialogAsker) Inform(title, body string) {
 	} else {
 		args = []string{"--info", "--no-markup", "--title", title, "--text", body}
 	}
-	_, _, _ = a.run(a.path, args, 0)
+	_, _, _ = a.run(a.path, args, informTimeout)
 }
 
-// questionArgs baut die feste Argumentliste der Frage.
+// questionArgs baut die feste Argumentliste der Frage (letzter Knopf = harmlos,
+// er liegt auf der Taste, die auch Schließen/Escape auslöst).
 func (a *dialogAsker) questionArgs(title, body string, buttons []Button) []string {
 	if a.tool == "kdialog" {
 		switch len(buttons) {
@@ -103,10 +116,12 @@ func (a *dialogAsker) questionArgs(title, body string, buttons []Button) []strin
 		return []string{"--info", "--no-markup", "--title", title, "--text", body,
 			"--ok-label", buttons[0].Label}
 	}
+	last := buttons[len(buttons)-1]
 	args := []string{"--question", "--no-markup", "--title", title, "--text", body,
-		"--ok-label", buttons[0].Label, "--cancel-label", buttons[1].Label}
+		"--ok-label", buttons[0].Label, "--cancel-label", last.Label}
 	if len(buttons) == 3 {
-		args = append(args, "--extra-button", buttons[2].Label)
+		// Der mittlere Knopf wird zum Extra-Knopf (gibt seine Beschriftung aus).
+		args = append(args, "--extra-button", buttons[1].Label)
 	}
 	return args
 }
@@ -114,7 +129,8 @@ func (a *dialogAsker) questionArgs(title, body string, buttons []Button) []strin
 // mapAnswer ordnet Exit-Code und Ausgabe einem Button-Schlüssel zu.
 func (a *dialogAsker) mapAnswer(code int, out string, buttons []Button) string {
 	if a.tool == "kdialog" {
-		// Exit-Code ist direkt der Index des Knopfes.
+		// Exit-Code ist direkt der Index des Knopfes; der höchste Code
+		// (no bei --yesno, cancel bei --yesnocancel) ist auch der des Schließens.
 		if code >= 0 && code < len(buttons) {
 			return buttons[code].Key
 		}
@@ -131,10 +147,12 @@ func (a *dialogAsker) mapAnswer(code int, out string, buttons []Button) string {
 		}
 		answer := strings.TrimSpace(out)
 		if answer == "" {
-			return buttons[1].Key
+			// Abbrechen-Knopf oder Fenster geschlossen → letzter (harmloser) Knopf.
+			return buttons[len(buttons)-1].Key
 		}
-		if len(buttons) == 3 && answer == buttons[2].Label {
-			return buttons[2].Key
+		if len(buttons) == 3 && answer == buttons[1].Label {
+			// Extra-Knopf → mittlerer Knopf.
+			return buttons[1].Key
 		}
 		return ""
 	}

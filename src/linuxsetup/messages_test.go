@@ -2,7 +2,7 @@
 // Button-Beschriftungen (Deutsch und Englisch).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 4: Texte und Nachfragen)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde: Standardpfade für MsgUninstalled)
 package linuxsetup
 
 import (
@@ -129,6 +129,15 @@ func TestText_HintAndUninstallUseArgs(t *testing.T) {
 		_, body = Text(lang, MsgUninstalled, kept)
 		if !strings.Contains(body, kept) {
 			t.Errorf("%s: MsgUninstalled ohne Pfade: %q", lang, body)
+		}
+	}
+	// Ohne Argument nennt MsgUninstalled die drei üblichen Pfade.
+	for _, lang := range []Lang{LangDE, LangEN} {
+		_, body := Text(lang, MsgUninstalled)
+		for _, p := range []string{"~/.config/md-reader", "~/.cache/md-reader", "~/.local/share/md-reader"} {
+			if !strings.Contains(body, p) {
+				t.Errorf("%s: MsgUninstalled ohne Argument nennt %s nicht: %q", lang, p, body)
+			}
 		}
 	}
 	// Prozentzeichen im Argument dürfen nicht als Formatanweisung wirken.

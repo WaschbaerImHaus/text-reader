@@ -7,11 +7,13 @@
 // würde ohne Bus per dbus-launch einen neuen Bus starten und die Umgebung
 // des Prozesses verändern.
 //
-// Antworten werden nur vom Eigentümer des Namens org.freedesktop.Notifications
-// und nur für die eigene Nachrichten-ID angenommen.
+// Antworten werden nur angenommen, wenn der Absender (eindeutiger Bus-Name)
+// der aktuelle Eigentümer von org.freedesktop.Notifications ist – einmal pro
+// Frage per GetNameOwner ermittelt – und die Nachrichten-ID passt. So kann ein
+// anderes Programm am Bus keine Antwort per gezieltem Signal fälschen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 4: Texte und Nachfragen)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde: Absender-Prüfung per GetNameOwner)
 package linuxsetup
 
 import (
@@ -194,6 +196,16 @@ func (a *dbusAsker) Ask(title, body string, buttons []Button, timeout time.Durat
 	// Die private Verbindung wird nach der Frage immer geschlossen.
 	defer release()
 
+	// Eindeutigen Namen des Dienstes ermitteln; nur dessen Signale zählen.
+	var owner string
+	if err := conn.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0,
+		notifyName).Store(&owner); err != nil || owner == "" {
+		if err == nil {
+			err = errors.New("kein Eigentümer für " + notifyName)
+		}
+		return a.fallbackAsk(title, body, buttons, timeout, err)
+	}
+
 	// Erst abonnieren, dann senden – sonst könnte eine sofortige Antwort verloren gehen.
 	signals := make(chan *dbus.Signal, 16)
 	conn.Signal(signals)
@@ -230,7 +242,7 @@ func (a *dbusAsker) Ask(title, body string, buttons []Button, timeout time.Durat
 				// Verbindung beendet: keine Antwort mehr möglich.
 				return "", nil
 			}
-			if key, done := matchSignal(sig, id, buttons); done {
+			if key, done := matchSignal(sig, owner, id, buttons); done {
 				return key, nil
 			}
 		case <-timer:
@@ -246,10 +258,18 @@ func (a *dbusAsker) Ask(title, body string, buttons []Button, timeout time.Durat
 
 // matchSignal wertet ein Signal aus.
 //
+// @param sig Empfangenes Signal.
+// @param owner Eindeutiger Bus-Name des Benachrichtigungsdienstes.
+// @param id ID der eigenen Nachricht.
+// @param buttons Knöpfe der Frage.
 // @return key Schlüssel bei ActionInvoked mit bekannter Aktion, sonst "";
 // done true, wenn das Signal die eigene Nachricht betrifft (Antwort oder geschlossen).
-func matchSignal(sig *dbus.Signal, id uint32, buttons []Button) (key string, done bool) {
+func matchSignal(sig *dbus.Signal, owner string, id uint32, buttons []Button) (key string, done bool) {
 	if sig == nil || sig.Path != notifyPath || len(sig.Body) < 2 {
+		return "", false
+	}
+	if sig.Sender != owner {
+		// Signal von einer anderen Verbindung (gefälscht oder fremd) → ignorieren.
 		return "", false
 	}
 	sigID, ok := sig.Body[0].(uint32)
