@@ -14,12 +14,13 @@
 // auf anderen Systemen selbst.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6: Starter-Programm)
+// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess, Fehlermeldungen)
 package main
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("GO_TEST_PRINT") == "1" {
 		// Als Programm aus dem memfd gestartet: argv und Prozessnamen ausgeben.
 		comm, _ := os.ReadFile("/proc/self/comm")
-		os.Stdout.WriteString(strings.Join(os.Args, "\x1f") + "\n")
+		os.Stdout.WriteString(strings.Join(os.Args, "\x1f") + "\x1fLD=" + os.Getenv("LD_TRACE_LOADED_OBJECTS") + "\n")
 		os.Stderr.WriteString("comm=" + strings.TrimSpace(string(comm)) + "\n")
 		os.Exit(0)
 	}
@@ -64,6 +65,24 @@ func execHelper() int {
 	if err != nil {
 		os.Stderr.WriteString("memfd: " + err.Error() + "\n")
 		return 2
+	}
+	// Auf Wunsch vorher ein Ladeprotokoll im selben Prozess (mit /bin/true):
+	// LD_TRACE_LOADED_OBJECTS darf danach nicht in der Umgebung der GUI stehen.
+	if os.Getenv("GO_TEST_TRACE_FIRST") == "1" {
+		trueData, err := os.ReadFile("/bin/true")
+		if err != nil {
+			os.Stderr.WriteString("lesen /bin/true: " + err.Error() + "\n")
+			return 2
+		}
+		trueFD, err := createMemFile(trueData)
+		if err != nil {
+			os.Stderr.WriteString("memfd: " + err.Error() + "\n")
+			return 2
+		}
+		if _, err := traceMissing(trueFD); err != nil {
+			os.Stderr.WriteString("traceMissing: " + err.Error() + "\n")
+			return 2
+		}
 	}
 	// Die Testumgebung soll im neuen Programm nicht wieder den Helfer auslösen.
 	os.Unsetenv("GO_TEST_EXEC")
@@ -116,6 +135,10 @@ func TestParseCommand(t *testing.T) {
 		{"force bei uninstall", []string{"--uninstall", "--force"}, "uninstall", false, []string{"--force"}},
 		{"unbekannte option", []string{"--zoom=2", "a b.md"}, "", false, []string{"--zoom=2", "a b.md"}},
 		{"leeres argument", []string{""}, "", false, []string{""}},
+		// Interner Befehl für den abgetrennten Angebotsprozess.
+		{"offer-install", []string{"--offer-install"}, "offer-install", false, nil},
+		{"offer-install detach", []string{"--offer-install", "--detach"}, "offer-install", false, []string{"--detach"}},
+		{"offer-install nicht vorn", []string{"a.md", "--offer-install"}, "", false, []string{"a.md", "--offer-install"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -332,6 +355,13 @@ type testRig struct {
 	runs       [][]string
 	runCode    int
 	tools      map[string]bool
+	// spawned zählt gestartete Angebotsprozesse; spawnBeforeExec hält fest,
+	// ob der Start vor execGUI geschah.
+	spawned         int
+	spawnErr        error
+	spawnBeforeExec bool
+	detached        int
+	detachErr       error
 }
 
 // newRig baut einen Launcher mit eigenem HOME im Temp-Verzeichnis, deutscher
@@ -381,6 +411,15 @@ func newRig(t *testing.T) *testRig {
 				return r.runCode, errors.New("exit " + strconv.Itoa(r.runCode))
 			}
 			return 0, nil
+		},
+		spawnOffer: func() error {
+			r.spawned++
+			r.spawnBeforeExec = r.mem.execCalls == 0
+			return r.spawnErr
+		},
+		detachOffer: func() error {
+			r.detached++
+			return r.detachErr
 		},
 		mem:   r.mem,
 		gui:   []byte("\x7fELF-gui"),
@@ -596,12 +635,16 @@ func TestRun_NoGUI(t *testing.T) {
 	}
 }
 
-// TestRun_MemfdFails prüft Review-Fokus 1: Scheitert memfd (z. B.
-// vm.memfd_noexec=2), kommt eine klare Meldung mit Ursache und Rat auf stderr
-// und als Hinweis, Exit 1.
+// permErr ist ein Berechtigungsfehler wie EACCES/EPERM (errors.Is(…,
+// os.ErrPermission) ist wahr), ohne Linux-eigene Konstanten im Test.
+var permErr = fmt.Errorf("memfd_create: %w", os.ErrPermission)
+
+// TestRun_MemfdFails prüft Review-Fokus 1: Scheitert memfd mit einem
+// Berechtigungsfehler (z. B. vm.memfd_noexec=2 → EACCES), kommt eine klare
+// Meldung mit Ursache und Rat auf stderr und als Hinweis, Exit 1.
 func TestRun_MemfdFails(t *testing.T) {
 	r := newRig(t)
-	r.mem.createErr = errors.New("permission denied")
+	r.mem.createErr = permErr
 	if code := r.l.run(nil); code != 1 {
 		t.Errorf("Exit %d, erwartet 1", code)
 	}
@@ -613,52 +656,71 @@ func TestRun_MemfdFails(t *testing.T) {
 	if len(r.asker.informs) != 1 || !strings.Contains(r.asker.informs[0], "permission denied") {
 		t.Errorf("Hinweis fehlt: %q", r.asker.informs)
 	}
-	if r.mem.execCalls != 0 || r.mem.traceCalls != 0 {
+	if r.mem.execCalls != 0 || r.mem.traceCalls != 0 || r.spawned != 0 {
 		t.Error("nach gescheitertem memfd darf nichts mehr laufen")
 	}
 }
 
-// TestRun_TraceStartFails prüft: Lässt sich die GUI aus dem memfd gar nicht
-// starten (z. B. memfd ohne Ausführungsrecht), kommt dieselbe klare Meldung.
+// TestRun_MemfdFails_Generic prüft: Andere Fehler (kein EACCES/EPERM)
+// bekommen eine allgemeine Meldung ohne den memfd/noexec-Rat.
+func TestRun_MemfdFails_Generic(t *testing.T) {
+	r := newRig(t)
+	r.mem.createErr = errors.New("kaputt")
+	if code := r.l.run(nil); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	out := r.stderr.String()
+	if !strings.Contains(out, "konnte nicht starten: kaputt") {
+		t.Errorf("allgemeine Meldung fehlt: %q", out)
+	}
+	if strings.Contains(out, "memfd_noexec") || strings.Contains(out, "Ausführungsrecht") {
+		t.Errorf("noexec-Rat bei fremdem Fehler: %q", out)
+	}
+	if len(r.asker.informs) != 1 {
+		t.Errorf("Hinweis fehlt: %q", r.asker.informs)
+	}
+}
+
+// TestRun_TraceStartFails prüft: Lässt sich die GUI aus dem memfd wegen
+// fehlender Berechtigung nicht starten, kommt die klare Meldung mit Rat.
 func TestRun_TraceStartFails(t *testing.T) {
 	r := newRig(t)
-	r.mem.traceErrs = []error{&execStartError{err: errors.New("fork/exec /proc/self/fd/3: permission denied")}}
+	r.mem.traceErrs = []error{&execStartError{err: fmt.Errorf("fork/exec /proc/self/fd/3: %w", os.ErrPermission)}}
 	if code := r.l.run(nil); code != 1 {
 		t.Errorf("Exit %d, erwartet 1", code)
 	}
 	if !strings.Contains(r.stderr.String(), "Ausführungsrecht") || len(r.asker.informs) != 1 {
 		t.Errorf("stderr %q, informs %q", r.stderr.String(), r.asker.informs)
 	}
-	if r.mem.execCalls != 0 || len(r.asker.asks) != 0 {
+	if r.mem.execCalls != 0 || len(r.asker.asks) != 0 || r.spawned != 0 {
 		t.Error("darf weder fragen noch starten")
 	}
 }
 
 // TestRun_TraceOtherError prüft: Ein anderer Fehler des Ladeprotokolls (z. B.
-// Exit-Code ungleich 0 ohne fehlende Bibliothek) wird nur protokolliert, die
-// GUI startet trotzdem.
+// Exit-Code ungleich 0 oder Meldungen des Laders) wird nur protokolliert –
+// samt Text des Laders –, die GUI startet trotzdem.
 func TestRun_TraceOtherError(t *testing.T) {
 	r := newRig(t)
-	r.mem.traceErrs = []error{errors.New("exit status 1")}
-	r.asker.answers = []string{"later"}
+	r.mem.traceErrs = []error{errors.New("exit status 1; Lader: version `GLIBC_2.40' not found")}
 	if code := r.l.run([]string{"doc.md"}); code != 0 {
 		t.Errorf("Exit %d", code)
 	}
-	if r.mem.execCalls != 1 || !strings.Contains(r.stderr.String(), "exit status 1") {
+	if r.mem.execCalls != 1 || !strings.Contains(r.stderr.String(), "version `GLIBC_2.40' not found") {
 		t.Errorf("execCalls %d, stderr %q", r.mem.execCalls, r.stderr.String())
 	}
 }
 
 // TestRun_MissingLibs_NoApt prüft: Bibliotheken fehlen, kein apt/pkexec →
-// Hinweis, Exit 1, kein Start, nur ein Ladeprotokoll.
+// Hinweis, Exit 1, kein Start, kein Angebotsprozess, nur ein Ladeprotokoll.
 func TestRun_MissingLibs_NoApt(t *testing.T) {
 	r := newRig(t)
 	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
 	if code := r.l.run([]string{"doc.md"}); code != 1 {
 		t.Errorf("Exit %d, erwartet 1", code)
 	}
-	if r.mem.execCalls != 0 || r.mem.traceCalls != 1 || len(r.runs) != 0 {
-		t.Errorf("exec %d, trace %d, runs %q", r.mem.execCalls, r.mem.traceCalls, r.runs)
+	if r.mem.execCalls != 0 || r.mem.traceCalls != 1 || len(r.runs) != 0 || r.spawned != 0 {
+		t.Errorf("exec %d, trace %d, runs %q, spawned %d", r.mem.execCalls, r.mem.traceCalls, r.runs, r.spawned)
 	}
 	if !strings.Contains(r.stderr.String(), "libwebkit2gtk-4.1.so.0") {
 		t.Errorf("stderr ohne Bibliothek: %q", r.stderr.String())
@@ -671,7 +733,7 @@ func TestRun_MissingLibs_InstalledThenStart(t *testing.T) {
 	r := newRig(t)
 	r.tools["apt-get"], r.tools["pkexec"] = true, true
 	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}, nil}
-	r.asker.answers = []string{"install", "later"}
+	r.asker.answers = []string{"install"}
 	if code := r.l.run([]string{"doc.md"}); code != 0 {
 		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
 	}
@@ -707,7 +769,7 @@ func TestRun_MissingLibs_SecondTraceStartFails(t *testing.T) {
 	r := newRig(t)
 	r.tools["apt-get"], r.tools["pkexec"] = true, true
 	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
-	r.mem.traceErrs = []error{nil, &execStartError{err: errors.New("permission denied")}}
+	r.mem.traceErrs = []error{nil, &execStartError{err: permErr}}
 	r.asker.answers = []string{"install"}
 	if code := r.l.run(nil); code != 1 {
 		t.Errorf("Exit %d, erwartet 1", code)
@@ -717,13 +779,143 @@ func TestRun_MissingLibs_SecondTraceStartFails(t *testing.T) {
 	}
 }
 
-// TestRun_OfferInstall_Later prüft: alles vorhanden, Start aus dem
-// Download-Ordner → Installationsfrage; "Später" wird gespeichert, GUI startet.
-func TestRun_OfferInstall_Later(t *testing.T) {
+// TestRun_SpawnsOfferChild prüft die Vorgabe „Angebot verzögert die GUI
+// nicht“: Start aus dem Download-Ordner ohne Installation → der Starter
+// startet den Angebotsprozess (vor execGUI), fragt selbst nichts, baut nicht
+// einmal einen Asker und erreicht execGUI mit den Argumenten.
+func TestRun_SpawnsOfferChild(t *testing.T) {
+	r := newRig(t)
+	if code := r.l.run([]string{"a.md", "--install"}); code != 0 {
+		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
+	}
+	if r.spawned != 1 || !r.spawnBeforeExec {
+		t.Errorf("spawned %d, vor exec %v", r.spawned, r.spawnBeforeExec)
+	}
+	if r.askerMade != 0 || len(r.asker.asks) != 0 {
+		t.Errorf("Elternprozess hat gefragt: made %d, asks %q", r.askerMade, r.asker.asks)
+	}
+	if r.mem.execCalls != 1 || r.mem.execFD != 42 || !sameStrings(r.mem.execRest, []string{"a.md", "--install"}) {
+		t.Errorf("exec %d fd %d rest %q", r.mem.execCalls, r.mem.execFD, r.mem.execRest)
+	}
+	if string(r.mem.created) != "\x7fELF-gui" {
+		t.Errorf("memfd-Inhalt %q", r.mem.created)
+	}
+	// Der Elternprozess schreibt nichts: weder Programm noch Antwortspeicher.
+	lay := r.layout(t)
+	if fileExists(lay.BinPath) || fileExists(lay.PrefsPath) {
+		t.Error("Elternprozess hat installiert oder eine Antwort gespeichert")
+	}
+}
+
+// TestRun_SpawnFails_StillStarts prüft: Scheitert der Start des
+// Angebotsprozesses, wird das nur protokolliert; die GUI startet.
+func TestRun_SpawnFails_StillStarts(t *testing.T) {
+	r := newRig(t)
+	r.spawnErr = errors.New("fork kaputt")
+	if code := r.l.run(nil); code != 0 {
+		t.Fatalf("Exit %d", code)
+	}
+	if r.mem.execCalls != 1 || !strings.Contains(r.stderr.String(), "fork kaputt") {
+		t.Errorf("exec %d, stderr %q", r.mem.execCalls, r.stderr.String())
+	}
+}
+
+// TestRun_NoSpawnWhenNothingToOffer prüft: Kein Angebotsprozess bei Start aus
+// ~/.local/bin, über einen Symlink darauf, bei einer Paketinstallation, bei
+// der Antwort „Nie“ und bei einer gleich neuen Nutzerinstallation.
+func TestRun_NoSpawnWhenNothingToOffer(t *testing.T) {
+	cases := []string{"aus BinPath", "Symlink auf BinPath", "Paket", "Nie", "gleich neu installiert"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			lay := r.layout(t)
+			switch name {
+			case "aus BinPath", "Symlink auf BinPath":
+				if err := os.MkdirAll(filepath.Dir(lay.BinPath), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(lay.BinPath, []byte("launcher"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				r.exe = lay.BinPath
+				if name == "Symlink auf BinPath" {
+					link := filepath.Join(t.TempDir(), "md-reader-link")
+					if err := os.Symlink(lay.BinPath, link); err != nil {
+						t.Fatal(err)
+					}
+					r.exe = link
+				}
+			case "Paket":
+				if err := os.MkdirAll(filepath.Dir(r.sysDesktop), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(r.sysDesktop, []byte("[Desktop Entry]\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			case "Nie":
+				if err := linuxsetup.SavePrefs(lay.PrefsPath, linuxsetup.Prefs{InstallPrompt: linuxsetup.PromptNever}); err != nil {
+					t.Fatal(err)
+				}
+			case "gleich neu installiert":
+				if code := r.l.run([]string{"--install"}); code != 0 {
+					t.Fatalf("Installation: Exit %d", code)
+				}
+			}
+			if code := r.l.run([]string{"x.md"}); code != 0 {
+				t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
+			}
+			if r.spawned != 0 || r.askerMade != 0 {
+				t.Errorf("spawned %d, Asker gebaut %d", r.spawned, r.askerMade)
+			}
+			if r.mem.execCalls != 1 {
+				t.Error("GUI wurde nicht gestartet")
+			}
+		})
+	}
+}
+
+// TestRun_NoSpawnInCommands prüft: --install, --uninstall, Version,
+// Desktop-Datei und ein Starter ohne GUI starten nie den Angebotsprozess.
+func TestRun_NoSpawnInCommands(t *testing.T) {
+	for _, args := range [][]string{{"--install"}, {"--uninstall"}, {"--launcher-version"}, {"--print-desktop-entry", "/x"}} {
+		r := newRig(t)
+		r.l.run(args)
+		if r.spawned != 0 || r.detached != 0 {
+			t.Errorf("%q: spawned %d, detached %d", args, r.spawned, r.detached)
+		}
+	}
+	r := newRig(t)
+	r.l.gui = nil
+	r.l.run([]string{"a.md"})
+	if r.spawned != 0 {
+		t.Errorf("ohne GUI: spawned %d", r.spawned)
+	}
+}
+
+// TestRun_ExecFails prüft: Scheitert exec mit fehlender Berechtigung, kommt
+// die klare Meldung, Exit 1.
+func TestRun_ExecFails(t *testing.T) {
+	r := newRig(t)
+	r.mem.execErr = fmt.Errorf("exec: %w", os.ErrPermission)
+	if code := r.l.run(nil); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	if !strings.Contains(r.stderr.String(), "Ausführungsrecht") {
+		t.Errorf("stderr: %q", r.stderr.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Interner Befehl --offer-install (abgetrennter Angebotsprozess)
+// ---------------------------------------------------------------------------
+
+// TestRun_OfferInstallCmd_Later prüft: --offer-install stellt die
+// Installationsfrage, speichert „Später“, startet keine GUI, Exit 0.
+func TestRun_OfferInstallCmd_Later(t *testing.T) {
 	r := newRig(t)
 	r.asker.answers = []string{"later"}
-	if code := r.l.run([]string{"a.md", "--install"}); code != 0 {
-		t.Fatalf("Exit %d", code)
+	if code := r.l.run([]string{"--offer-install"}); code != 0 {
+		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
 	}
 	title, _ := linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgOfferInstall)
 	if len(r.asker.asks) != 1 || r.asker.asks[0] != title {
@@ -732,20 +924,18 @@ func TestRun_OfferInstall_Later(t *testing.T) {
 	if p := linuxsetup.LoadPrefs(r.layout(t).PrefsPath); p.InstallPrompt != linuxsetup.PromptLater {
 		t.Errorf("Antwort nicht gespeichert: %+v", p)
 	}
-	if r.mem.execCalls != 1 || r.mem.execFD != 42 || !sameStrings(r.mem.execRest, []string{"a.md", "--install"}) {
-		t.Errorf("exec %d fd %d rest %q", r.mem.execCalls, r.mem.execFD, r.mem.execRest)
-	}
-	if string(r.mem.created) != "\x7fELF-gui" {
-		t.Errorf("memfd-Inhalt %q", r.mem.created)
+	if r.mem.execCalls != 0 || r.mem.created != nil || r.mem.traceCalls != 0 || r.spawned != 0 {
+		t.Error("--offer-install darf weder memfd noch GUI noch Unterprozess starten")
 	}
 }
 
-// TestRun_OfferInstall_Yes prüft: "Ja" installiert die laufende Datei
-// (selfPath) samt Icons, danach startet die GUI.
-func TestRun_OfferInstall_Yes(t *testing.T) {
+// TestRun_OfferInstallCmd_Yes prüft: „Ja“ installiert die laufende Datei –
+// dieselbe, die der Elternprozess als ExePath sieht (executable) – samt
+// Icons und Build-Nummer, Exit 0.
+func TestRun_OfferInstallCmd_Yes(t *testing.T) {
 	r := newRig(t)
 	r.asker.answers = []string{"yes"}
-	if code := r.l.run(nil); code != 0 {
+	if code := r.l.run([]string{"--offer-install"}); code != 0 {
 		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
 	}
 	lay := r.layout(t)
@@ -756,14 +946,14 @@ func TestRun_OfferInstall_Yes(t *testing.T) {
 	if b, ok := linuxsetup.InstalledBuild(lay); !ok || b != 47 {
 		t.Errorf("InstalledBuild = (%d, %v)", b, ok)
 	}
-	if r.mem.execCalls != 1 {
-		t.Error("GUI wurde nicht gestartet")
+	if !fileExists(filepath.Join(lay.IconBase, "48x48", "apps", "md-reader.png")) {
+		t.Error("Icon fehlt")
 	}
 }
 
-// TestRun_OfferFails_StillStarts prüft: Ein Fehler beim Installieren wird
-// nur protokolliert, die GUI startet trotzdem.
-func TestRun_OfferFails_StillStarts(t *testing.T) {
+// TestRun_OfferInstallCmd_Fails prüft: Scheitert die Installation, steht der
+// Grund auf stderr und der Exit-Code ist 1 (niemand wartet darauf).
+func TestRun_OfferInstallCmd_Fails(t *testing.T) {
 	r := newRig(t)
 	r.asker.answers = []string{"yes"}
 	// Eine Datei an der Stelle von ~/.local lässt MkdirAll scheitern.
@@ -773,47 +963,100 @@ func TestRun_OfferFails_StillStarts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(r.home, ".local"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := r.l.run(nil); code != 0 {
-		t.Fatalf("Exit %d", code)
-	}
-	if r.mem.execCalls != 1 || r.stderr.Len() == 0 {
-		t.Errorf("exec %d, stderr %q", r.mem.execCalls, r.stderr.String())
-	}
-}
-
-// TestRun_RunningFromBinPath prüft: Start aus ~/.local/bin → keine Frage und
-// kein Asker (NewAsker mit D-Bus-Probe wird gar nicht erst gebaut).
-func TestRun_RunningFromBinPath(t *testing.T) {
-	r := newRig(t)
-	lay := r.layout(t)
-	if err := os.MkdirAll(filepath.Dir(lay.BinPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(lay.BinPath, []byte("launcher"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	r.exe = lay.BinPath
-	if code := r.l.run([]string{"x.md"}); code != 0 {
-		t.Fatalf("Exit %d", code)
-	}
-	if r.askerMade != 0 || len(r.asker.asks) != 0 {
-		t.Errorf("Asker gebaut (%d) oder gefragt (%q)", r.askerMade, r.asker.asks)
-	}
-	if r.mem.execCalls != 1 {
-		t.Error("GUI wurde nicht gestartet")
-	}
-}
-
-// TestRun_ExecFails prüft: Scheitert exec, kommt die klare Meldung, Exit 1.
-func TestRun_ExecFails(t *testing.T) {
-	r := newRig(t)
-	r.mem.execErr = errors.New("permission denied")
-	r.asker.answers = []string{"later"}
-	if code := r.l.run(nil); code != 1 {
+	if code := r.l.run([]string{"--offer-install"}); code != 1 {
 		t.Errorf("Exit %d, erwartet 1", code)
 	}
-	if !strings.Contains(r.stderr.String(), "Ausführungsrecht") {
-		t.Errorf("stderr: %q", r.stderr.String())
+	if r.stderr.Len() == 0 {
+		t.Error("kein Grund auf stderr")
+	}
+}
+
+// TestRun_OfferInstallCmd_NothingToOffer prüft: Hat sich die Lage geändert
+// (inzwischen installiert), fragt der Angebotsprozess nicht, Exit 0.
+func TestRun_OfferInstallCmd_NothingToOffer(t *testing.T) {
+	r := newRig(t)
+	if code := r.l.run([]string{"--install"}); code != 0 {
+		t.Fatalf("Installation: Exit %d", code)
+	}
+	if code := r.l.run([]string{"--offer-install"}); code != 0 {
+		t.Fatalf("Exit %d", code)
+	}
+	if r.askerMade != 0 {
+		t.Error("Asker gebaut, obwohl nichts anzubieten ist")
+	}
+}
+
+// TestRun_OfferInstallCmd_NoPayload prüft: Ohne eingebettete App wird nichts
+// angeboten (eine Installation wäre nutzlos), Exit 1.
+func TestRun_OfferInstallCmd_NoPayload(t *testing.T) {
+	r := newRig(t)
+	r.l.gui = nil
+	if code := r.l.run([]string{"--offer-install"}); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	if r.askerMade != 0 || fileExists(r.layout(t).PrefsPath) {
+		t.Error("ohne Nutzlast gefragt oder gespeichert")
+	}
+}
+
+// TestRun_OfferInstallCmd_Detach prüft die Zwischenstufe: --offer-install
+// --detach startet nur den abgetrennten Angebotsprozess und endet mit 0,
+// ohne selbst zu fragen; scheitert der Start, Exit 1.
+func TestRun_OfferInstallCmd_Detach(t *testing.T) {
+	r := newRig(t)
+	if code := r.l.run([]string{"--offer-install", "--detach"}); code != 0 {
+		t.Fatalf("Exit %d", code)
+	}
+	if r.detached != 1 || r.askerMade != 0 || r.spawned != 0 {
+		t.Errorf("detached %d, Asker %d, spawned %d", r.detached, r.askerMade, r.spawned)
+	}
+	r.detachErr = errors.New("kein fork")
+	if code := r.l.run([]string{"--offer-install", "--detach"}); code != 1 {
+		t.Errorf("Startfehler: Exit %d, erwartet 1", code)
+	}
+}
+
+// TestRun_ExtraArgs prüft: Unerwartete Argumente nach --install (außer
+// --force), --uninstall, --launcher-version und --offer-install ergeben eine
+// Warnung auf stderr und Exit 2; es passiert nichts.
+func TestRun_ExtraArgs(t *testing.T) {
+	cases := [][]string{
+		{"--install", "x.md"},
+		{"--install", "--force", "x.md"},
+		{"--uninstall", "--force"},
+		{"--launcher-version", "x"},
+		{"--offer-install", "x"},
+	}
+	for _, args := range cases {
+		r := newRig(t)
+		if code := r.l.run(args); code != 2 {
+			t.Errorf("%q: Exit %d, erwartet 2", args, code)
+		}
+		bad := args[len(args)-1]
+		if !strings.Contains(r.stderr.String(), bad) || r.stdout.Len() != 0 {
+			t.Errorf("%q: stderr %q, stdout %q", args, r.stderr.String(), r.stdout.String())
+		}
+		if fileExists(r.layout(t).BinPath) || r.askerMade != 0 || r.detached != 0 {
+			t.Errorf("%q: es ist trotzdem etwas passiert", args)
+		}
+	}
+}
+
+// TestLimitedBuffer prüft den begrenzten Puffer für stderr des Laders.
+func TestLimitedBuffer(t *testing.T) {
+	b := &limitedBuffer{max: 8}
+	n, err := b.Write([]byte("12345"))
+	if n != 5 || err != nil {
+		t.Errorf("Write = (%d, %v)", n, err)
+	}
+	// Überlauf: Write meldet trotzdem alles als geschrieben (kein Fehler für
+	// den Kindprozess), behalten werden nur max Bytes.
+	n, err = b.Write([]byte("67890abc"))
+	if n != 8 || err != nil || b.String() != "12345678" {
+		t.Errorf("Write = (%d, %v), Inhalt %q", n, err, b.String())
+	}
+	if n, _ := b.Write([]byte("x")); n != 1 || b.String() != "12345678" {
+		t.Errorf("nach vollem Puffer: %q", b.String())
 	}
 }
 
@@ -978,6 +1221,57 @@ func TestTraceMissing_RealMissingLibrary(t *testing.T) {
 	}
 }
 
+// TestTraceMissing_LoaderStderr baut mit gcc ein Programm, das eine
+// Symbolversion MDR_2 verlangt, und ersetzt die Bibliothek durch eine mit
+// MDR_1. Der Lader meldet im Ladeprotokoll (Exit 0!) auf stderr
+// "version `MDR_2' not found" – wie bei einer zu alten glibc. traceMissing
+// liefert dann keinen execStartError, sondern einen Fehler mit diesem Text.
+func TestTraceMissing_LoaderStderr(t *testing.T) {
+	requireLinux(t)
+	gcc, err := exec.LookPath("gcc")
+	if err != nil {
+		t.Skip("gcc fehlt")
+	}
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	libSrc := write("l.c", "int f(void){return 1;}\n")
+	mainSrc := write("m.c", "int f(void);\nint main(void){return f()-1;}\n")
+	v2 := write("v2.map", "MDR_2 { global: f; local: *; };\n")
+	v1 := write("v1.map", "MDR_1 { global: f; local: *; };\n")
+	lib := filepath.Join(dir, "libmdrv.so")
+	bin := filepath.Join(dir, "prog")
+	gccRun := func(args ...string) {
+		if out, err := exec.Command(gcc, args...).CombinedOutput(); err != nil {
+			t.Skipf("gcc %q: %v %s", args, err, out)
+		}
+	}
+	gccRun("-shared", "-fPIC", "-Wl,--version-script="+v2, "-Wl,-soname,libmdrv.so", "-o", lib, libSrc)
+	gccRun("-o", bin, mainSrc, "-L"+dir, "-lmdrv", "-Wl,-rpath,"+dir)
+	gccRun("-shared", "-fPIC", "-Wl,--version-script="+v1, "-Wl,-soname,libmdrv.so", "-o", lib, libSrc)
+
+	data, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd, err := createMemFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing, err := traceMissing(fd)
+	if len(missing) != 0 || err == nil || isStartError(err) {
+		t.Fatalf("traceMissing = (%q, %v), erwartet Fehler mit Lader-Text", missing, err)
+	}
+	if !strings.Contains(err.Error(), "version `MDR_2' not found") {
+		t.Errorf("Lader-Text fehlt: %v", err)
+	}
+}
+
 // TestTraceMissing_NotExecutable prüft: Inhalt ohne gültiges Programmformat
 // (der Kern verweigert exec) ergibt einen execStartError – denselben Weg, den
 // ein memfd ohne Ausführungsrecht nimmt.
@@ -1002,7 +1296,8 @@ func TestTraceMissing_NotExecutable(t *testing.T) {
 //     übersprungen – die übrigen Fälle prüfen dasselbe ohne diese Eigenheit.
 //   - /bin/sh -c 'echo "$0"' → argv[0] ist "md-reader".
 //   - die Testdatei selbst (GO_TEST_PRINT=1) → argv vollständig und
-//     unverändert, auch mit Leerzeichen und leerem Argument.
+//     unverändert, auch mit Leerzeichen; vorher lief im selben Prozess
+//     traceMissing, trotzdem ist LD_TRACE_LOADED_OBJECTS in der GUI leer.
 func TestMemExec_Exec(t *testing.T) {
 	requireLinux(t)
 	self, err := os.Executable()
@@ -1018,8 +1313,9 @@ func TestMemExec_Exec(t *testing.T) {
 		{"echo", "/bin/echo", []string{"hallo"}, "", "hallo\n"},
 		// sh -c ohne weitere Argumente: $0 ist argv[0] des Programms.
 		{"argv0", "/bin/sh", []string{"-c", `echo "$0"`}, "", "md-reader\n"},
-		{"argv komplett", self, []string{"hallo", "a b.md", "--install"}, "GO_TEST_PRINT=1",
-			"md-reader\x1fhallo\x1fa b.md\x1f--install\n"},
+		// Vorher läuft traceMissing im selben Prozess; LD= muss leer bleiben.
+		{"argv komplett", self, []string{"hallo", "a b.md", "--install"}, "GO_TEST_PRINT=1\x1eGO_TEST_TRACE_FIRST=1",
+			"md-reader\x1fhallo\x1fa b.md\x1f--install\x1fLD=\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1032,7 +1328,7 @@ func TestMemExec_Exec(t *testing.T) {
 				"GO_TEST_EXEC_BIN="+c.bin,
 				"GO_TEST_EXEC_ARGS="+strings.Join(c.args, "\x1f"))
 			if c.env != "" {
-				cmd.Env = append(cmd.Env, c.env)
+				cmd.Env = append(cmd.Env, strings.Split(c.env, "\x1e")...)
 			}
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr

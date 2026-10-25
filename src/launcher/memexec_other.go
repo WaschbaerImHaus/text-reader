@@ -5,13 +5,13 @@
 // das Paket überall übersetzbar bleibt (z. B. "GOOS=windows go vet").
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6: Starter-Programm)
+// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess)
 package main
 
 import "errors"
 
 // errOnlyLinux meldet, dass der Starter nur unter Linux arbeitet.
-var errOnlyLinux = errors.New("der Starter von MD Reader läuft nur unter Linux (nur Linux)")
+var errOnlyLinux = errors.New("der Starter von MD Reader läuft nur unter Linux")
 
 // createMemFile gibt es nur unter Linux.
 func createMemFile(data []byte) (fd int, err error) {
@@ -25,5 +25,15 @@ func traceMissing(fd int) ([]string, error) {
 
 // execGUI gibt es nur unter Linux.
 func execGUI(fd int, rest []string) error {
+	return errOnlyLinux
+}
+
+// spawnOfferProcess gibt es nur unter Linux.
+func spawnOfferProcess() error {
+	return errOnlyLinux
+}
+
+// startDetachedOffer gibt es nur unter Linux.
+func startDetachedOffer() error {
 	return errOnlyLinux
 }

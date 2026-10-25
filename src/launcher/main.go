@@ -7,8 +7,10 @@
 //     Ausführungsrecht (noexec, z. B. USB-Stick) und unter beliebigem Namen,
 //  2. prüft mit dem Ladeprotokoll des dynamischen Laders, ob Bibliotheken
 //     (WebKitGTK) fehlen, und bietet das Nachinstallieren an,
-//  3. bietet an, sich ins Startmenü einzutragen (oder eine ältere
-//     Nutzerinstallation zu ersetzen),
+//  3. startet, falls es etwas anzubieten gibt, einen abgetrennten Prozess
+//     ("--offer-install"), der fragt, ob sich MD Reader ins Startmenü
+//     eintragen (oder eine ältere Nutzerinstallation ersetzen) soll – die
+//     Oberfläche wartet nicht auf die Antwort,
 //  4. ersetzt sich per exec durch die Oberfläche (argv[0] = "md-reader").
 //
 // Befehle (nur das erste Argument zählt, alles andere geht an die Oberfläche):
@@ -18,12 +20,16 @@
 //	--launcher-version                  Build-Nummer ausgeben
 //	--print-desktop-entry <Programmpfad> Desktop-Datei ausgeben (für das .deb)
 //
+// Intern (nicht für Nutzer): "--offer-install" stellt die Installationsfrage,
+// "--offer-install --detach" ist die Zwischenstufe, die diesen Prozess
+// abgetrennt startet (siehe spawnOfferProcess in memexec_linux.go).
+//
 // Die Fachlogik liegt im Paket linuxsetup; diese Datei verbindet sie nur.
 // Alle Abhängigkeiten nach außen (Umgebung, Ausgaben, Fragen, memfd, Befehle)
 // stecken im Typ launcher und werden in Tests durch Fakes ersetzt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6: Starter-Programm)
+// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess, Fehlermeldungen)
 package main
 
 import (
@@ -54,9 +60,17 @@ const (
 	cmdUninstall     = "uninstall"
 	cmdVersion       = "version"
 	cmdDesktopEntry  = "print-desktop-entry"
+	cmdOfferInstall  = "offer-install"
 	optionForce      = "--force"
 	desktopEntryFlag = "--print-desktop-entry"
+	// offerInstallFlag ist der interne Befehl des Angebotsprozesses.
+	offerInstallFlag = "--offer-install"
+	// optionDetach kennzeichnet die Zwischenstufe des Angebotsprozesses.
+	optionDetach = "--detach"
 )
+
+// loaderStderrLimit begrenzt die gesammelten Meldungen des Laders (stderr).
+const loaderStderrLimit = 4096
 
 // iconFileKeys ordnet den Dateinamen in payload/icons die Icons-Schlüssel zu.
 var iconFileKeys = map[string]string{
@@ -80,8 +94,11 @@ func main() {
 // Befehl; steht dort keiner, gehen alle Argumente unverändert an die GUI.
 //
 //   - "--install" [--force]: cmd "install"; force nur, wenn args[1] "--force" ist.
-//   - "--uninstall", "--launcher-version": cmd ohne Wirkung der übrigen Argumente.
+//   - "--uninstall", "--launcher-version": ohne weitere Argumente.
 //   - "--print-desktop-entry" <Pfad>: rest enthält den Pfad.
+//   - "--offer-install" [--detach]: interner Befehl des Angebotsprozesses.
+//
+// Unerwartete übrige Argumente bei Befehlen weist run zurück (Exit 2).
 //
 // @param args Argumente ohne Programmnamen (os.Args[1:]).
 // @return cmd Befehl oder ""; force bei "--install --force"; rest übrige
@@ -104,6 +121,8 @@ func parseCommand(args []string) (cmd string, force bool, rest []string) {
 		return cmdVersion, false, copyStrings(args[1:])
 	case desktopEntryFlag:
 		return cmdDesktopEntry, false, copyStrings(args[1:])
+	case offerInstallFlag:
+		return cmdOfferInstall, false, copyStrings(args[1:])
 	}
 	return cmdNone, false, copyStrings(args)
 }
@@ -215,6 +234,28 @@ func isStartError(err error) bool {
 	return errors.As(err, &se)
 }
 
+// limitedBuffer sammelt höchstens max Bytes (z. B. stderr des Laders) und
+// verwirft den Rest. Write meldet immer alles als geschrieben, damit der
+// schreibende Kindprozess nie an einem vollen Puffer scheitert.
+type limitedBuffer struct {
+	max int
+	buf []byte
+}
+
+// Write übernimmt so viel von p, wie noch Platz ist.
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := b.max - len(b.buf); room > 0 {
+		if len(p) < room {
+			room = len(p)
+		}
+		b.buf = append(b.buf, p[:room]...)
+	}
+	return len(p), nil
+}
+
+// String liefert den gesammelten Inhalt.
+func (b *limitedBuffer) String() string { return string(b.buf) }
+
 // ---------------------------------------------------------------------------
 // Fragen erst bei Bedarf vorbereiten
 // ---------------------------------------------------------------------------
@@ -256,8 +297,12 @@ const (
 	lmNoPayload launcherMsg = iota
 	// lmMemExecTitle: Überschrift, wenn die GUI nicht aus dem Speicher startet.
 	lmMemExecTitle
-	// lmMemExecBody: Text dazu; %s = Ursache.
+	// lmMemExecBody: Text dazu bei fehlender Berechtigung (EACCES/EPERM); %s = Ursache.
 	lmMemExecBody
+	// lmStartFailed: Text bei jedem anderen Startfehler; %s = Ursache.
+	lmStartFailed
+	// lmExtraArgs: unerwartete Argumente nach einem Befehl; %s = Argumente.
+	lmExtraArgs
 	// lmStillMissing: nach der Installation fehlen weiter Bibliotheken; %s = Liste.
 	lmStillMissing
 	// lmUsageDesktop: Aufruf von --print-desktop-entry.
@@ -293,6 +338,14 @@ var launcherTexts = map[launcherMsg][2]string{
 			"If the file is on a drive without execute permission (noexec, e.g. a USB stick), " +
 			"copy it to a folder with execute permission (e.g. ~/.local/bin) and start it from there. " +
 			"If that does not help, install the .deb package.",
+	},
+	lmStartFailed: {
+		"Die Oberfläche von MD Reader konnte nicht starten: %s",
+		"The MD Reader user interface could not start: %s",
+	},
+	lmExtraArgs: {
+		"MD Reader: unerwartete Argumente: %s",
+		"MD Reader: unexpected arguments: %s",
 	},
 	lmStillMissing: {
 		"MD Reader: Es fehlen weiterhin Bibliotheken: %s",
@@ -357,6 +410,10 @@ type launcher struct {
 	executable func() (string, error)
 	// runCommand führt pkexec/apt-get aus (runArgv).
 	runCommand func(argv []string) (int, error)
+	// spawnOffer startet den abgetrennten Angebotsprozess (kehrt sofort zurück).
+	spawnOffer func() error
+	// detachOffer startet aus der Zwischenstufe den eigentlichen Angebotsprozess.
+	detachOffer func() error
 	// mem kapselt memfd, Ladeprotokoll und exec.
 	mem memExecutor
 	// gui ist das eingebettete GUI-Programm (leer ohne Build-Tag embedgui).
@@ -370,18 +427,20 @@ type launcher struct {
 // newLauncher liefert einen Starter mit den echten Abhängigkeiten.
 func newLauncher() *launcher {
 	return &launcher{
-		stdout:     os.Stdout,
-		stderr:     os.Stderr,
-		getenv:     os.Getenv,
-		lookPath:   exec.LookPath,
-		newAsker:   func() linuxsetup.Asker { return linuxsetup.NewAsker(exec.LookPath) },
-		newLayout:  func() (linuxsetup.Layout, error) { return linuxsetup.NewLayout(os.Getenv) },
-		executable: os.Executable,
-		runCommand: runArgv,
-		mem:        systemMem{},
-		gui:        guiBinary,
-		icons:      iconFiles,
-		build:      buildNumber,
+		stdout:      os.Stdout,
+		stderr:      os.Stderr,
+		getenv:      os.Getenv,
+		lookPath:    exec.LookPath,
+		newAsker:    func() linuxsetup.Asker { return linuxsetup.NewAsker(exec.LookPath) },
+		newLayout:   func() (linuxsetup.Layout, error) { return linuxsetup.NewLayout(os.Getenv) },
+		executable:  os.Executable,
+		runCommand:  runArgv,
+		spawnOffer:  spawnOfferProcess,
+		detachOffer: startDetachedOffer,
+		mem:         systemMem{},
+		gui:         guiBinary,
+		icons:       iconFiles,
+		build:       buildNumber,
 	}
 }
 
@@ -432,17 +491,33 @@ func (l *launcher) hasPayload() bool {
 func (l *launcher) run(args []string) int {
 	cmd, force, rest := parseCommand(args)
 	switch cmd {
+	case cmdNone:
+		return l.startGUI(rest)
+	case cmdDesktopEntry:
+		return l.printDesktopEntry(rest)
+	case cmdOfferInstall:
+		if len(rest) == 1 && rest[0] == optionDetach {
+			return l.detachOfferStage()
+		}
+	}
+	// Alle übrigen Befehle nehmen keine weiteren Argumente.
+	if len(rest) > 0 {
+		l.say(l.stderr, lmExtraArgs, strings.Join(rest, " "))
+		return 2
+	}
+	switch cmd {
 	case cmdVersion:
 		_, _ = fmt.Fprintln(l.stdout, l.build)
 		return 0
-	case cmdDesktopEntry:
-		return l.printDesktopEntry(rest)
 	case cmdUninstall:
 		return l.uninstall()
 	case cmdInstall:
 		return l.install(force)
+	case cmdOfferInstall:
+		return l.offerInstall()
 	}
-	return l.startGUI(rest)
+	// Kommt nicht vor: parseCommand liefert nur die oben behandelten Befehle.
+	return 2
 }
 
 // printDesktopEntry gibt die Desktop-Datei für den genannten Programmpfad aus.
@@ -524,7 +599,8 @@ func (l *launcher) startGUI(rest []string) int {
 	if code, ok := l.checkLibraries(fd, asker); !ok {
 		return code
 	}
-	l.offerInstall(asker)
+	// Das Angebot läuft in einem eigenen Prozess; die GUI wartet nicht darauf.
+	l.maybeSpawnOffer()
 
 	// exec kehrt im Betrieb nur bei einem Fehler zurück; nil heißt „ersetzt“
 	// (nur mit einem Fake möglich) und ergibt Exit 0.
@@ -569,18 +645,21 @@ func (l *launcher) checkLibraries(fd int, asker linuxsetup.Asker) (int, bool) {
 	return 0, true
 }
 
-// offerInstall bietet abhängig von der Lage die Installation ins Menü an.
-// Jeder Fehler wird nur protokolliert; der Start geht weiter.
-func (l *launcher) offerInstall(asker linuxsetup.Asker) {
+// startContext ermittelt die Lage beim Start (für Decide und HandleInstallOffer).
+//
+// Eltern- und Angebotsprozess sehen dieselbe Datei: Der Angebotsprozess wird
+// über /proc/self/exe des Starters gestartet, sein os.Executable ist also
+// wieder die Starter-Datei.
+//
+// @return Lage, selfPath (Quelle einer Installation) und Fehler.
+func (l *launcher) startContext() (linuxsetup.StartContext, string, error) {
 	layout, err := l.newLayout()
 	if err != nil {
-		l.warn(err)
-		return
+		return linuxsetup.StartContext{}, "", err
 	}
 	exePath, selfPath, err := resolveExePath(l.executable, layout.BinPath)
 	if err != nil {
-		l.warn(err)
-		return
+		return linuxsetup.StartContext{}, "", err
 	}
 	ctx := linuxsetup.StartContext{
 		ExePath:      exePath,
@@ -590,16 +669,70 @@ func (l *launcher) offerInstall(asker linuxsetup.Asker) {
 		Prefs:        linuxsetup.LoadPrefs(layout.PrefsPath),
 	}
 	ctx.InstalledBuild, ctx.Installed = linuxsetup.InstalledBuild(layout)
-	if err := linuxsetup.HandleInstallOffer(l.env(asker), ctx, selfPath, l.icons); err != nil {
+	return ctx, selfPath, nil
+}
+
+// maybeSpawnOffer startet den Angebotsprozess, wenn Decide etwas anbieten
+// will. Fehler werden nur protokolliert; der Start der GUI geht weiter.
+func (l *launcher) maybeSpawnOffer() {
+	ctx, _, err := l.startContext()
+	if err != nil {
+		l.warn(err)
+		return
+	}
+	if linuxsetup.Decide(ctx) == linuxsetup.OfferNothing {
+		return
+	}
+	if err := l.spawnOffer(); err != nil {
 		l.warn(err)
 	}
 }
 
-// memExecFailed meldet, dass die GUI nicht aus dem Speicher starten kann
-// (stderr und Hinweis), und liefert Exit 1.
+// detachOfferStage ist die Zwischenstufe ("--offer-install --detach"): Sie
+// startet den eigentlichen Angebotsprozess abgetrennt und endet sofort.
+func (l *launcher) detachOfferStage() int {
+	if err := l.detachOffer(); err != nil {
+		l.warn(err)
+		return 1
+	}
+	return 0
+}
+
+// offerInstall ist der Angebotsprozess ("--offer-install"): Er prüft die Lage
+// erneut, stellt bei Bedarf die Frage (eigener Asker) und installiert.
+//
+// @return 0 bei Erfolg oder wenn nichts anzubieten ist; 1 ohne Nutzlast oder
+// bei einem Fehler (Grund auf stderr).
+func (l *launcher) offerInstall() int {
+	// Ohne eingebettete App wäre eine Installation nutzlos.
+	if !l.hasPayload() {
+		_, _ = fmt.Fprintln(l.stderr, l.text(lmNoPayload))
+		return 1
+	}
+	ctx, selfPath, err := l.startContext()
+	if err != nil {
+		l.warn(err)
+		return 1
+	}
+	asker := &lazyAsker{factory: l.newAsker}
+	if err := linuxsetup.HandleInstallOffer(l.env(asker), ctx, selfPath, l.icons); err != nil {
+		l.warn(err)
+		return 1
+	}
+	return 0
+}
+
+// memExecFailed meldet, dass die GUI nicht starten kann (stderr und
+// Hinweis), und liefert Exit 1. Nur bei fehlender Berechtigung (EACCES/EPERM,
+// z. B. vm.memfd_noexec) gibt es den Rat zu memfd/noexec, sonst eine
+// allgemeine Meldung mit der Ursache.
 func (l *launcher) memExecFailed(asker linuxsetup.Asker, cause error) int {
 	title := l.text(lmMemExecTitle)
-	body := fmt.Sprintf(l.text(lmMemExecBody), cause.Error())
+	bodyID := lmStartFailed
+	if errors.Is(cause, os.ErrPermission) {
+		bodyID = lmMemExecBody
+	}
+	body := fmt.Sprintf(l.text(bodyID), cause.Error())
 	_, _ = fmt.Fprintf(l.stderr, "%s\n%s\n", title, body)
 	asker.Inform(title, body)
 	return 1

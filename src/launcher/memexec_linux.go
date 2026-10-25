@@ -24,17 +24,24 @@
 //     den Pfad des Elternprozesses (/proc/<pid>/fd/N) wird nicht gebraucht.
 //   - MFD_EXEC (Kernel ab 6.3) wird ausdrücklich gesetzt: Bei
 //     vm.memfd_noexec=1 wäre der memfd sonst nicht ausführbar, bei =2 scheitert
-//     memfd_create sofort mit EACCES – beides wird so zu einer klaren
-//     Fehlermeldung statt eines rätselhaften exec-Fehlers. Ältere Kerne kennen
-//     MFD_EXEC nicht (EINVAL); dann folgt ein zweiter Versuch ohne das Flag.
+//     memfd_create ab Kernel 6.6 sofort mit EACCES – beides wird so zu einer
+//     klaren Fehlermeldung statt eines rätselhaften exec-Fehlers. Ältere Kerne
+//     kennen MFD_EXEC nicht (EINVAL); dann folgt ein zweiter Versuch ohne das
+//     Flag. Kernel 6.3 bis 6.5 liefern bei vm.memfd_noexec=2 ebenfalls EINVAL
+//     für MFD_EXEC; der zweite Versuch legt dann einen nicht ausführbaren
+//     memfd an, und spätestens das Ladeprotokoll scheitert mit EACCES – das
+//     endet in derselben klaren Meldung (Rat zu memfd/noexec).
 //   - Nach execGUI ist argv[0] "md-reader" (GTK-WM_CLASS passt), aber der
 //     Kern setzt den Prozessnamen (/proc/<pid>/comm) auf den letzten Teil des
 //     exec-Pfads, also die fd-Nummer (z. B. "4"); /proc/<pid>/exe zeigt
 //     "/memfd:md-reader (deleted)". "pgrep -f md-reader" findet die GUI,
 //     "pgrep -x md-reader" nicht.
+//   - Angebotsprozess: Der Starter startet sich über /proc/self/exe selbst
+//     neu; dessen os.Executable ist wieder die Starter-Datei, nicht der memfd
+//     (siehe spawnOfferProcess).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6: Starter-Programm)
+// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess, Lader-stderr)
 package main
 
 import (
@@ -42,10 +49,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -168,6 +177,10 @@ func traceMissing(fd int) ([]string, error) {
 	cmd.ExtraFiles = []*os.File{file}
 	var out bytes.Buffer
 	cmd.Stdout = &out
+	// Meldungen des Laders (z. B. "version `GLIBC_2.40' not found") kommen
+	// im Ladeprotokoll auf stderr, oft sogar mit Exit 0; begrenzt sammeln.
+	loaderErr := &limitedBuffer{max: loaderStderrLimit}
+	cmd.Stderr = loaderErr
 	if err := cmd.Start(); err != nil {
 		return nil, &execStartError{err: err}
 	}
@@ -176,8 +189,14 @@ func traceMissing(fd int) ([]string, error) {
 	if missing := linuxsetup.ParseMissingLibraries(out.String()); len(missing) > 0 {
 		return missing, nil
 	}
-	if waitErr != nil {
+	loader := strings.TrimSpace(loaderErr.String())
+	switch {
+	case waitErr != nil && loader != "":
+		return nil, fmt.Errorf("Ladeprotokoll: %w; Lader: %s", waitErr, loader)
+	case waitErr != nil:
 		return nil, fmt.Errorf("Ladeprotokoll: %w", waitErr)
+	case loader != "":
+		return nil, fmt.Errorf("Ladeprotokoll meldet: %s", loader)
 	}
 	return nil, nil
 }
@@ -191,4 +210,60 @@ func execGUI(fd int, rest []string) error {
 	argv := append([]string{guiArgv0}, rest...)
 	err := syscall.Exec("/proc/self/fd/"+strconv.Itoa(fd), argv, os.Environ())
 	return fmt.Errorf("exec: %w", err)
+}
+
+// selfExe ist der Pfad, über den sich der Starter selbst erneut startet.
+// Im neuen Prozess zeigt /proc/self/exe wieder auf die Starter-Datei.
+const selfExe = "/proc/self/exe"
+
+// detachStageTimeout begrenzt das Warten auf die Zwischenstufe (sie startet
+// nur einen Prozess und endet; normal dauert das wenige Millisekunden).
+const detachStageTimeout = 10 * time.Second
+
+// terminalStderr liefert os.Stderr, wenn es ein Terminal ist, sonst nil
+// (= /dev/null). So sieht ein Nutzer im Terminal die Frage des stderr-Askers;
+// in Logdateien oder Pipes des Desktops landet nichts aus dem Hintergrund.
+func terminalStderr() io.Writer {
+	if fi, err := os.Stderr.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		return os.Stderr
+	}
+	return nil
+}
+
+// spawnOfferProcess startet den Angebotsprozess, ohne auf die Antwort des
+// Nutzers zu warten.
+//
+// Doppelter Start: Der Starter wartet nur auf die Zwischenstufe
+// ("--offer-install --detach"). Sie startet den eigentlichen Angebotsprozess
+// in einer eigenen Sitzung (Setsid) und endet sofort. Grund: Der Starter
+// ersetzt sich gleich per exec durch die GUI. Ein direktes Kind bliebe nach
+// seinem Ende bis zum Schließen der GUI als Zombie stehen, weil die GUI es
+// nicht abholt. Das Kind der Zwischenstufe übernimmt dagegen init bzw. der
+// Subreaper der Sitzung. stdin und stdout sind /dev/null, stderr wird nur bei
+// einem Terminal geerbt.
+//
+// @return Fehler, wenn die Zwischenstufe nicht startet oder scheitert.
+func spawnOfferProcess() error {
+	ctx, cancel := context.WithTimeout(context.Background(), detachStageTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, selfExe, offerInstallFlag, optionDetach)
+	cmd.Args[0] = guiArgv0
+	cmd.Stderr = terminalStderr()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Angebotsprozess: %w", err)
+	}
+	return nil
+}
+
+// startDetachedOffer startet "--offer-install" in einer eigenen Sitzung
+// (Setsid, unabhängig vom Terminal und von der GUI) und wartet nicht.
+func startDetachedOffer() error {
+	cmd := exec.Command(selfExe, offerInstallFlag)
+	cmd.Args[0] = guiArgv0
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stderr = terminalStderr()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("Angebotsprozess: %w", err)
+	}
+	return cmd.Process.Release()
 }
