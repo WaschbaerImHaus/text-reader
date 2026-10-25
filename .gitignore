@@ -1,6 +1,9 @@
 # Kompilierte Binaries und Build-Verzeichnis
 /build/
 
+# Nutzlast des Linux-Starters (GUI-Programm und Icons, vom Build kopiert)
+src/launcher/payload/
+
 # Claude-spezifische Dateien
 .claude/
 claude.sh
