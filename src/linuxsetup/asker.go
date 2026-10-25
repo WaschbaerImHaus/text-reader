@@ -9,11 +9,12 @@
 //  4. Text auf stderr (diese Datei) – ohne Antwortmöglichkeit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde: Knopf-Konvention, Inform-Zeitlimit)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: gemeinsame Knopfprüfung)
 package linuxsetup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,24 @@ import (
 // probeTimeout begrenzt die Abfrage des Benachrichtigungsdienstes beim Start,
 // damit ein hängender Dienst den Programmstart nicht aufhält.
 const probeTimeout = 2 * time.Second
+
+// maxButtons ist die höchste Zahl an Knöpfen einer Frage (kdialog und zenity
+// stellen nicht mehr zuverlässig dar; D-Bus folgt derselben Grenze).
+const maxButtons = 3
+
+// errButtonCount meldet eine Frage mit 0 oder mehr als maxButtons Knöpfen.
+var errButtonCount = errors.New("eine Frage braucht 1 bis 3 Knöpfe")
+
+// checkButtons prüft die Zahl der Knöpfe (für alle Asker gleich).
+//
+// @param buttons Knöpfe der Frage.
+// @return errButtonCount bei 0 oder mehr als 3 Knöpfen, sonst nil.
+func checkButtons(buttons []Button) error {
+	if len(buttons) == 0 || len(buttons) > maxButtons {
+		return errButtonCount
+	}
+	return nil
+}
 
 // Button ist ein Knopf einer Frage.
 type Button struct {

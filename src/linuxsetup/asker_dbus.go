@@ -13,7 +13,7 @@
 // anderes Programm am Bus keine Antwort per gezieltem Signal fälschen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde: Absender-Prüfung per GetNameOwner)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopfprüfung, Rückfall nur bis Notify)
 package linuxsetup
 
 import (
@@ -178,15 +178,25 @@ func (a *dbusAsker) notify(ctx context.Context, conn *dbus.Conn, title, body str
 // den Knöpfen als Paaren (Schlüssel, Beschriftung) und ohne automatisches
 // Ausblenden senden, dann auf ein Signal mit passender ID warten. Bei
 // Zeitablauf wird die Nachricht per CloseNotification geschlossen und ""
-// geliefert. Kann die Nachricht gar nicht gezeigt werden (Bus weg, Dienst
-// beendet), übernimmt der Rückfall (kdialog/zenity/stderr).
+// geliefert.
+//
+// Rückfall (kdialog/zenity/stderr) nur bis einschließlich Notify: Scheitern
+// Verbindung, GetNameOwner, das Abonnieren oder Notify selbst, fragt der
+// Rückfall. Ist die Nachricht einmal gezeigt, gibt es keinen Rückfall mehr –
+// bricht der Bus danach ab, liefert Ask "" (nach der Knopf-Konvention gleich
+// dem harmlosen letzten Knopf), damit der Nutzer nicht doppelt gefragt wird.
 //
 // @param title Titel (summary).
 // @param body Fragetext.
-// @param buttons Knöpfe; der Schlüssel ist der Aktionsname.
+// @param buttons 1 bis 3 Knöpfe; der Schlüssel ist der Aktionsname.
 // @param timeout Höchste Wartezeit (0 = ohne Zeitlimit).
-// @return Gewählter Schlüssel oder "" (Zeitablauf, geschlossen, unbekannte Aktion).
+// @return Gewählter Schlüssel oder "" (Zeitablauf, geschlossen, unbekannte
+// Aktion, Bus-Abbruch nach Notify); err errButtonCount bei 0 oder mehr als
+// 3 Knöpfen (ohne Notify und ohne Rückfall).
 func (a *dbusAsker) Ask(title, body string, buttons []Button, timeout time.Duration) (string, error) {
+	if err := checkButtons(buttons); err != nil {
+		return "", err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 	conn, release, err := connectBus(context.Background(), a.address)
@@ -239,7 +249,7 @@ func (a *dbusAsker) Ask(title, body string, buttons []Button, timeout time.Durat
 		select {
 		case sig, open := <-signals:
 			if !open {
-				// Verbindung beendet: keine Antwort mehr möglich.
+				// Verbindung nach Notify beendet: kein Rückfall, „keine Antwort“.
 				return "", nil
 			}
 			if key, done := matchSignal(sig, owner, id, buttons); done {

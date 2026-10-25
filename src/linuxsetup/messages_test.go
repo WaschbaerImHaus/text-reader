@@ -2,7 +2,7 @@
 // Button-Beschriftungen (Deutsch und Englisch).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde: Standardpfade für MsgUninstalled)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopf-Reihenfolge, „Fehlende Bibliotheken“)
 package linuxsetup
 
 import (
@@ -102,12 +102,18 @@ func TestText_WebKitMissingListsLibs(t *testing.T) {
 	if !strings.Contains(body, WebKitPackage) {
 		t.Errorf("Text de nennt das Paket %s nicht: %q", WebKitPackage, body)
 	}
+	if !strings.Contains(body, "Fehlende Bibliotheken: "+libs+".") {
+		t.Errorf("Text de ohne „Fehlende Bibliotheken: …“: %q", body)
+	}
 	title, body = Text(LangEN, MsgWebKitMissing, libs)
 	if title != "WebKitGTK is not installed" {
 		t.Errorf("Titel en = %q", title)
 	}
 	if !strings.Contains(body, "libwebkit2gtk-4.1.so.0") {
 		t.Errorf("Text en nennt die Bibliothek nicht: %q", body)
+	}
+	if !strings.Contains(body, "Missing libraries: "+libs+".") {
+		t.Errorf("Text en ohne „Missing libraries: …“: %q", body)
 	}
 	// Ohne Argument nennt der Text die Hauptbibliothek.
 	_, body = Text(LangDE, MsgWebKitMissing)
@@ -184,10 +190,11 @@ func TestButtonLabel(t *testing.T) {
 	}
 }
 
-// TestButtons prüft den Helfer, der Schlüssel zu Buttons mit Beschriftung macht.
+// TestButtons prüft den Helfer, der Schlüssel zu Buttons mit Beschriftung macht
+// (Reihenfolge des Installationsangebots: harmloser Knopf „Später“ zuletzt).
 func TestButtons(t *testing.T) {
-	got := Buttons(LangDE, "yes", "later", "never")
-	want := []Button{{"yes", "Ja"}, {"later", "Später"}, {"never", "Nie"}}
+	got := Buttons(LangDE, "yes", "never", "later")
+	want := []Button{{"yes", "Ja"}, {"never", "Nie"}, {"later", "Später"}}
 	if len(got) != len(want) {
 		t.Fatalf("Buttons = %v", got)
 	}

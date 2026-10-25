@@ -3,7 +3,7 @@
 // D-Bus-Benachrichtigung gegen einen privaten Session-Bus.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde: Knopf-Konvention, Absender, hängender Dienst)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopfprüfung, kdialog-Maskierung, Zeitwerte)
 package linuxsetup
 
 import (
@@ -131,7 +131,9 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 	if err != nil || key != "yes" {
 		t.Errorf("kdialog exit 0: (%q, %v), erwartet yes", key, err)
 	}
-	wantArgs := []string{"--title", "Titel", "--yesnocancel", evil,
+	// kdialog liest den Text als Qt-Rich-Text: maskiert und in <qt> gefasst.
+	evilKDE := "<qt>Text $(rm -rf ~) `id` ; | &amp; \"x\"</qt>"
+	wantArgs := []string{"--title", "Titel", "--yesnocancel", evilKDE,
 		"--yes-label", "Ja", "--no-label", "Nie", "--cancel-label", "Später"}
 	if len(calls) != 1 || calls[0].name != "/usr/bin/kdialog" || !reflect.DeepEqual(calls[0].args, wantArgs) {
 		t.Errorf("kdialog Aufruf = %#v,\nerwartet %q %#v", calls, "/usr/bin/kdialog", wantArgs)
@@ -153,7 +155,7 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 	if key, _ := a.Ask("T", "B", two, time.Minute); key != "cancel" {
 		t.Errorf("kdialog zwei Knöpfe exit 1 (geschlossen): %q, erwartet cancel", key)
 	}
-	wantArgs = []string{"--title", "T", "--yesno", "B", "--yes-label", "Jetzt installieren", "--no-label", "Abbrechen"}
+	wantArgs = []string{"--title", "T", "--yesno", "<qt>B</qt>", "--yes-label", "Jetzt installieren", "--no-label", "Abbrechen"}
 	if len(calls) == 0 || !reflect.DeepEqual(calls[0].args, wantArgs) {
 		t.Errorf("kdialog --yesno Argumente = %#v,\nerwartet %#v", calls, wantArgs)
 	}
@@ -220,6 +222,49 @@ func TestDialogAsker_ArgsAndMapping(t *testing.T) {
 	}
 }
 
+// TestKDialogRichText prüft die Maskierung für kdialog (Qt::AutoText):
+// &, <, > werden maskiert, Zeilenumbrüche werden zu <br>, der Titel bleibt
+// unverändert (Fenstertitel sind immer reiner Text).
+func TestKDialogRichText(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", "<qt></qt>"},
+		{"a & b", "<qt>a &amp; b</qt>"},
+		{"<b>fett</b>", "<qt>&lt;b&gt;fett&lt;/b&gt;</qt>"},
+		{"Zeile1\nZeile2", "<qt>Zeile1<br>Zeile2</qt>"},
+		{"/home/a&b/<x>\n/home/c", "<qt>/home/a&amp;b/&lt;x&gt;<br>/home/c</qt>"},
+		{"&amp;", "<qt>&amp;amp;</qt>"},
+		{"a\r\nb", "<qt>a<br>b</qt>"},
+	}
+	for _, c := range cases {
+		if got := kdialogText(c.in); got != c.want {
+			t.Errorf("kdialogText(%q) = %q, erwartet %q", c.in, got, c.want)
+		}
+	}
+	var calls []dialogCall
+	k := &dialogAsker{tool: "kdialog", path: "/usr/bin/kdialog", run: fakeRun(&calls, 0, "", nil)}
+	if _, err := k.Ask("A & <B>", "x < y\nz & w", []Button{{"install", "Jetzt installieren"}, {"cancel", "Abbrechen"}}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	k.Inform("Info & mehr", "Pfad:\n/home/a&b")
+	want := [][]string{
+		{"--title", "A & <B>", "--yesno", "<qt>x &lt; y<br>z &amp; w</qt>", "--yes-label", "Jetzt installieren", "--no-label", "Abbrechen"},
+		{"--title", "Info & mehr", "--msgbox", "<qt>Pfad:<br>/home/a&amp;b</qt>"},
+	}
+	if len(calls) != 2 {
+		t.Fatalf("kdialog Aufrufe = %#v, erwartet 2", calls)
+	}
+	if !reflect.DeepEqual([][]string{calls[0].args, calls[1].args}, want) {
+		t.Errorf("kdialog Argumente = %#v,\nerwartet %#v", calls, want)
+	}
+	// zenity bleibt bei --no-markup und bekommt den Text unverändert.
+	calls = nil
+	z := &dialogAsker{tool: "zenity", path: "/usr/bin/zenity", run: fakeRun(&calls, 0, "", nil)}
+	_, _ = z.Ask("A & <B>", "x < y\nz", []Button{{"ok", "OK"}, {"cancel", "Abbrechen"}}, time.Minute)
+	if len(calls) != 1 || calls[0].args[5] != "x < y\nz" || calls[0].args[3] != "A & <B>" {
+		t.Errorf("zenity Argumente = %#v", calls)
+	}
+}
+
 // TestDialogAsker_Errors prüft Fehlerfälle: zu viele oder keine Knöpfe,
 // Startfehler des Programms.
 func TestDialogAsker_Errors(t *testing.T) {
@@ -257,8 +302,8 @@ func TestDialogAsker_OneButtonAndInform(t *testing.T) {
 	}
 	z.Inform("Info", "Text")
 	want := [][]string{
-		{"--title", "T", "--msgbox", "B"},
-		{"--title", "Info", "--msgbox", "Text"},
+		{"--title", "T", "--msgbox", "<qt>B</qt>"},
+		{"--title", "Info", "--msgbox", "<qt>Text</qt>"},
 		{"--info", "--no-markup", "--title", "T", "--text", "B", "--ok-label", "OK"},
 		{"--info", "--no-markup", "--title", "Info", "--text", "Text"},
 	}
@@ -642,6 +687,25 @@ func TestDBusAsker(t *testing.T) {
 		}
 	})
 
+	t.Run("ButtonCount", func(t *testing.T) {
+		// Wie dialogAsker: 0 oder mehr als 3 Knöpfe sind ein Fehler, ohne Notify.
+		server.set([]string{"actions"}, "action:install")
+		a := NewAsker(fakeLookPath())
+		four := []Button{{"a", "A"}, {"b", "B"}, {"c", "C"}, {"d", "D"}}
+		for _, bs := range [][]Button{nil, four} {
+			if key, err := a.Ask("T", "B", bs, time.Second); key != "" || !errors.Is(err, errButtonCount) {
+				t.Errorf("%d Knöpfe: (%q, %v), erwartet errButtonCount", len(bs), key, err)
+			}
+		}
+		if notifies, _ := server.snapshot(); len(notifies) != 0 {
+			t.Errorf("bei ungültigen Knöpfen wurde Notify gerufen: %#v", notifies)
+		}
+		d := &dialogAsker{tool: "zenity", path: "/usr/bin/zenity", run: runDialog}
+		if _, err := d.Ask("T", "B", four, time.Second); !errors.Is(err, errButtonCount) {
+			t.Errorf("dialogAsker: %v, erwartet errButtonCount", err)
+		}
+	})
+
 	t.Run("ImpostorSignalIgnored", func(t *testing.T) {
 		// Nur der Eigentümer von org.freedesktop.Notifications darf antworten.
 		server.set([]string{"actions"}, "impostor:cancel")
@@ -673,11 +737,11 @@ func TestDBusAsker(t *testing.T) {
 		// Die Verbindung darf nicht mit dem Zeitlimit der Einzelaufrufe enden:
 		// Antwortet der Nutzer nach callTimeout, muss sie noch ankommen.
 		old := callTimeout
-		callTimeout = 100 * time.Millisecond
+		callTimeout = 250 * time.Millisecond
 		t.Cleanup(func() { callTimeout = old })
 		server.set([]string{"actions"}, "action:install")
 		server.mu.Lock()
-		server.delay = 400 * time.Millisecond
+		server.delay = 600 * time.Millisecond
 		server.mu.Unlock()
 		key, err := NewAsker(fakeLookPath()).Ask("T", "B", buttons, 5*time.Second)
 		if err != nil || key != "install" {

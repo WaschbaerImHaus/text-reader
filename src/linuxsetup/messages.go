@@ -7,7 +7,7 @@
 // wie es ist.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde: Standardpfade für MsgUninstalled)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopf-Reihenfolge, „Fehlende Bibliotheken“)
 package linuxsetup
 
 import "strings"
@@ -52,19 +52,21 @@ const (
 	// MsgWebKitMissing: Frage, ob WebKitGTK per apt installiert werden soll.
 	// Argument 1: fehlende Bibliotheken, mit ", " verbunden
 	// (ohne Argument wird libwebkit2gtk-4.1.so.0 genannt).
-	// Knöpfe: "install", "cancel".
+	// Knöpfe: "install", "cancel" (harmloser Knopf zuletzt).
 	MsgWebKitMissing MessageID = iota
 	// MsgWebKitHint: Hinweis, WebKitGTK selbst zu installieren.
 	// Argument 1: Befehl aus InstallHint.
 	MsgWebKitHint
 	// MsgInstallFailed: apt-get install ist gescheitert; Angebot, die
-	// Paketlisten zu aktualisieren. Keine Argumente. Knöpfe: "update", "cancel".
+	// Paketlisten zu aktualisieren. Keine Argumente. Knöpfe: "update", "cancel"
+	// (harmloser Knopf zuletzt).
 	MsgInstallFailed
 	// MsgOfferInstall: Angebot, MD Reader ins Menü aufzunehmen. Keine Argumente.
-	// Knöpfe: "yes", "later", "never".
+	// Knöpfe: "yes", "never", "later" (harmloser Knopf zuletzt, siehe Asker).
 	MsgOfferInstall
 	// MsgOfferUpdate: Diese Datei ist neuer als die installierte; Angebot zu
-	// ersetzen. Keine Argumente. Knöpfe: "replace", "notnow".
+	// ersetzen. Keine Argumente. Knöpfe: "replace", "notnow"
+	// (harmloser Knopf zuletzt).
 	MsgOfferUpdate
 	// MsgInstalled: Bestätigung nach der Installation. Keine Argumente.
 	MsgInstalled
@@ -92,7 +94,7 @@ type message struct {
 var messagesDE = map[MessageID]message{
 	MsgWebKitMissing: {
 		"WebKitGTK ist nicht installiert",
-		"MD Reader braucht WebKitGTK 4.1, um Dokumente anzuzeigen. Es fehlt: {1}.\n\n" +
+		"MD Reader braucht WebKitGTK 4.1, um Dokumente anzuzeigen. Fehlende Bibliotheken: {1}.\n\n" +
 			"Soll das Paket " + WebKitPackage + " jetzt installiert werden? " +
 			"Dafür wird das Administrator-Passwort abgefragt.",
 	},
@@ -134,7 +136,7 @@ var messagesDE = map[MessageID]message{
 var messagesEN = map[MessageID]message{
 	MsgWebKitMissing: {
 		"WebKitGTK is not installed",
-		"MD Reader needs WebKitGTK 4.1 to display documents. Missing: {1}.\n\n" +
+		"MD Reader needs WebKitGTK 4.1 to display documents. Missing libraries: {1}.\n\n" +
 			"Install the package " + WebKitPackage + " now? " +
 			"You will be asked for the administrator password.",
 	},

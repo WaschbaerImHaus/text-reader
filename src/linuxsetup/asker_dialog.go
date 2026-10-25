@@ -19,8 +19,15 @@
 //     Schließen) → letzter.
 //   - Alles andere (Zeitablauf, unbekannte Codes) → "" (keine Antwort).
 //
+// kdialog liest den Text als Qt-Rich-Text (Qt::AutoText). Deshalb wird der
+// Text für kdialog maskiert (&, <, >), Zeilenumbrüche werden zu <br>, und das
+// Ganze wird in <qt>…</qt> gefasst – so wertet Qt den Text immer als Rich-Text
+// aus und zeigt "&amp;" als "&" (ohne Tag würde ein einzeiliger Text als
+// reiner Text gelten und "&amp;" wörtlich erscheinen). Der Titel bleibt
+// unverändert: Fenstertitel sind immer reiner Text.
+//
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde: letzter Knopf ist der harmlose, Inform mit Zeitlimit)
+// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: kdialog-Maskierung, gemeinsame Knopfprüfung)
 package linuxsetup
 
 import (
@@ -31,10 +38,6 @@ import (
 	"strings"
 	"time"
 )
-
-// maxDialogButtons ist die höchste Zahl an Knöpfen, die kdialog und zenity
-// zuverlässig darstellen.
-const maxDialogButtons = 3
 
 // informTimeout begrenzt, wie lange ein Hinweis (Inform) höchstens offen
 // bleibt; danach wird das Dialogprogramm beendet.
@@ -70,8 +73,8 @@ func newDialogAsker(tool, path string) *dialogAsker {
 // @return key Gewählter Schlüssel oder ""; err bei ungültigen Knöpfen oder
 // wenn das Programm nicht startet.
 func (a *dialogAsker) Ask(title, body string, buttons []Button, timeout time.Duration) (string, error) {
-	if len(buttons) == 0 || len(buttons) > maxDialogButtons {
-		return "", errors.New("dialogAsker: 1 bis 3 Knöpfe erlaubt")
+	if err := checkButtons(buttons); err != nil {
+		return "", err
 	}
 	code, out, err := a.run(a.path, a.questionArgs(title, body, buttons), timeout)
 	if err != nil {
@@ -88,7 +91,7 @@ func (a *dialogAsker) Ask(title, body string, buttons []Button, timeout time.Dur
 func (a *dialogAsker) Inform(title, body string) {
 	var args []string
 	if a.tool == "kdialog" {
-		args = []string{"--title", title, "--msgbox", body}
+		args = []string{"--title", title, "--msgbox", kdialogText(body)}
 	} else {
 		args = []string{"--info", "--no-markup", "--title", title, "--text", body}
 	}
@@ -99,6 +102,8 @@ func (a *dialogAsker) Inform(title, body string) {
 // er liegt auf der Taste, die auch Schließen/Escape auslöst).
 func (a *dialogAsker) questionArgs(title, body string, buttons []Button) []string {
 	if a.tool == "kdialog" {
+		// Text als maskierter Rich-Text; der Titel bleibt reiner Text.
+		body = kdialogText(body)
 		switch len(buttons) {
 		case 1:
 			return []string{"--title", title, "--msgbox", body}
@@ -124,6 +129,22 @@ func (a *dialogAsker) questionArgs(title, body string, buttons []Button) []strin
 		args = append(args, "--extra-button", buttons[1].Label)
 	}
 	return args
+}
+
+// kdialogEscaper maskiert die Zeichen mit Bedeutung in Qt-Rich-Text und macht
+// aus Zeilenumbrüchen <br> (erst \r\n, dann einzelne \n bzw. \r).
+var kdialogEscaper = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;",
+	"\r\n", "<br>", "\n", "<br>", "\r", "<br>",
+)
+
+// kdialogText bereitet einen Text für kdialog auf: maskiert, Zeilenumbrüche
+// als <br>, in <qt>…</qt> gefasst, damit Qt ihn sicher als Rich-Text liest.
+//
+// @param s Reiner Text.
+// @return Rich-Text für das Text-Argument von kdialog.
+func kdialogText(s string) string {
+	return "<qt>" + kdialogEscaper.Replace(s) + "</qt>"
 }
 
 // mapAnswer ordnet Exit-Code und Ausgabe einem Button-Schlüssel zu.
