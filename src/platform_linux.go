@@ -1,7 +1,9 @@
 // Plattformspezifische Implementierung für Linux (GTK + CGo).
 //
 // Enthält nativen Vollbild-Toggle, nativen Datei-Öffnen-Dialog,
-// Fenster-Icon-Setzung und nativen GTK-Drag&Drop-Handler.
+// Fenster-Icon-Setzung, nativen GTK-Drag&Drop-Handler, die Programm-Identität
+// (Programmname, Fensterklasse, Prozessname) und die Prüfung auf eine
+// erreichbare grafische Oberfläche vor dem Anlegen des Fensters.
 //
 // Drag & Drop: WebKitGTK liefert im JS-Drop-Event weder e.dataTransfer.files
 // noch getData('text/uri-list') – beide werden aus Sicherheitsgründen geleert.
@@ -10,7 +12,7 @@
 // goFileDropCallback() auf (definiert in platform_linux_drop.go via //export).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (setupPlatformMenu als No-Op)
+// Letzte Änderung: 2026-10-28 (setupPlatformIdentity, ensureDisplayAvailable)
 
 //go:build linux
 
@@ -21,6 +23,49 @@ package main
 
 #include <gtk/gtk.h>
 #include <string.h>
+#include <sys/prctl.h>
+
+// setProgramName setzt Programmname und Prozessname fest auf "md-reader".
+//
+// Der Starter führt die GUI aus einem memfd als /proc/self/fd/N aus. Ohne
+// diese Funktion leitet GTK den Namen aus argv[0] bzw. dem Dateinamen ab
+// (z. B. "md-reader-test" oder "4") – dann passen Fensterklasse und
+// Desktop-Datei (StartupWMClass=md-reader, Icon=md-reader) nicht zusammen,
+// und die Taskleiste zeigt kein Icon bzw. gruppiert falsch.
+//
+// - g_set_prgname: Programmname → WM_CLASS-Name (X11), app_id (Wayland).
+// - prctl(PR_SET_NAME): Prozessname (comm) für ps, top, killall, pgrep -x.
+//   Gilt für den aufrufenden Thread; das ist hier der Hauptthread, weil
+//   webview_go den main-Goroutine per init() an ihn bindet. Höchstens
+//   15 Zeichen, "md-reader" passt.
+//
+// Muss vor gtk_init_check aufgerufen werden, weil GDK den Programmnamen
+// beim Initialisieren übernimmt. Die WM_CLASS-Klasse setzt initDisplay.
+static void setProgramName(void) {
+	g_set_prgname("md-reader");
+	prctl(PR_SET_NAME, "md-reader", 0, 0, 0);
+}
+
+// initDisplay initialisiert GTK, meldet, ob eine grafische Oberfläche
+// (X11 oder Wayland) erreichbar ist, und setzt danach die WM_CLASS-Klasse.
+//
+// webview_go ruft intern ebenfalls gtk_init_check auf, liefert bei FALSE aber
+// ein Go-Objekt mit NULL-Zeiger statt nil – der erste Aufruf (SetTitle)
+// stürzt dann mit SIGSEGV ab. Deshalb wird hier vorher geprüft. Ein zweiter
+// gtk_init_check-Aufruf nach Erfolg ist in GTK erlaubt und ändert nichts.
+//
+// gdk_set_program_class muss NACH gtk_init_check stehen: GDK überschreibt
+// die Klasse beim Initialisieren mit dem Programmnamen und schreibt dabei
+// den ersten Buchstaben groß ("Md-reader", gemessen unter Xvfb).
+//
+// @return TRUE, wenn GTK initialisiert werden konnte.
+static gboolean initDisplay(void) {
+	if (!gtk_init_check(NULL, NULL)) {
+		return FALSE;
+	}
+	gdk_set_program_class("md-reader");
+	return TRUE;
+}
 
 // Vorwärtsdeklaration der Go-Export-Funktion (implementiert in platform_linux_drop.go).
 // CGo-Constraint: Dateien mit //export dürfen im Preamble nur Deklarationen haben,
@@ -223,6 +268,8 @@ gchar* showFileDialog(void* parentWindow) {
 import "C"
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"unsafe"
@@ -292,7 +339,7 @@ func showOpenFileDialog(parentWindow unsafe.Pointer) string {
 // Externe Prozesse umgehen das GTK-Threading-Problem komplett, da sie in
 // einem eigenen Prozess laufen und keine GTK-Event-Loop-Konflikte erzeugen.
 // Rückgabe: (Pfad, true) wenn ein externes Tool gefunden wurde (auch bei Abbruch),
-//           ("", false) wenn kein externes Tool verfügbar ist.
+// ("", false), wenn kein externes Tool verfügbar ist.
 //
 // @return Ausgewählter Dateipfad (leer bei Abbruch) und ob ein Tool gefunden wurde.
 func showOpenFileDialogExternal() (string, bool) {
@@ -370,3 +417,29 @@ func openFilePickerBlocking(w webview.WebView) string {
 //
 // @param w Die WebView-Instanz (nicht verwendet).
 func setupPlatformMenu(w webview.WebView) {}
+
+// setupPlatformIdentity setzt Programmname und Prozessname fest auf
+// "md-reader" (passend zu md-reader.desktop, StartupWMClass=md-reader).
+//
+// Muss vor ensureDisplayAvailable und webview.New aufgerufen werden, damit GTK
+// beim Initialisieren schon den richtigen Namen kennt. Unabhängig davon, unter
+// welchem Dateinamen die GUI gestartet wurde (umbenannt, memfd /proc/self/fd/N).
+// Die WM_CLASS-Klasse setzt ensureDisplayAvailable (geht erst nach gtk_init).
+func setupPlatformIdentity() {
+	C.setProgramName()
+}
+
+// ensureDisplayAvailable beendet das Programm mit einer klaren Meldung und
+// Exit-Code 1, wenn keine grafische Oberfläche erreichbar ist.
+//
+// Ohne diese Prüfung stürzt webview_go ohne Display mit SIGSEGV ab (Exit 2),
+// weil webview.New dann ein Objekt mit NULL-Zeiger zurückgibt.
+// Mit erreichbarer Oberfläche ist GTK danach initialisiert (webview.New
+// übernimmt diesen Zustand) und die WM_CLASS-Klasse auf "md-reader" gesetzt.
+func ensureDisplayAvailable() {
+	if C.initDisplay() != 0 {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "MD Reader: Keine grafische Oberfläche gefunden (DISPLAY/WAYLAND_DISPLAY nicht gesetzt oder nicht erreichbar).")
+	os.Exit(1)
+}

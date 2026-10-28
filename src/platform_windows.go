@@ -6,7 +6,7 @@
 //   - Icon-Setzung aus go:embed (CreateIconFromResourceEx + SetClassLongPtrW)
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (setupPlatformMenu als No-Op)
+// Letzte Änderung: 2026-10-28 (setupPlatformIdentity, ensureDisplayAvailable als No-Op)
 
 //go:build windows
 
@@ -232,3 +232,11 @@ func setupNativeFileDrop(w webview.WebView) {}
 //
 // @param w Die WebView-Instanz (nicht verwendet).
 func setupPlatformMenu(w webview.WebView) {}
+
+// setupPlatformIdentity ist hier ein No-Op: Windows ordnet Fenster und Icon
+// über die EXE und WM_SETICON zu, ein Programmname wie unter GTK fehlt.
+func setupPlatformIdentity() {}
+
+// ensureDisplayAvailable ist hier ein No-Op: Unter Windows gibt es immer
+// eine Desktop-Sitzung, wenn eine GUI-EXE gestartet wird.
+func ensureDisplayAvailable() {}

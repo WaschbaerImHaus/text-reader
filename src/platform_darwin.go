@@ -10,7 +10,7 @@
 // im JS-Drop-Event (FileReader-Weg in scripts.js).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24
+// Letzte Änderung: 2026-10-28 (setupPlatformIdentity, ensureDisplayAvailable als No-Op)
 package main
 
 /*
@@ -222,3 +222,11 @@ func setupPlatformMenu(w webview.WebView) {
 		C.setupMainMenu()
 	})
 }
+
+// setupPlatformIdentity ist hier ein No-Op: macOS ordnet die App über das
+// Bundle (Info.plist) zu, nicht über einen Programmnamen.
+func setupPlatformIdentity() {}
+
+// ensureDisplayAvailable ist hier ein No-Op: Eine .app läuft unter macOS
+// immer in einer grafischen Sitzung.
+func ensureDisplayAvailable() {}

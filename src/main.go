@@ -2,10 +2,10 @@
 //
 // Unterstützte Dateiformate: .md, .markdown, .epub, .fb2, .txt
 // Features: Drag & Drop, Zoom, Vollbild, Dark/Retro-Mode, TOC, Suche,
-//           lokale Bilder, persistente Einstellungen, letzte Datei öffnen.
+// lokale Bilder, persistente Einstellungen, letzte Datei öffnen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (macOS-Menüleiste)
+// Letzte Änderung: 2026-10-28 (Programm-Identität, Abbruch ohne Display)
 package main
 
 import (
@@ -61,9 +61,18 @@ func main() {
 	// Gespeicherte Konfiguration laden (letzte Datei, Zoom, Theme, Layout)
 	cfg := loadConfig()
 
+	// Feste Programm-Identität "md-reader" (Linux: Fensterklasse und
+	// Prozessname, auch bei Start aus dem memfd des Starters), danach prüfen,
+	// ob eine grafische Oberfläche erreichbar ist (sonst Meldung + Exit 1
+	// statt SIGSEGV in webview_go). Windows/macOS: No-Op.
+	setupPlatformIdentity()
+	ensureDisplayAvailable()
+
 	// WebView-Instanz erstellen
 	debug := false
 	w := webview.New(debug)
+	// Hinweis: webview_go gibt nie nil zurück, auch wenn das Fenster nicht
+	// angelegt werden konnte – den Display-Fall fängt ensureDisplayAvailable ab.
 	if w == nil {
 		log.Fatal("WebView konnte nicht erstellt werden. Prüfen Sie die WebKit/WebView2-Installation.")
 	}
