@@ -14,17 +14,19 @@
 #   usr/share/icons/hicolor/{16x16,32x32,48x48,256x256}/apps/md-reader.png
 #   usr/share/icons/hicolor/scalable/apps/md-reader.svg
 #
-# Die Abhängigkeiten stehen fest im Skript und werden NICHT mit dpkg-shlibdeps
-# ermittelt: Auf der Build-Maschine (Ubuntu 25.10) würde dpkg-shlibdeps die
-# neuen Versionen von libwebkit2gtk eintragen, und das Paket wäre auf
-# Ubuntu 24.04 nicht installierbar.
+# Die Abhängigkeiten werden NICHT mit dpkg-shlibdeps ermittelt: Auf der
+# Build-Maschine (Ubuntu 25.10) würde es die neuen Versionen von libwebkit2gtk
+# eintragen, und das Paket wäre auf Ubuntu 24.04 nicht installierbar. Fest
+# stehen libwebkit2gtk-4.1-0 und libgtk-3-0 im Skript. Nur die Untergrenze von
+# libc6 wird aus der höchsten GLIBC-Symbolversion der GUI-Datei abgeleitet
+# (check-glibc.sh --max), heute 2.38.
 #
 # Die Desktop-Datei kommt aus dem Starter (--print-desktop-entry), damit es nur
 # eine einzige Vorlage gibt. Die Build-Nummer wird dabei mit -ldflags gesetzt,
 # sonst stünde X-MD-Reader-Build=0 in der Datei.
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-10-28 (Aufgabe 8: .deb-Paket)
+# Letzte Änderung: 2026-10-28 (Fix-Runde 1: GUI-Datei prüfen, libc6-Grenze aus der GUI)
 set -euo pipefail
 
 # Aufruf prüfen
@@ -58,11 +60,43 @@ if [ ! -f "${gui_file}" ]; then
 	exit 2
 fi
 
+# GUI-Datei prüfen: ELF-Datei, passende Architektur, dynamisch gelinkt.
+# Schützt davor, den statischen Starter oder eine Datei der falschen
+# Architektur in ein Paket zu packen.
+magic="$(od -An -tx1 -N4 -- "${gui_file}" | tr -d ' \n')"
+if [ "${magic}" != "7f454c46" ]; then
+	echo "FEHLER: ${gui_file} ist keine ELF-Datei" >&2
+	exit 2
+fi
+# Byte 18 des ELF-Kopfs (e_machine): 0x3e = x86-64, 0xb7 = AArch64, 0x28 = ARM
+case "${arch}" in
+	amd64) want_machine="3e" ;;
+	arm64) want_machine="b7" ;;
+	armhf) want_machine="28" ;;
+esac
+machine="$(od -An -tx1 -j18 -N1 -- "${gui_file}" | tr -d ' \n')"
+if [ "${machine}" != "${want_machine}" ]; then
+	echo "FEHLER: ${gui_file} passt nicht zur Architektur ${arch} (e_machine 0x${machine}, erwartet 0x${want_machine})" >&2
+	exit 2
+fi
+# Die GUI braucht einen Interpreter (dynamisch gelinkt); der Starter ist statisch
+if ! readelf -lW -- "${gui_file}" | grep -q 'INTERP'; then
+	echo "FEHLER: ${gui_file} ist statisch gelinkt – erwartet wird die dynamische GUI, nicht der Starter" >&2
+	exit 2
+fi
+
 # Projektwurzel = zwei Ebenen über diesem Skript (installer/linux/)
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 version="1.0.${build_num}"
 output="${root}/build/md-reader_${version}_${arch}.deb"
 icon_dir="${root}/src/ui/assets"
+
+# Untergrenze für libc6 = höchste GLIBC-Version, die die GUI wirklich braucht
+libc_min="$("${root}/installer/linux/check-glibc.sh" --max "${gui_file}")"
+if [ -z "${libc_min}" ]; then
+	echo "FEHLER: keine GLIBC-Version in ${gui_file} gefunden" >&2
+	exit 1
+fi
 
 # Gleiche Dateirechte unabhängig von der umask des Aufrufers
 umask 022
@@ -101,7 +135,7 @@ Version: ${version}
 Architecture: ${arch}
 Maintainer: Kurt Ingwer <WaschbaerImHaus@users.noreply.github.com>
 Installed-Size: ${installed_size}
-Depends: libc6 (>= 2.38), libwebkit2gtk-4.1-0, libgtk-3-0
+Depends: libc6 (>= ${libc_min}), libwebkit2gtk-4.1-0, libgtk-3-0
 Recommends: zenity, poppler-utils, ghostscript
 Section: text
 Priority: optional

@@ -6,7 +6,7 @@
 # macOS (Universal) nur auf einem Mac: make macos (sonst GitHub-Workflow macos.yml)
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-10-28 (Aufgabe 8: Starter mit Nutzlast, glibc-Wächter, .deb)
+# Letzte Änderung: 2026-10-28 (Fix-Runde 1: GUI über .tmp, FORCE, NOTPARALLEL, ARM-Compiler Pflicht)
 
 PROJECT     := md-reader
 BUILD_DIR   := build
@@ -56,8 +56,9 @@ GUI_DIR     := $(BUILD_DIR)/gui
 PAYLOAD_DIR := $(SRC_DIR)/launcher/payload
 ICON_SRC    := $(SRC_DIR)/ui/assets
 
-# Höchste erlaubte glibc-Version der Linux-Dateien (Ubuntu 24.04 / KDE neon)
-GLIBC_MAX   := 2.39
+# Höchste erlaubte glibc-Version der Linux-Dateien (Ubuntu 24.04 / KDE neon).
+# Überschreibbar (make GLIBC_MAX=2.30), um den Wächter zu testen.
+GLIBC_MAX   ?= 2.39
 CHECK_GLIBC := installer/linux/check-glibc.sh
 BUILD_DEB   := installer/linux/build-deb.sh
 
@@ -67,7 +68,21 @@ COPY_ICONS   = mkdir -p $(PAYLOAD_DIR)/icons && \
 	   $(ICON_SRC)/favicon-48.png $(ICON_SRC)/favicon-256.png \
 	   $(ICON_SRC)/favicon.svg $(PAYLOAD_DIR)/icons/
 
-.PHONY: all linux windows linux-arm64 linux-armhf installer macos release test clean increment-build help \
+# Kein paralleler Lauf (make -j): BUILD_NUM darf nicht vor increment-build gelesen
+# werden, und alle Starter teilen sich das Verzeichnis payload/icons.
+.NOTPARALLEL:
+
+# Schlägt ein Rezept fehl, wird sein (halbfertiges) Ziel gelöscht
+.DELETE_ON_ERROR:
+
+# FORCE: GUI- und Starter-Ziele haben keine Quelldateien als Abhängigkeit. Mit FORCE
+# werden sie bei jedem Aufruf neu gebaut (der Go-Build-Cache hält das billig). So wird
+# nie eine alte build/gui/*-Datei unter einer neuen Build-Nummer weiterverwendet, auch
+# nicht nach "rm -f build/md-reader*". Folge: "make linux-arm64 deb-arm64" immer in
+# EINEM Aufruf mit installierten ARM-Paketen starten (siehe rules/build-release.md).
+FORCE:
+
+.PHONY: FORCE all linux windows linux-arm64 linux-armhf installer macos release test clean increment-build help \
 	deb deb-amd64 deb-arm64 deb-armhf
 
 ## all: Kompiliert für Linux x86_64, Windows und Linux ARM64/ARMhf
@@ -76,16 +91,19 @@ all: increment-build test linux windows linux-arm64 linux-armhf installer deb
 ## linux: Kompiliert das Linux x86_64 Binary (Starter mit eingebetteter GUI)
 linux: $(BUILD_DIR)/$(PROJECT)
 
-# GUI (dynamisch gelinkt, CGO) → Zwischenergebnis; danach glibc-Wächter
-$(GUI_DIR)/$(PROJECT)-amd64:
+# GUI (dynamisch gelinkt, CGO) → erst nach <ziel>.tmp, dann glibc-Wächter, dann
+# umbenennen. So bleibt nie eine vom Wächter abgelehnte Datei unter dem Zielnamen liegen.
+$(GUI_DIR)/$(PROJECT)-amd64: FORCE
 	@echo "→ Kompiliere GUI für Linux x86_64..."
 	@mkdir -p $(GUI_DIR)
+	rm -f $@ $@.tmp
 	cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=$(GOOS_LINUX) GOARCH=$(ARCH) \
-		$(GO) build -ldflags="$(LDFLAGS_LINUX)" -o ../$(GUI_DIR)/$(PROJECT)-amd64 .
-	$(CHECK_GLIBC) $(GLIBC_MAX) $(GUI_DIR)/$(PROJECT)-amd64
+		$(GO) build -ldflags="$(LDFLAGS_LINUX)" -o ../$@.tmp . || { rm -f $@.tmp; exit 1; }
+	$(CHECK_GLIBC) $(GLIBC_MAX) $@.tmp || { rm -f $@.tmp; exit 1; }
+	mv $@.tmp $@
 
 # Starter: GUI und Icons als Nutzlast kopieren, dann statisch bauen
-$(BUILD_DIR)/$(PROJECT): $(GUI_DIR)/$(PROJECT)-amd64
+$(BUILD_DIR)/$(PROJECT): $(GUI_DIR)/$(PROJECT)-amd64 FORCE
 	@echo "→ Baue Starter für Linux x86_64..."
 	@mkdir -p $(PAYLOAD_DIR)/amd64
 	cp $(GUI_DIR)/$(PROJECT)-amd64 $(PAYLOAD_DIR)/amd64/$(PROJECT)-gui
@@ -114,22 +132,23 @@ $(BUILD_DIR)/$(PROJECT).exe:
 ## linux-arm64: Kompiliert das Linux ARM64 Binary (Starter mit eingebetteter GUI)
 linux-arm64: $(BUILD_DIR)/$(PROJECT)-linux-arm64
 
-$(GUI_DIR)/$(PROJECT)-arm64:
+$(GUI_DIR)/$(PROJECT)-arm64: FORCE
 	@echo "→ Kompiliere GUI für Linux ARM64..."
 	@mkdir -p $(GUI_DIR)
-	@if command -v $(ARM64_CC) > /dev/null 2>&1; then \
-		cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
-			CC=$(ARM64_CC) CXX=$(ARM64_CXX) \
-			PKG_CONFIG=aarch64-linux-gnu-pkg-config \
-			PKG_CONFIG_PATH=$(abspath $(SRC_DIR)/pkgconfig-arm64) \
-			$(GO) build -ldflags="$(LDFLAGS_LINUX)" -o ../$(GUI_DIR)/$(PROJECT)-arm64 . && \
-		cd .. && $(CHECK_GLIBC) $(GLIBC_MAX) $(GUI_DIR)/$(PROJECT)-arm64; \
-	else \
-		echo "⚠ $(ARM64_CC) nicht gefunden. ARM64-Build übersprungen."; \
-		echo "  Installation: sudo apt-get install gcc-aarch64-linux-gnu"; \
-	fi
+	@command -v $(ARM64_CC) > /dev/null 2>&1 || { \
+		echo "FEHLER: $(ARM64_CC) nicht gefunden – ARM64-Build nicht möglich." >&2; \
+		echo "  Installation: sudo apt-get install gcc-aarch64-linux-gnu" >&2; \
+		exit 1; }
+	rm -f $@ $@.tmp
+	cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
+		CC=$(ARM64_CC) CXX=$(ARM64_CXX) \
+		PKG_CONFIG=aarch64-linux-gnu-pkg-config \
+		PKG_CONFIG_PATH=$(abspath $(SRC_DIR)/pkgconfig-arm64) \
+		$(GO) build -ldflags="$(LDFLAGS_LINUX)" -o ../$@.tmp . || { rm -f $@.tmp; exit 1; }
+	$(CHECK_GLIBC) $(GLIBC_MAX) $@.tmp || { rm -f $@.tmp; exit 1; }
+	mv $@.tmp $@
 
-$(BUILD_DIR)/$(PROJECT)-linux-arm64: $(GUI_DIR)/$(PROJECT)-arm64
+$(BUILD_DIR)/$(PROJECT)-linux-arm64: $(GUI_DIR)/$(PROJECT)-arm64 FORCE
 	@echo "→ Baue Starter für Linux ARM64..."
 	@mkdir -p $(PAYLOAD_DIR)/arm64
 	cp $(GUI_DIR)/$(PROJECT)-arm64 $(PAYLOAD_DIR)/arm64/$(PROJECT)-gui
@@ -142,22 +161,23 @@ $(BUILD_DIR)/$(PROJECT)-linux-arm64: $(GUI_DIR)/$(PROJECT)-arm64
 ## linux-armhf: Kompiliert das Linux ARMhf (ARM32) Binary (Starter mit eingebetteter GUI)
 linux-armhf: $(BUILD_DIR)/$(PROJECT)-linux-armhf
 
-$(GUI_DIR)/$(PROJECT)-arm:
+$(GUI_DIR)/$(PROJECT)-arm: FORCE
 	@echo "→ Kompiliere GUI für Linux ARMhf..."
 	@mkdir -p $(GUI_DIR)
-	@if command -v $(ARMHF_CC) > /dev/null 2>&1; then \
-		cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 \
-			CC=$(ARMHF_CC) CXX=$(ARMHF_CXX) \
-			PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
-			PKG_CONFIG_PATH=$(abspath $(SRC_DIR)/pkgconfig-armhf) \
-			$(GO) build -ldflags="$(LDFLAGS_LINUX)" -o ../$(GUI_DIR)/$(PROJECT)-arm . && \
-		cd .. && $(CHECK_GLIBC) $(GLIBC_MAX) $(GUI_DIR)/$(PROJECT)-arm; \
-	else \
-		echo "⚠ $(ARMHF_CC) nicht gefunden. ARMhf-Build übersprungen."; \
-		echo "  Installation: sudo apt-get install gcc-arm-linux-gnueabihf"; \
-	fi
+	@command -v $(ARMHF_CC) > /dev/null 2>&1 || { \
+		echo "FEHLER: $(ARMHF_CC) nicht gefunden – ARMhf-Build nicht möglich." >&2; \
+		echo "  Installation: sudo apt-get install gcc-arm-linux-gnueabihf" >&2; \
+		exit 1; }
+	rm -f $@ $@.tmp
+	cd $(SRC_DIR) && CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 \
+		CC=$(ARMHF_CC) CXX=$(ARMHF_CXX) \
+		PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
+		PKG_CONFIG_PATH=$(abspath $(SRC_DIR)/pkgconfig-armhf) \
+		$(GO) build -ldflags="$(LDFLAGS_LINUX)" -o ../$@.tmp . || { rm -f $@.tmp; exit 1; }
+	$(CHECK_GLIBC) $(GLIBC_MAX) $@.tmp || { rm -f $@.tmp; exit 1; }
+	mv $@.tmp $@
 
-$(BUILD_DIR)/$(PROJECT)-linux-armhf: $(GUI_DIR)/$(PROJECT)-arm
+$(BUILD_DIR)/$(PROJECT)-linux-armhf: $(GUI_DIR)/$(PROJECT)-arm FORCE
 	@echo "→ Baue Starter für Linux ARMhf..."
 	@mkdir -p $(PAYLOAD_DIR)/arm
 	cp $(GUI_DIR)/$(PROJECT)-arm $(PAYLOAD_DIR)/arm/$(PROJECT)-gui
@@ -171,7 +191,8 @@ $(BUILD_DIR)/$(PROJECT)-linux-armhf: $(GUI_DIR)/$(PROJECT)-arm
 deb: deb-amd64 deb-arm64 deb-armhf
 
 # Die Pakete sind absichtlich PHONY: Der Dateiname enthält die Build-Nummer, die
-# erst zur Laufzeit feststeht (siehe BUILD_NUM). Die GUI-Dateien sind echte Ziele.
+# erst zur Laufzeit feststeht (siehe BUILD_NUM). Die GUI-Dateien werden wegen FORCE
+# in jedem make-Aufruf frisch gebaut; build-deb.sh prüft Architektur und Bauart.
 deb-amd64: $(GUI_DIR)/$(PROJECT)-amd64
 	$(BUILD_DEB) amd64 $(GUI_DIR)/$(PROJECT)-amd64 $(BUILD_NUM)
 
