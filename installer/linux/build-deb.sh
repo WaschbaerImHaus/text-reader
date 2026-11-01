@@ -15,18 +15,18 @@
 #   usr/share/icons/hicolor/scalable/apps/md-reader.svg
 #
 # Die Abhängigkeiten werden NICHT mit dpkg-shlibdeps ermittelt: Auf der
-# Build-Maschine (Ubuntu 25.10) würde es die neuen Versionen von libwebkit2gtk
+# Build-Maschine (Ubuntu 26.04) würde es die neuen Versionen von libwebkit2gtk
 # eintragen, und das Paket wäre auf Ubuntu 24.04 nicht installierbar. Fest
 # stehen libwebkit2gtk-4.1-0 und libgtk-3-0 im Skript. Nur die Untergrenze von
 # libc6 wird aus der höchsten GLIBC-Symbolversion der GUI-Datei abgeleitet
-# (check-glibc.sh --max), heute 2.38.
+# (check-glibc.sh --max), heute 2.34 oder 2.35.
 #
 # Die Desktop-Datei kommt aus dem Starter (--print-desktop-entry), damit es nur
 # eine einzige Vorlage gibt. Die Build-Nummer wird dabei mit -ldflags gesetzt,
 # sonst stünde X-MD-Reader-Build=0 in der Datei.
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-10-28 (Fix-Runde 1: GUI-Datei prüfen, libc6-Grenze aus der GUI)
+# Letzte Änderung: 2026-11-01 (Build in Ubuntu-22.04-Containern)
 set -euo pipefail
 
 # Aufruf prüfen

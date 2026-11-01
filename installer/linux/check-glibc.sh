@@ -3,7 +3,7 @@
 #
 # Aufruf: check-glibc.sh <max> <datei>...
 #         check-glibc.sh --max <datei>
-#   <max>    höchste erlaubte glibc-Version, z. B. 2.39
+#   <max>    höchste erlaubte glibc-Version, z. B. 2.35
 #   <datei>  ELF-Dateien (x86_64, ARM64 oder ARMhf), die geprüft werden
 #
 # Prüfmodus: Liest mit "objdump -T" alle verlangten Symbolversionen GLIBC_x.y und
@@ -16,7 +16,7 @@
 # Enthält die Datei keine GLIBC-Symbole, endet das Skript mit Exit 1.
 #
 # Grund des Wächters: Die Build-Maschine hat eine neuere glibc als die
-# Zielsysteme (Ubuntu 24.04 hat 2.39). Eine unbedachte Funktion könnte die
+# Zielsysteme (Ubuntu 22.04 hat 2.35; gebaut wird im 22.04-Container). Eine unbedachte Funktion könnte die
 # Untergrenze still anheben.
 #
 # Exit-Codes: 0 = in Ordnung, 1 = zu neu / keine Symbole, 2 = Aufruf- oder Lesefehler.
@@ -27,7 +27,7 @@
 #            vorhanden, sonst objdump)
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-10-28 (Fix-Runde 1: --max-Modus, Schleifen ohne Wortaufteilung)
+# Letzte Änderung: 2026-11-01 (Build in Ubuntu-22.04-Containern)
 set -euo pipefail
 
 # Hilfetext bei falschem Aufruf
