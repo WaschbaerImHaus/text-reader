@@ -41,7 +41,7 @@
 //     (siehe spawnOfferProcess).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (Auswertung in evaluateTrace, Marke MD_READER_OFFER – Bug-Runde Build 47)
+// Letzte Änderung: 2026-11-01 (Auswertung in evaluateTrace, Marke MD_READER_OFFER, Umgebung per traceEnviron – Bug-Runde Build 47)
 package main
 
 import (
@@ -166,8 +166,8 @@ func traceMissing(fd int) ([]string, error) {
 	// ExtraFiles[0] wird im Kind zu fd 3.
 	cmd := exec.CommandContext(ctx, "/proc/self/fd/3")
 	cmd.Args = []string{guiArgv0}
-	// Bei doppelten Schlüsseln gilt in os/exec der letzte Eintrag.
-	cmd.Env = append(os.Environ(), "LD_TRACE_LOADED_OBJECTS=1")
+	// Ohne LD_VERBOSE/LD_DEBUG, LD_TRACE_LOADED_OBJECTS=1 zuletzt (traceEnviron).
+	cmd.Env = traceEnviron(os.Environ())
 	cmd.ExtraFiles = []*os.File{file}
 	var out bytes.Buffer
 	cmd.Stdout = &out

@@ -72,6 +72,8 @@ func ParseMissingLibraries(trace string) []string {
 // Symbolversion, z. B. "version `GLIBC_2.38' not found (required by …)".
 // Ältere glibc schreiben `…', neuere womöglich '…' oder typografische
 // Anführungszeichen; erlaubt sind alle drei Formen.
+// Zeilen mit „weak version `X' not found“ (nur bei LD_VERBOSE) zählen nicht:
+// Eine fehlende schwache Version ist nicht tödlich (siehe weakVersionMarker).
 var missingVersionPattern = regexp.MustCompile("version [`'‘]([^`'‘’\\s]+)['’] not found")
 
 // ParseMissingVersions wertet die Meldungen des Laders (stderr des
@@ -80,26 +82,37 @@ var missingVersionPattern = regexp.MustCompile("version [`'‘]([^`'‘’\\s]+)
 // Nur Zeilen der Form „version `X' not found“ zählen – sie bedeuten, dass
 // eine Bibliothek des Systems (meist die glibc) älter ist als verlangt; dann
 // kann das Programm nie starten. Harmlose Meldungen wie „no version
-// information available“ werden ignoriert. Eine Version ist nie fest
+// information available“ und „weak version `X' not found“ werden ignoriert.
+// Eine Version ist nie fest
 // eingebaut, sondern stammt immer aus dem Protokoll.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (neu, Bug-Runde Build 47: System zu alt)
+// Letzte Änderung: 2026-11-01 (weak version ausgenommen, Nachrunde)
 //
 // @param loader Rohausgabe des Laders (stderr).
 // @return Fehlende Versionen, sortiert und ohne Duplikate (leer, wenn keine).
 func ParseMissingVersions(loader string) []string {
 	seen := make(map[string]bool)
 	var versions []string
-	for _, m := range missingVersionPattern.FindAllStringSubmatch(loader, -1) {
-		if v := m[1]; !seen[v] {
-			seen[v] = true
-			versions = append(versions, v)
+	// Zeilenweise, damit eine „weak version“-Zeile nur sich selbst ausschließt.
+	for _, line := range strings.Split(loader, "\n") {
+		if strings.Contains(line, weakVersionMarker) {
+			continue
+		}
+		for _, m := range missingVersionPattern.FindAllStringSubmatch(line, -1) {
+			if v := m[1]; !seen[v] {
+				seen[v] = true
+				versions = append(versions, v)
+			}
 		}
 	}
 	sort.Strings(versions)
 	return versions
 }
+
+// weakVersionMarker kennzeichnet die harmlose Lader-Meldung für eine fehlende
+// schwache Symbolversion (glibc gibt sie nur mit LD_VERBOSE aus).
+const weakVersionMarker = "weak version "
 
 // glibcVersionPrefix ist der Name der Symbolversionen der glibc ("GLIBC_2.38").
 const glibcVersionPrefix = "GLIBC_"

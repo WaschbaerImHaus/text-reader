@@ -40,7 +40,7 @@
 // stecken im Typ launcher und werden in Tests durch Fakes ersetzt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (System zu alt, Marke für --offer-install, Hinweis nur einmal – Bug-Runde Build 47)
+// Letzte Änderung: 2026-11-01 (System zu alt, Marke für --offer-install, Hinweis nur einmal, auch in memExecFailed, traceEnviron – Bug-Runde Build 47 + Nachrunde)
 package main
 
 import (
@@ -53,6 +53,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,6 +330,30 @@ func notFoundLines(text string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// traceDropEnv sind Variablen, die das Ladeprotokoll nicht erben soll:
+// LD_VERBOSE und LD_DEBUG erzeugen nur zusätzliche Lader-Zeilen.
+var traceDropEnv = []string{"LD_VERBOSE", "LD_DEBUG"}
+
+// traceEnviron liefert die Umgebung des Ladeprotokolls: base ohne
+// traceDropEnv, zuletzt LD_TRACE_LOADED_OBJECTS=1 (in os/exec gilt bei
+// doppelten Schlüsseln der letzte Eintrag). base bleibt unverändert.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, Nachrunde: LD_VERBOSE/LD_DEBUG entfernen)
+//
+// @param base Umgebung (os.Environ()).
+// @return Neue Liste für exec.Cmd.Env.
+func traceEnviron(base []string) []string {
+	env := make([]string, 0, len(base)+1)
+	for _, kv := range base {
+		key, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(traceDropEnv, key) {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "LD_TRACE_LOADED_OBJECTS=1")
 }
 
 // newOfferCommand baut den Befehl, mit dem sich der Starter als
@@ -943,7 +968,8 @@ func (l *launcher) systemTooOld(asker linuxsetup.Asker, versions []string) int {
 // memExecFailed meldet, dass die GUI nicht starten kann (stderr und
 // Hinweis), und liefert Exit 1. Nur bei fehlender Berechtigung (EACCES/EPERM,
 // z. B. vm.memfd_noexec) gibt es den Rat zu memfd/noexec, sonst eine
-// allgemeine Meldung mit der Ursache.
+// allgemeine Meldung mit der Ursache. Der Hinweis entfällt, wenn der Asker
+// selbst nur auf stderr schreibt (Letzte Änderung: 2026-11-01).
 func (l *launcher) memExecFailed(asker linuxsetup.Asker, cause error) int {
 	title := l.text(lmMemExecTitle)
 	bodyID := lmStartFailed
@@ -952,6 +978,9 @@ func (l *launcher) memExecFailed(asker linuxsetup.Asker, cause error) int {
 	}
 	body := fmt.Sprintf(l.text(bodyID), cause.Error())
 	_, _ = fmt.Fprintf(l.stderr, "%s\n%s\n", title, body)
-	asker.Inform(title, body)
+	// Ein reiner stderr-Asker schriebe denselben Text ein zweites Mal.
+	if !linuxsetup.IsTextOnly(asker) {
+		asker.Inform(title, body)
+	}
 	return 1
 }

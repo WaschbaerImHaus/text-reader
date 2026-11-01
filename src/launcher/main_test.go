@@ -1257,6 +1257,22 @@ func TestEvaluateTrace(t *testing.T) {
 	}
 }
 
+// TestTraceEnviron prüft die Umgebung des Ladeprotokolls: LD_VERBOSE und
+// LD_DEBUG (würden harmlose Zusatzzeilen wie „weak version … not found“
+// erzeugen) fallen weg, alles andere bleibt, LD_TRACE_LOADED_OBJECTS=1 steht
+// zuletzt.
+func TestTraceEnviron(t *testing.T) {
+	base := []string{"PATH=/usr/bin", "LD_VERBOSE=1", "LD_DEBUG=all", "LD_DEBUGX=1", "HOME=/h", "LD_TRACE_LOADED_OBJECTS=0"}
+	got := traceEnviron(base)
+	want := []string{"PATH=/usr/bin", "LD_DEBUGX=1", "HOME=/h", "LD_TRACE_LOADED_OBJECTS=0", "LD_TRACE_LOADED_OBJECTS=1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("traceEnviron = %q, erwartet %q", got, want)
+	}
+	if base[1] != "LD_VERBOSE=1" {
+		t.Error("Eingabeliste wurde verändert")
+	}
+}
+
 // tooOldErr ist der Fehler, den traceMissing auf einem zu alten System liefert.
 func tooOldErr() error {
 	_, err := evaluateTrace(tooOldTrace, tooOldLoader, nil)
@@ -1326,29 +1342,37 @@ type textAsker struct {
 	w *bytes.Buffer
 }
 
+// Ask schreibt die Frage in den Puffer und liefert keine Antwort.
 func (a *textAsker) Ask(title, body string, buttons []linuxsetup.Button, timeout time.Duration) (string, error) {
 	a.w.WriteString(title + "\n\n" + body + "\n")
 	return "", nil
 }
 
+// Inform schreibt den Hinweis in den Puffer.
 func (a *textAsker) Inform(title, body string) { a.w.WriteString(title + "\n\n" + body + "\n") }
 
+// TextOnly meldet wie der stderr-Asker: nur Textausgabe.
 func (a *textAsker) TextOnly() bool { return true }
 
 // TestRun_TextOnlyAskerOnce prüft (Fund 1): Ist der Asker nur eine
-// Textausgabe auf stderr, stehen die Meldung „zu alt“ und der WebKit-Hinweis
-// genau einmal da (der verzögerte Asker reicht TextOnly weiter).
+// Textausgabe auf stderr, stehen die Meldung „zu alt“, der WebKit-Hinweis und
+// die Meldung „kann nicht starten“ (memfd scheitert) genau einmal da (der
+// verzögerte Asker reicht TextOnly weiter).
 func TestRun_TextOnlyAskerOnce(t *testing.T) {
-	for _, name := range []string{"zu alt", "WebKit fehlt"} {
+	for _, name := range []string{"zu alt", "WebKit fehlt", "memfd scheitert"} {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
 			r.l.newAsker = func() linuxsetup.Asker { return &textAsker{w: &r.stderr} }
 			title, _ := linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgSystemTooOld)
-			if name == "zu alt" {
+			switch name {
+			case "zu alt":
 				r.mem.traceErrs = []error{tooOldErr()}
-			} else {
+			case "WebKit fehlt":
 				r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
 				title, _ = linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgWebKitMissing)
+			default:
+				r.mem.createErr = fmt.Errorf("memfd_create: %w", os.ErrPermission)
+				title = r.l.text(lmMemExecTitle)
 			}
 			if code := r.l.run(nil); code != 1 {
 				t.Errorf("Exit %d, erwartet 1", code)
@@ -1409,9 +1433,15 @@ func TestRun_Install_MissingWebKitStillInstalls(t *testing.T) {
 // gefragt und nichts abgetrennt gestartet.
 func TestRun_OfferInstallNeedsMarker(t *testing.T) {
 	cases := [][]string{{"--offer-install"}, {"--offer-install", "--detach"}, {"--offer-install", "x"}}
-	for _, args := range cases {
+	for i := 0; i < 2*len(cases); i++ {
+		args := cases[i%len(cases)]
 		r := newRig(t)
-		r.env[offerEnvKey] = "0"
+		// Erste Runde: Variable fehlt ganz; zweite Runde: falscher Wert.
+		if i >= len(cases) {
+			r.env[offerEnvKey] = "0"
+		} else {
+			delete(r.env, offerEnvKey)
+		}
 		if code := r.l.run(args); code != 0 {
 			t.Fatalf("%q: Exit %d, stderr %q", args, code, r.stderr.String())
 		}

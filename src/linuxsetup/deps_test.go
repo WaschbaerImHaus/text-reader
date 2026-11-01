@@ -139,7 +139,8 @@ func TestParseMissingVersions(t *testing.T) {
 		"md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by md-reader)\n" +
 		"md-reader: /usr/lib/libfoo.so.1: no version information available (required by md-reader)\n" +
 		"md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by /lib/libbar.so)\r\n" +
-		"md-reader: /lib/libstdc++.so.6: version 'GLIBCXX_3.4.30' not found (required by md-reader)\n"
+		"md-reader: /lib/libstdc++.so.6: version 'GLIBCXX_3.4.30' not found (required by md-reader)\n" +
+		"md-reader: /lib/x86_64-linux-gnu/libc.so.6: weak version `GLIBC_2.40' not found (required by md-reader)\n"
 	got := ParseMissingVersions(loader)
 	want := []string{"GLIBCXX_3.4.30", "GLIBC_2.36", "GLIBC_2.38"}
 	if !reflect.DeepEqual(got, want) {
@@ -149,6 +150,8 @@ func TestParseMissingVersions(t *testing.T) {
 		"",
 		"md-reader: /usr/lib/libfoo.so.1: no version information available (required by md-reader)\n",
 		"\tlibwebkit2gtk-4.1.so.0 => not found\n",
+		// Nur mit LD_VERBOSE: fehlende schwache Version ist nicht tödlich.
+		"md-reader: /lib/x86_64-linux-gnu/libc.so.6: weak version `GLIBC_2.40' not found (required by md-reader)\n",
 		"ERROR: ld.so: object 'x.so' from LD_PRELOAD cannot be preloaded: ignored.\n",
 	} {
 		if got := ParseMissingVersions(harmless); len(got) != 0 {
