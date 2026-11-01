@@ -60,13 +60,64 @@ Unter macOS gilt `⌘` statt `Strg`; `⌘C`, `⌘A`, `⌘Q` laufen über die Men
 
 ### Linux
 
+Von der [Releases](https://github.com/WaschbaerImHaus/text-reader/releases)-Seite laden – entweder eine einzelne Datei oder ein `.deb`-Paket für die eigene Architektur:
+
+| Einzelne Datei | `.deb`-Paket | Architektur |
+|----------------|--------------|-------------|
+| `md-reader` | `md-reader_1.0.<build>_amd64.deb` | Linux x86_64 |
+| `md-reader-linux-arm64` | `md-reader_1.0.<build>_arm64.deb` | Linux ARM64 |
+| `md-reader-linux-armhf` | `md-reader_1.0.<build>_armhf.deb` | Linux ARMhf (32 Bit) |
+
+**Einzelne Datei** – nichts zu installieren, einfach starten:
+
 ```bash
-./build/md-reader [optionale-datei.md]
+chmod +x md-reader
+./md-reader [optionale-datei.md]
 ```
 
+Die Datei ist ein kleiner Starter mit eingebautem Programm. Vor dem Start prüft er,
+ob die nötigen Bibliotheken vorhanden sind.
+
+- **WebKitGTK fehlt** (typisch unter KDE neon): Eine Desktop-Nachricht weist darauf hin.
+  Auf Systemen mit `apt` bietet sie **Jetzt installieren** an; das führt nach einer
+  grafischen Passwortabfrage `pkexec apt-get install libwebkit2gtk-4.1-0` aus, danach
+  startet MD Reader von selbst. Bei anderen Distributionen zeigt die Nachricht den
+  passenden Befehl. Von Hand: `sudo apt install libwebkit2gtk-4.1-0` (Debian/Ubuntu/Mint),
+  `sudo dnf install webkit2gtk4.1` (Fedora), `sudo pacman -S webkit2gtk-4.1` (Arch),
+  `sudo zypper install libwebkit2gtk-4_1-0` (openSUSE).
+- **Anwendungsmenü**: Beim ersten Start fragt MD Reader einmal, ob es ins Anwendungsmenü
+  aufgenommen werden soll (**Ja** / **Später** / **Nie**). Das geht jederzeit auch so:
+
+  ```bash
+  ./md-reader --install            # ins Menü aufnehmen (--force überschreibt)
+  ./md-reader --uninstall          # wieder entfernen; die Einstellungen bleiben
+  ```
+
+  Das gilt pro Benutzer und braucht kein Root: Programm in `~/.local/bin/md-reader`,
+  Menüeintrag (Kategorie Büro) in `~/.local/share/applications/md-reader.desktop`, Icons
+  unter `~/.local/share/icons/hicolor`. MD Reader erscheint außerdem unter „Öffnen mit“
+  für md-, markdown-, txt-, epub-, fb2-, tex-, html-, htm-, pdf- und ps-Dateien – es wird
+  nicht zur Standard-App. Wer eine neuere heruntergeladene Datei startet, bekommt
+  angeboten, die installierte zu ersetzen. `--` beendet die Optionen
+  (`./md-reader -- --uninstall` öffnet eine Datei namens `--uninstall`).
+
+**`.deb`-Paket** – installiert systemweit; WebKitGTK und GTK kommen als Abhängigkeiten mit:
+
+```bash
+sudo apt install ./md-reader_1.0.<build>_amd64.deb
+```
+
+**Unterstützte Systeme:** Ubuntu 22.04 oder neuer, Linux Mint 21 oder neuer, Debian 12
+oder neuer, Raspberry Pi OS Bookworm (Raspberry Pi 2 oder neuer; armhf = ARMv7), KDE neon (glibc 2.34 oder neuer). Ältere Systeme
+bekommen eine verständliche Meldung statt einer Lader-Fehlermeldung.
+
 **Systemvoraussetzungen:**
-- WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`)
-- GTK 3 (`libgtk-3-0`)
+- WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`) und GTK 3 (`libgtk-3-0`) – das `.deb` installiert sie mit
+- Optional: `zenity` (Dateidialog), `poppler-utils` (PDF), `ghostscript` (PostScript)
+
+**Gut zu wissen:** Die rechte Maustaste (Kontextmenü) ist im ganzen Fenster gesperrt.
+Externe Bilder in Markdown (`![Text](https://…)`) werden nicht geladen; stattdessen
+erscheint ihr Alternativtext.
 
 ### Windows
 

@@ -1,5 +1,12 @@
 # Optimierungsvorschläge
 
+## Offen aus Build 47
+
+- **Vier ältere `viewfile`-Tests** schreiben ins echte Temp-Verzeichnis; sie sollten mit der Hilfsfunktion `useIsolatedTempDir` in ein `t.TempDir()` gelenkt werden (Befund der Gegenprüfung 2026-11-01).
+- **`make all` / `deb` / `release`**: Früher scheiterte der Sammelaufruf, weil sich die Host-Pakete `:arm64`/`:armhf`/`:amd64` ausschließen. Mit dem Container-Build ist das Hindernis entfallen: Die GUI-Ziele laufen in Containern, die Images entstehen einmalig mit `make build-images`. Stand 2026-11-01: Die Makefile-Struktur (`all: increment-build test linux windows linux-arm64 linux-armhf installer deb`) erlaubt einen Aufruf; ein vollständiger `make all`-Lauf wurde in dieser Dokumentationsrunde nicht ausgeführt. `release` hängt von `all` ab und erhöht die Build-Nummer dabei erneut – vor dem Nutzen prüfen.
+- **Auto-Update** (Build 48 geplant, siehe FEATURES.md).
+- Kleine Reste im Starter: Meldung ohne Display nur deutsch; zwei gleichzeitig gestartete Instanzen können zwei Installationsfragen zeigen; `spawnOfferProcess` ohne echten Test.
+
 ## Performance
 
 - **Lazy Loading**: Große Markdown-Dateien schrittweise rendern statt alles auf einmal
@@ -27,7 +34,7 @@
 
 - **Stripped Binary**: `go build -ldflags="-s -w"` für kleinere Binaries
 - **UPX Compression**: Nachgelagerte UPX-Komprimierung der Binaries
-- **Statisches Linking**: Statisch gelinkte Binaries für bessere Portabilität
+- ~~**Statisches Linking**~~ ✅ *Build 47: Starter statisch (CGO aus), GUI mit statischem libstdc++/libgcc und glibc-Wächter*
 
 ## Windows-spezifisch
 
@@ -44,5 +51,5 @@
 
 ## Cross-Platform
 
-- **ARM-Builds**: Linux ARM64 / Windows ARM64 Cross-Compilation (derzeit nur x86_64)
-- **macOS**: WebKit-Support via webview_go bereits vorhanden, Build-Config fehlt
+- ~~**ARM-Builds Linux**~~ ✅ *Build 47: arm64/armhf in Containern*; Windows ARM64 weiterhin nicht baubar (kein mingw-Compiler)
+- ~~**macOS**: Build-Config fehlt~~ ✅ *Build 46: Workflow `macos.yml`*

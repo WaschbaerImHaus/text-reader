@@ -4,6 +4,62 @@ All notable changes to MD Reader are documented here.
 
 ---
 
+## Build 47 – Linux launcher, menu install, .deb (2026-11-01)
+
+### Added
+- Linux launcher: `md-reader`, `md-reader-linux-arm64` and `md-reader-linux-armhf` are
+  still single files, but now a small static launcher that embeds the GUI program and runs
+  it from memory (`memfd`, nothing is written to disk). Before the start it checks which
+  libraries are missing (using the dynamic loader's trace, like `ldd`).
+- Missing WebKitGTK no longer ends with a bare loader error: a desktop notification
+  (fallback chain: D-Bus notification, kdialog, zenity, text in the terminal) explains it.
+  On systems with `apt`, a button offers `pkexec apt-get install libwebkit2gtk-4.1-0`
+  (graphical password prompt, fixed command, no shell); other distributions get the
+  matching install command in the message. MD Reader then starts by itself.
+- Self-install into the application menu, per user and without root: on the first start
+  MD Reader asks once "Add MD Reader to the application menu?" (Yes / Later / Never).
+  Manual: `md-reader --install [--force]` and `md-reader --uninstall`; `--` ends the
+  options, so a file called `--uninstall` can still be opened (`md-reader -- --uninstall`).
+  Installed files: `~/.local/bin/md-reader`, `~/.local/share/applications/md-reader.desktop`
+  (category Office), hicolor icons, "Open with" entries for md, markdown, txt, epub, fb2,
+  tex, html, htm, pdf and ps (MD Reader does not become the default app). Uninstall keeps
+  your settings. A newer downloaded file offers to replace the installed one.
+- Three `.deb` packages (`md-reader_1.0.47_amd64|arm64|armhf.deb`):
+  `sudo apt install ./md-reader_1.0.47_amd64.deb` – installs system-wide, WebKitGTK and GTK
+  come in as dependencies, no install question on start.
+- Linux binaries are now built on Ubuntu 22.04 (glibc >= 2.34) in containers (amd64, arm64,
+  armhf) with a glibc guard: they run on Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Raspberry Pi OS
+  Bookworm (Raspberry Pi 2 or newer) and KDE neon (glibc 2.34 or newer; before: glibc 2.38, i.e. Ubuntu 24.04+).
+- GUI identity `md-reader` on Linux (program name, window class, process name), so the
+  menu icon is shown in the taskbar and window switcher, also under Wayland.
+
+### Security
+- The context menu (right-click) is disabled in the whole window. On Linux a native
+  navigation allow-list additionally blocks every navigation away from the document
+  (finding F1). On Windows and macOS only the JavaScript layer applies (RISK-013).
+- goldmark 1.8.7 and an allow-list for Markdown link targets (F2): `javascript:` and
+  similar link targets are no longer turned into working links. External images
+  (http/https) are not loaded; their alt text is shown instead.
+- `--install` copies the running program, not a path from the command line (F3).
+- The temporary view file for large documents has a random, private name (RISK-016).
+- Protocol-relative and UNC link targets (`//host`, `\\host`) are rejected (RISK-017).
+- Further hardening H1–H5 (see `SECURITY_FIXED.md`).
+
+### Fixed
+- Start without WebKit (e.g. KDE neon) only showed the loader error; now the notification
+  with the install offer appears.
+- The GUI crashed with a segmentation fault when no display was available; it now prints
+  a clear error message.
+- On a system that is too old the launcher refuses with a clear message (and `--install`
+  refuses too) instead of an unreadable loader error.
+
+### Notes
+- The old per-user cache folders `~/.cache/md-reader-linux-arm64` (if present) of earlier builds are
+  no longer used and can be deleted.
+- Windows ARM64 is still not available; macOS is unchanged (separate workflow).
+
+---
+
 ## Build 46 – 2026-10-24
 
 ### Added

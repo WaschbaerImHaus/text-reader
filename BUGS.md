@@ -2,9 +2,14 @@
 
 ## Offen 🐛
 
-(Keine offenen Bugs)
+- **Windows ohne WebView2** (entdeckt Build 47, unbestätigt): In `src/main.go` ist die Prüfung `w == nil` nach `webview.New` unter Windows toter Code – fehlt die WebView2-Runtime, könnte das Programm abstürzen statt eine Meldung zu zeigen. Unter Linux ist der Fall (kein Display) seit Build 47 behandelt. Nicht auf einem Windows-System ohne Runtime überprüft. Fundstelle: `src/main.go` (Prüfung nach `webview.New`), `src/platform_windows.go`.
+- **F1-Rest (Windows/macOS)**: Das Kontextmenü ist dort nur per JavaScript gesperrt, eine native Navigations-Erlaubnisliste gibt es nur unter Linux. Das macOS-Menü „Link öffnen“ könnte kurz vor dem Laden der Skripte erreichbar sein. Siehe RISK-013 in `SECURITY_RISKS.md`.
 
 ## Behoben ✅
+
+- **#017** (Build 47): Zu altes System (glibc älter als die GUI braucht) – nur unleserliche Lader-Meldung, vom Desktop kam sogar die Frage „Ins Menü aufnehmen?“, `--install` gelang trotzdem. Ursache: Der Lader scheitert vor `main`; der Starter wertete die „version not found“-Zeilen des Ladeprotokolls nicht aus. Fix: Der Starter erkennt die fehlende Version, verweigert Start und `--install` mit klarer Meldung (Desktop-Nachricht plus stderr, Exit 1, genau ein Hinweis). Zusätzlich wird die GUI nun in Ubuntu-22.04-Containern gebaut (glibc ≥ 2.34), sodass Ubuntu 22.04+, Mint 21+, Debian 12+ und Raspberry Pi OS Bookworm laufen. Verifiziert mit `debugging/linux/launcher-docker-test.sh` (Teil C, ubuntu:22.04).
+- **#016** (Build 47): Start ohne Display (SSH, Container) beendete die GUI mit SIGSEGV (`webview.New` lieferte nil, `src/main.go`). Fix: klare Fehlermeldung ohne Display (Altfehler, durch den Starter häufiger sichtbar). Verifiziert im Abnahmeskript (`debugging/linux/launcher-docker-test.sh`).
+- **#015** (Build 47): Start ohne WebKit unter KDE neon (Nutzermeldung 2026-10-24) zeigte nur `error while loading shared libraries: libwebkit2gtk-4.1.so.0`. Ursache: Der dynamische Lader bricht vor `main` ab, die App kann nichts melden. Fix: Starter mit eingebetteter GUI prüft die Bibliotheken per Ladeprotokoll und zeigt eine Desktop-Nachricht mit Installationsangebot (`pkexec apt-get install libwebkit2gtk-4.1-0`). Verifiziert im Container `ubuntu:24.04` (Abnahmeskript, 56 PASS, 0 FAIL, 1 Warnung).
 
 - **#014** (Build 41): Mathematische Formeln (KaTeX) wurden beim Öffnen von Dateien nie gerendert – `$x^2$` blieb als Rohtext stehen. Ursache: `initEmbeddedContent()` im Hauptskript ruft `initKaTeX()` sofort auf, die KaTeX-Skripte wurden aber erst NACH dem Hauptskript eingebunden → `renderMathInElement` war noch undefiniert. Fix: KaTeX wird vor dem Hauptskript geladen. Gefunden bei der Verifikation von RISK-007; Test `TestBuildInitialHTML_KaTeXLoadedBeforeMainScript`, in Chrome und WebKitGTK bestätigt.
 

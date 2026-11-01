@@ -42,7 +42,17 @@
 
 - [x] **macOS** (Build 46): Universal-App (Apple Silicon + Intel, ab macOS 13) als `md-reader-macos.zip`, gebaut auf einem GitHub-Mac-Runner (Workflow `macos.yml`, Tests + Rauchtest mit Bildschirmfotos) und automatisch ans Release gehängt; Menüleiste (⌘C/⌘V/⌘A/⌘Q), NSOpenPanel, natives Vollbild, Dock-Icon; pdftoppm/gs auch aus Homebrew; ad hoc signiert, nicht notarisiert
 
+- [x] **Linux-Starter** (Build 47, Nutzerwunsch 2026-10-24): `md-reader`, `-linux-arm64`, `-linux-armhf` bleiben eine Datei, sind aber ein statischer Starter mit eingebetteter GUI (läuft aus `memfd`); prüft vor dem Start per Ladeprotokoll fehlende Bibliotheken, meldet per Desktop-Nachricht (D-Bus, kdialog, zenity, Terminal) und bietet `pkexec apt-get install libwebkit2gtk-4.1-0` an; zu alte Systeme werden klar abgelehnt
+- [x] **Selbst-Installation ins Anwendungsmenü** (Build 47): Frage beim Erststart (Ja/Später/Nie), `--install [--force]`, `--uninstall`, `--` beendet die Optionen; pro Benutzer (`~/.local/bin`, Desktop-Datei `md-reader.desktop`, hicolor-Icons, „Öffnen mit“-MIME-Typen), Einstellungen bleiben beim Entfernen; Ersetzen-Angebot bei neuerer Datei
+- [x] **.deb-Pakete** (Build 47): `md-reader_1.0.<build>_amd64|arm64|armhf.deb` (reine GUI, `Depends` WebKitGTK/GTK/libc6, `Recommends` zenity/poppler-utils/ghostscript)
+- [x] **Container-Build der Linux-GUI** (Build 47): Ubuntu 22.04 (amd64/arm64/armhf), glibc-Wächter; läuft auf Ubuntu 22.04+, Mint 21+, Debian 12+, Raspberry Pi OS Bookworm, KDE neon (glibc ≥ 2.34)
+- [x] **GUI-Identität `md-reader`** (Build 47): Programmname, WM-Klasse und Prozessname, damit das Menü-Icon auch in Taskleiste und unter Wayland erscheint
+- [x] **Härtung** (Build 47): Kontextmenü gesperrt, native Navigations-Erlaubnisliste unter Linux, Markdown-Link-Erlaubnisliste (externe Bilder zeigen den Alternativtext), private Temp-Ansichtsdatei, UNC-/protokollrelative Links abgelehnt
+
 ## Geplant 📋
+
+- [ ] **Auto-Update mit Signatur** (geplant für Build 48, Nutzerwunsch 2026-10-25): beim Start wird nach einer neuen Version gesucht und geladen, beim Beenden ausgeführt; Umsetzung wie in ssh-easy (`src/updater*.go`, `src/releasesig`, `cmd/release-sign`; Ed25519, `SHA256SUMS` + `.sig`, Kopfzeile an das Release-Tag gebunden, privater Schlüssel nur im LXC)
+- [ ] Nativer Navigationsschutz für Windows (WebView2) und macOS (WKWebView) – dort wirkt nur die JS-Schicht (RISK-013)
 
 - [ ] Mehrere Dateien nacheinander öffnen (Tab-Leiste)
 - [ ] Druckfunktion

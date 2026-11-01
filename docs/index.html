@@ -721,7 +721,7 @@
 					<div class="dl-icon">🐧</div>
 					<div>
 						<h3>Linux x86_64</h3>
-						<div class="arch">Ubuntu 24.04+ · Linux Mint 22+ · glibc ≥ 2.39</div>
+						<div class="arch">Ubuntu 22.04+ · Linux Mint 21+ · Debian 12+ · KDE neon · glibc ≥ 2.34</div>
 					</div>
 				</div>
 				<div class="dl-files">
@@ -729,8 +729,12 @@
 						<span class="name">md-reader</span>
 						<span class="arrow">↓</span>
 					</a>
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest">
+						<span class="name">md-reader_1.0.&lt;build&gt;_amd64.deb</span>
+						<span class="arrow">↓</span>
+					</a>
 				</div>
-				<p class="dl-note">Requires: <code>libwebkit2gtk-4.1-0</code>, <code>libgtk-3-0</code></p>
+				<p class="dl-note">Single file (starts itself, offers to install WebKitGTK and to add itself to the menu) or <code>.deb</code>: <code>sudo apt install ./md-reader_1.0.&lt;build&gt;_<em>arch</em>.deb</code>. Needs <code>libwebkit2gtk-4.1-0</code> and <code>libgtk-3-0</code> (the .deb installs them).</p>
 			</div>
 
 			<!-- Linux ARM64 -->
@@ -739,7 +743,7 @@
 					<div class="dl-icon">🐧</div>
 					<div>
 						<h3>Linux ARM64</h3>
-						<div class="arch">Raspberry Pi 4/5 · ARM64 boards (Linux only, not macOS)</div>
+						<div class="arch">Raspberry Pi 3/4/5 with 64-bit OS · ARM64 boards (Linux only, not macOS)</div>
 					</div>
 				</div>
 				<div class="dl-files">
@@ -747,8 +751,12 @@
 						<span class="name">md-reader-linux-arm64</span>
 						<span class="arrow">↓</span>
 					</a>
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest">
+						<span class="name">md-reader_1.0.&lt;build&gt;_arm64.deb</span>
+						<span class="arrow">↓</span>
+					</a>
 				</div>
-				<p class="dl-note">Requires: <code>libwebkit2gtk-4.1-0</code>, <code>libgtk-3-0</code></p>
+				<p class="dl-note">Single file (starts itself, offers to install WebKitGTK and to add itself to the menu) or <code>.deb</code>: <code>sudo apt install ./md-reader_1.0.&lt;build&gt;_<em>arch</em>.deb</code>. Needs <code>libwebkit2gtk-4.1-0</code> and <code>libgtk-3-0</code> (the .deb installs them).</p>
 			</div>
 
 			<!-- Linux ARMhf -->
@@ -757,7 +765,7 @@
 					<div class="dl-icon">🐧</div>
 					<div>
 						<h3>Linux ARMhf (32-bit)</h3>
-						<div class="arch">Raspberry Pi 3 · older ARM boards</div>
+						<div class="arch">Raspberry Pi 2 or newer (Bookworm, ARMv7) · older boards are not supported</div>
 					</div>
 				</div>
 				<div class="dl-files">
@@ -765,8 +773,12 @@
 						<span class="name">md-reader-linux-armhf</span>
 						<span class="arrow">↓</span>
 					</a>
+					<a class="dl-file" href="https://github.com/WaschbaerImHaus/text-reader/releases/latest">
+						<span class="name">md-reader_1.0.&lt;build&gt;_armhf.deb</span>
+						<span class="arrow">↓</span>
+					</a>
 				</div>
-				<p class="dl-note">Requires: <code>libwebkit2gtk-4.1-0</code>, <code>libgtk-3-0</code></p>
+				<p class="dl-note">Single file (starts itself, offers to install WebKitGTK and to add itself to the menu) or <code>.deb</code>: <code>sudo apt install ./md-reader_1.0.&lt;build&gt;_<em>arch</em>.deb</code>. Needs <code>libwebkit2gtk-4.1-0</code> and <code>libgtk-3-0</code> (the .deb installs them).</p>
 			</div>
 
 		</div>
@@ -808,15 +820,19 @@
 		</div>
 
 		<div id="tab-linux" class="tab-content">
-			<pre><span class="comment"># Install runtime dependencies</span>
-<span class="cmd">sudo apt</span> install libwebkit2gtk-4.1-0 libgtk-3-0
-
-<span class="comment"># Download and make executable</span>
+			<pre><span class="comment"># Option 1: single file - download, make executable, run</span>
 <span class="cmd">wget</span> https://github.com/WaschbaerImHaus/text-reader/releases/latest/download/md-reader
 <span class="cmd">chmod</span> +x md-reader
+./md-reader <span class="path">/path/to/file.md</span>
+<span class="comment"># Missing WebKitGTK? A notification offers to install it.</span>
+<span class="comment"># Add to the application menu (per user, no root):</span>
+./md-reader --install      <span class="comment"># remove again: --uninstall</span>
 
-<span class="comment"># Run with a file</span>
-./md-reader <span class="path">/path/to/file.md</span></pre>
+<span class="comment"># Option 2: .deb package (system-wide, pulls in WebKitGTK and GTK)</span>
+<span class="cmd">sudo apt</span> install ./md-reader_1.0.&lt;build&gt;_amd64.deb
+
+<span class="comment"># Install WebKitGTK by hand</span>
+<span class="cmd">sudo apt</span> install libwebkit2gtk-4.1-0</pre>
 		</div>
 
 		<div id="tab-build" class="tab-content">
@@ -868,6 +884,28 @@
 
 			<div class="changelog-entry">
 				<div class="cl-meta">
+					<div class="cl-build">Build 47</div>
+					<div class="cl-date">2026-11-01</div>
+				</div>
+				<div class="cl-body">
+					<h3>Linux launcher, menu install, .deb packages</h3>
+					<div class="cl-tags">
+						<span class="tag tag-feature">feature</span>
+						<span class="tag tag-security">security</span>
+						<span class="tag tag-infra">infra</span>
+					</div>
+					<ul>
+						<li>Linux files are a static launcher with the GUI built in; missing WebKitGTK is detected and a notification offers to install it</li>
+						<li>Self-install into the application menu (<code>--install</code> / <code>--uninstall</code>), per user, no root</li>
+						<li>Three <code>.deb</code> packages (amd64, arm64, armhf)</li>
+						<li>Built on Ubuntu 22.04 in containers: runs on Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Raspberry Pi OS Bookworm, KDE neon (glibc ≥ 2.34)</li>
+						<li>Security: context menu disabled, navigation allow-list (Linux), link allow-list, private temp view file</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="changelog-entry">
+				<div class="cl-meta">
 					<div class="cl-build">Build 27</div>
 					<div class="cl-date">2026-03-15</div>
 				</div>
@@ -880,7 +918,7 @@
 						<li><strong>docker/Dockerfile</strong> — Ubuntu 24.04, Go 1.26, WebKitGTK 4.1, MinGW, ARM cross-compilers, NSIS</li>
 						<li><strong>docker/build.sh</strong> — automated build script with image caching</li>
 						<li>New Makefile targets: <code>docker-build</code>, <code>docker-build-release</code>, <code>docker-rebuild</code></li>
-						<li>Ensures glibc ≥ 2.39 compatibility (Ubuntu 24.04+, Linux Mint 22+, Debian 12+)</li>
+						<li>Ensured glibc ≥ 2.39 compatibility at the time (superseded in Build 47: Ubuntu 22.04 containers, glibc ≥ 2.34)</li>
 					</ul>
 				</div>
 			</div>
