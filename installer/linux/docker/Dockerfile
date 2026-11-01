@@ -11,7 +11,8 @@
 # (Quelle: https://go.dev/dl/?mode=json). Bei einem Go-Update beide ARGs ändern.
 # Das Basisimage ist per Digest festgelegt (reproduzierbar). Aktualisieren:
 #   docker pull ubuntu:22.04 && docker image inspect ubuntu:22.04 --format '{{index .RepoDigests 0}}'
-# den Digest in FROM eintragen, dann 'make rebuild-images'.
+# Die Reihenfolge der RepoDigests ist nicht garantiert: den Eintrag wählen, der mit
+# "ubuntu@sha256:…" beginnt. Den Digest in FROM eintragen, dann 'make rebuild-images'.
 #
 # Autor: Kurt Ingwer
 # Letzte Änderung: 2026-11-01

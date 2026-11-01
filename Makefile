@@ -61,7 +61,8 @@ IMAGE_LABEL    := md-reader.dockerfile-sha256
 
 # Prüft Docker und das Image der Architektur ($(1)): Docker vorhanden und erreichbar,
 # Image vorhanden und mit dem aktuellen Dockerfile gebaut (Label-Vergleich)
-CHECK_IMAGE = command -v docker > /dev/null 2>&1 || { \
+CHECK_IMAGE = [ -n "$(DOCKERFILE_SHA)" ] || { echo "FEHLER: Dockerfile-Hash leer" >&2; exit 1; }; \
+	command -v docker > /dev/null 2>&1 || { \
 		echo "FEHLER: docker nicht gefunden – Linux-GUI wird im Container gebaut (sudo apt-get install docker.io)." >&2; exit 1; }; \
 	docker info > /dev/null 2>&1 || { \
 		echo "FEHLER: Docker-Daemon nicht erreichbar (läuft er? Benutzer in Gruppe docker?)." >&2; exit 1; }; \
@@ -237,13 +238,15 @@ $(BUILD_DIR)/$(PROJECT)-linux-armhf: $(GUI_DIR)/$(PROJECT)-arm FORCE
 
 ## build-images: Baut die drei Docker-Build-Images (idempotent, Schichten-Cache)
 build-images:
+	@[ -n "$(DOCKERFILE_SHA)" ] || { echo "FEHLER: Dockerfile-Hash leer" >&2; exit 1; }
 	@for a in amd64 arm64 armhf; do \
 		echo "→ Image $(IMAGE_PREFIX)-$$a..."; \
 		docker build $(DOCKER_BUILD_OPTS) --label $(IMAGE_LABEL)=$(DOCKERFILE_SHA) \
 			--build-arg TARGET_ARCH=$$a -t $(IMAGE_PREFIX)-$$a $(DOCKER_DIR) || exit 1; \
 	done
 
-## rebuild-images: Wie build-images, aber ohne Cache und mit frischer Basis (Sicherheitsupdates)
+## rebuild-images: Wie build-images, aber ohne Schichten-Cache (holt den Paketstand aus jammy-updates neu).
+##   --pull wirkt bei einem per Digest festgelegten FROM nicht; die Basis ändert sich nur mit neuem Digest.
 rebuild-images:
 	@$(MAKE) --no-print-directory build-images DOCKER_BUILD_OPTS="--pull --no-cache"
 
