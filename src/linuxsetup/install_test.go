@@ -48,6 +48,19 @@ func writeSource(t *testing.T, content string) string {
 	return p
 }
 
+// openSource öffnet eine Quelldatei für Install (wie /proc/self/exe im
+// Betrieb) und schließt sie am Testende. Fehlt die Datei, kommt nil zurück –
+// Install muss das als Fehler melden.
+func openSource(t *testing.T, p string) *os.File {
+	t.Helper()
+	f, err := os.Open(p)
+	if err != nil {
+		return nil
+	}
+	t.Cleanup(func() { f.Close() })
+	return f
+}
+
 // stubRunQuiet ersetzt runQuiet und protokolliert die Aufrufe ("name arg arg").
 func stubRunQuiet(t *testing.T) *[]string {
 	t.Helper()
@@ -132,7 +145,7 @@ func TestInstall_CreatesAll(t *testing.T) {
 	l := newTestLayout(t)
 	src := writeSource(t, "BINARY-47")
 
-	if err := Install(l, src, 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, src), 47, testIcons()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 
@@ -190,10 +203,10 @@ func TestInstall_CreatesAll(t *testing.T) {
 func TestInstall_ReplacesOlder(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
-	if err := Install(l, writeSource(t, "OLD"), 46, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "OLD")), 46, testIcons()); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(l, writeSource(t, "NEW"), 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "NEW")), 47, testIcons()); err != nil {
 		t.Fatal(err)
 	}
 	if b, ok := InstalledBuild(l); !ok || b != 47 {
@@ -222,7 +235,7 @@ func TestInstall_StaleTmpAndSymlink(t *testing.T) {
 	if err := os.Symlink(victim, l.BinPath+".tmp"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(l, writeSource(t, "BIN"), 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	if got, _ := os.ReadFile(victim); string(got) != "KEEP" {
@@ -250,7 +263,7 @@ func TestInstall_ReadOnlyTarget(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(binDir, 0o755) })
 
-	if err := Install(l, writeSource(t, "BIN"), 47, testIcons()); err == nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err == nil {
 		t.Fatal("Fehler erwartet")
 	}
 	if _, err := os.Stat(l.DesktopPath); !os.IsNotExist(err) {
@@ -265,7 +278,7 @@ func TestInstall_ReadOnlyTarget(t *testing.T) {
 func TestInstall_MissingSource(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
-	if err := Install(l, filepath.Join(t.TempDir(), "gibt-es-nicht"), 47, testIcons()); err == nil {
+	if err := Install(l, openSource(t, filepath.Join(t.TempDir(), "gibt-es-nicht")), 47, testIcons()); err == nil {
 		t.Fatal("Fehler erwartet")
 	}
 	if _, err := os.Stat(l.DesktopPath); !os.IsNotExist(err) {
@@ -282,7 +295,7 @@ func TestInstall_UnknownIconKey(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
 	icons := Icons{"../../evil": []byte("x")}
-	if err := Install(l, writeSource(t, "BIN"), 47, icons); err == nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, icons); err == nil {
 		t.Fatal("Fehler erwartet")
 	}
 	if _, err := os.Stat(l.BinPath); !os.IsNotExist(err) {
@@ -295,10 +308,10 @@ func TestInstall_UnknownIconKey(t *testing.T) {
 func TestInstall_SelfIsTarget(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
-	if err := Install(l, writeSource(t, "BIN"), 46, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 46, testIcons()); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(l, l.BinPath, 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, l.BinPath), 47, testIcons()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	if got, _ := os.ReadFile(l.BinPath); string(got) != "BIN" {
@@ -310,7 +323,7 @@ func TestInstall_SelfIsTarget(t *testing.T) {
 func TestUninstall_RemovesOnlyOwnFiles(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
-	if err := Install(l, writeSource(t, "BIN"), 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err != nil {
 		t.Fatal(err)
 	}
 	other := filepath.Join(filepath.Dir(l.BinPath), "other")
@@ -347,7 +360,7 @@ func TestUninstall_RemovesOnlyOwnFiles(t *testing.T) {
 func TestUninstall_KeepsUserData(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
-	if err := Install(l, writeSource(t, "BIN"), 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err != nil {
 		t.Fatal(err)
 	}
 	if err := SavePrefs(l.PrefsPath, Prefs{InstallPrompt: "never"}); err != nil {
@@ -365,7 +378,7 @@ func TestUninstall_KeepsUserData(t *testing.T) {
 func TestInstalledBuild_NeedsBinary(t *testing.T) {
 	stubRunQuiet(t)
 	l := newTestLayout(t)
-	if err := Install(l, writeSource(t, "BIN"), 47, testIcons()); err != nil {
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(l.BinPath); err != nil {
@@ -404,5 +417,98 @@ func TestPackageInstalled(t *testing.T) {
 	}
 	if !PackageInstalled(l) {
 		t.Error("mit Datei muss true herauskommen")
+	}
+}
+
+// TestInstall_RejectsControlCharsInBinPath prüft (H1, Build 47): Ein Pfad mit
+// Zeilenumbruch oder anderen Steuerzeichen würde weitere Schlüssel in die
+// Desktop-Datei einschleusen (z. B. eine zweite Exec=-Zeile). Install lehnt
+// ihn ab, bevor irgendeine Datei geschrieben wird.
+func TestInstall_RejectsControlCharsInBinPath(t *testing.T) {
+	stubRunQuiet(t)
+	for _, name := range []string{"a\nExec=evil", "a\rb", "a\tb", "a\x7fb", "a\x00b", "a\x1bb"} {
+		root := t.TempDir()
+		l, err := NewLayout(envFrom(map[string]string{"HOME": filepath.Join(root, name)}))
+		if err != nil {
+			t.Fatalf("NewLayout: %v", err)
+		}
+		if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err == nil {
+			t.Errorf("HOME %q: Fehler erwartet", name)
+		}
+		// Nichts darf angelegt worden sein (auch keine Verzeichnisse)
+		entries, _ := os.ReadDir(root)
+		if len(entries) != 0 {
+			t.Errorf("HOME %q: es wurde trotzdem etwas angelegt: %v", name, entries)
+		}
+	}
+}
+
+// TestValidatePath prüft die Erlaubnis für Pfade in der Desktop-Datei:
+// normale Pfade (auch mit Leerzeichen, Umlauten, Sonderzeichen) ja,
+// Steuerzeichen und ungültiges UTF-8 nein.
+func TestValidatePath(t *testing.T) {
+	for _, ok := range []string{"/home/a b/.local/bin/md-reader", "/home/jörg/$x/%f/\"q\"/md-reader"} {
+		if err := ValidatePath(ok); err != nil {
+			t.Errorf("ValidatePath(%q) = %v, erwartet nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"/a\nb", "/a\rb", "/a\tb", "/a\x7f", "/a\x00", "/a\x85b", "/a\xffb", ""} {
+		if err := ValidatePath(bad); err == nil {
+			t.Errorf("ValidatePath(%q) = nil, Fehler erwartet", bad)
+		}
+	}
+}
+
+// TestInstall_DesktopAndIconsReplaceSymlinks prüft (H2, Build 47): Liegen an
+// der Stelle der Desktop-Datei oder eines Icons Symlinks (auch als .tmp-
+// Altlast), folgt Install ihnen nicht, sondern ersetzt sie durch reguläre
+// Dateien. Die Symlink-Ziele bleiben unverändert.
+func TestInstall_DesktopAndIconsReplaceSymlinks(t *testing.T) {
+	stubRunQuiet(t)
+	l := newTestLayout(t)
+	victimDir := t.TempDir()
+	icon48 := l.iconPath("48x48")
+	links := map[string]string{
+		l.DesktopPath:          filepath.Join(victimDir, "desktop-ziel"),
+		l.DesktopPath + ".tmp": filepath.Join(victimDir, "desktop-tmp-ziel"),
+		icon48:                 filepath.Join(victimDir, "icon-ziel"),
+		icon48 + ".tmp":        filepath.Join(victimDir, "icon-tmp-ziel"),
+	}
+	for link, target := range links {
+		if err := os.WriteFile(target, []byte("UNVERÄNDERT"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Install(l, openSource(t, writeSource(t, "BIN")), 47, testIcons()); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	for link, target := range links {
+		if got, _ := os.ReadFile(target); string(got) != "UNVERÄNDERT" {
+			t.Errorf("Symlink-Ziel von %s wurde beschrieben: %q", link, got)
+		}
+	}
+	for _, p := range []string{l.DesktopPath, icon48} {
+		info, err := os.Lstat(p)
+		if err != nil || !info.Mode().IsRegular() {
+			t.Errorf("%s ist keine reguläre Datei: %v %v", p, info, err)
+			continue
+		}
+		if info.Mode().Perm() != 0o644 {
+			t.Errorf("%s hat Modus %v, erwartet 0644", p, info.Mode().Perm())
+		}
+	}
+	for _, p := range []string{l.DesktopPath + ".tmp", icon48 + ".tmp"} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("%s darf nach Install nicht mehr existieren: %v", p, err)
+		}
+	}
+	if b, ok := InstalledBuild(l); !ok || b != 47 {
+		t.Errorf("InstalledBuild = (%d, %v)", b, ok)
 	}
 }

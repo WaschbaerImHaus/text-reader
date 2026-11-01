@@ -139,6 +139,11 @@ func TestParseCommand(t *testing.T) {
 		{"offer-install", []string{"--offer-install"}, "offer-install", false, nil},
 		{"offer-install detach", []string{"--offer-install", "--detach"}, "offer-install", false, []string{"--detach"}},
 		{"offer-install nicht vorn", []string{"a.md", "--offer-install"}, "", false, []string{"a.md", "--offer-install"}},
+		// H5: "--" beendet die Starter-Optionen; der Rest geht ohne "--" an die GUI.
+		{"ende der optionen", []string{"--", "--uninstall"}, "", false, []string{"--uninstall"}},
+		{"ende der optionen install", []string{"--", "--install", "--force"}, "", false, []string{"--install", "--force"}},
+		{"nur ende der optionen", []string{"--"}, "", false, nil},
+		{"zweites -- bleibt", []string{"--", "--", "a.md"}, "", false, []string{"--", "a.md"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -281,11 +286,17 @@ type fakeAsker struct {
 	answers []string
 	asks    []string
 	informs []string
+	// onAsk läuft (falls gesetzt) während jeder Frage – simuliert, was in
+	// den bis zu 120 s der Frage im Dateisystem passiert (F3).
+	onAsk func()
 }
 
 // Ask liefert die nächste vorgegebene Antwort ("" wenn aufgebraucht).
 func (a *fakeAsker) Ask(title, body string, buttons []linuxsetup.Button, timeout time.Duration) (string, error) {
 	a.asks = append(a.asks, title)
+	if a.onAsk != nil {
+		a.onAsk()
+	}
 	if len(a.answers) == 0 {
 		return "", nil
 	}
@@ -391,6 +402,10 @@ func newRig(t *testing.T) *testRig {
 		getenv: func(k string) string { return env[k] },
 		lookPath: func(name string) (string, error) {
 			if r.tools[name] {
+				// Wie exec.LookPath: absolute Namen direkt (H3)
+				if strings.HasPrefix(name, "/") {
+					return name, nil
+				}
 				return "/usr/bin/" + name, nil
 			}
 			return "", exec.ErrNotFound
@@ -405,6 +420,7 @@ func newRig(t *testing.T) *testRig {
 			return lay, err
 		},
 		executable: func() (string, error) { return r.exe, nil },
+		openSelf:   func() (*os.File, error) { return os.Open(r.exe) },
 		runCommand: func(argv []string) (int, error) {
 			r.runs = append(r.runs, argv)
 			if r.runCode != 0 {
@@ -731,7 +747,7 @@ func TestRun_MissingLibs_NoApt(t *testing.T) {
 // zweites Ladeprotokoll ist leer → GUI startet mit den Argumenten.
 func TestRun_MissingLibs_InstalledThenStart(t *testing.T) {
 	r := newRig(t)
-	r.tools["apt-get"], r.tools["pkexec"] = true, true
+	r.tools["apt-get"], r.tools["/usr/bin/apt-get"], r.tools["/usr/bin/pkexec"] = true, true, true
 	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}, nil}
 	r.asker.answers = []string{"install"}
 	if code := r.l.run([]string{"doc.md"}); code != 0 {
@@ -749,7 +765,7 @@ func TestRun_MissingLibs_InstalledThenStart(t *testing.T) {
 // etwas → Exit 1, höchstens ein zweites Ladeprotokoll, keine Endlosschleife.
 func TestRun_MissingLibs_StillMissing(t *testing.T) {
 	r := newRig(t)
-	r.tools["apt-get"], r.tools["pkexec"] = true, true
+	r.tools["apt-get"], r.tools["/usr/bin/apt-get"], r.tools["/usr/bin/pkexec"] = true, true, true
 	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}, {"libjavascriptcoregtk-4.1.so.0"}, {"x"}}
 	r.asker.answers = []string{"install", "install", "install"}
 	if code := r.l.run(nil); code != 1 {
@@ -767,7 +783,7 @@ func TestRun_MissingLibs_StillMissing(t *testing.T) {
 // lässt sich nicht starten → klare Meldung, Exit 1.
 func TestRun_MissingLibs_SecondTraceStartFails(t *testing.T) {
 	r := newRig(t)
-	r.tools["apt-get"], r.tools["pkexec"] = true, true
+	r.tools["apt-get"], r.tools["/usr/bin/apt-get"], r.tools["/usr/bin/pkexec"] = true, true, true
 	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
 	r.mem.traceErrs = []error{nil, &execStartError{err: permErr}}
 	r.asker.answers = []string{"install"}
@@ -948,6 +964,85 @@ func TestRun_OfferInstallCmd_Yes(t *testing.T) {
 	}
 	if !fileExists(filepath.Join(lay.IconBase, "48x48", "apps", "md-reader.png")) {
 		t.Error("Icon fehlt")
+	}
+}
+
+// TestRun_DoubleDashEndsOptions prüft (H5, Build 47): "md-reader -- --uninstall"
+// entfernt nichts, sondern startet die Oberfläche mit dem Argument
+// "--uninstall" (z. B. eine Datei dieses Namens bei "md-reader -- *").
+func TestRun_DoubleDashEndsOptions(t *testing.T) {
+	r := newRig(t)
+	if code := r.l.run([]string{"--install"}); code != 0 {
+		t.Fatalf("Installation: Exit %d", code)
+	}
+	if code := r.l.run([]string{"--", "--uninstall"}); code != 0 {
+		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
+	}
+	if !fileExists(r.layout(t).BinPath) {
+		t.Error("Nutzerinstallation wurde entfernt")
+	}
+	if r.mem.execCalls != 1 || !sameStrings(r.mem.execRest, []string{"--uninstall"}) {
+		t.Errorf("exec %d mit %q, erwartet 1 mit [--uninstall]", r.mem.execCalls, r.mem.execRest)
+	}
+}
+
+// TestRun_PrintDesktopEntryRejectsControlChars prüft (H1): Ein Pfad mit
+// Zeilenumbruch ergibt keine Desktop-Datei (sonst eingeschleuste Schlüssel),
+// sondern Exit 2 und nichts auf stdout.
+func TestRun_PrintDesktopEntryRejectsControlChars(t *testing.T) {
+	r := newRig(t)
+	if code := r.l.run([]string{"--print-desktop-entry", "/usr/bin/md\nExec=evil"}); code != 2 {
+		t.Errorf("Exit %d, erwartet 2", code)
+	}
+	if r.stdout.Len() != 0 {
+		t.Errorf("stdout nicht leer: %q", r.stdout.String())
+	}
+}
+
+// TestOfferInstall_CopiesRunningBinaryNotPath prüft (F3, TOCTOU): Der
+// Angebotsprozess kopiert die LAUFENDE Datei (/proc/self/exe, beim Start des
+// Angebots geöffnet), nicht die Datei, die nach der bis zu 120 s langen Frage
+// unter dem Pfad aus os.Executable liegt. Ersetzt jemand die Starter-Datei
+// während der Frage, darf die fremde Datei nicht installiert werden.
+func TestOfferInstall_CopiesRunningBinaryNotPath(t *testing.T) {
+	r := newRig(t)
+	r.asker.answers = []string{"yes"}
+	// Die laufende Datei ("alt") – wie /proc/self/exe: ein Verweis auf den
+	// Inhalt beim Start, unabhängig vom späteren Pfadinhalt.
+	if err := os.WriteFile(r.exe, []byte("alt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.l.openSelf = func() (*os.File, error) { return os.Open(r.exe) }
+	// Während der Frage wird die Datei unter dem Pfad ersetzt (neue Datei,
+	// Rename darüber – wie ein Angreifer in einem fremd beschreibbaren Ordner).
+	r.asker.onAsk = func() {
+		repl := r.exe + ".neu"
+		if err := os.WriteFile(repl, []byte("neu"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(repl, r.exe); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code := r.l.run([]string{"--offer-install"}); code != 0 {
+		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
+	}
+	data, err := os.ReadFile(r.layout(t).BinPath)
+	if err != nil || string(data) != "alt" {
+		t.Errorf("installiert wurde %q (%v), erwartet die laufende Datei \"alt\"", data, err)
+	}
+}
+
+// TestRun_InstallOpenSelfFails prüft: Lässt sich die laufende Datei nicht
+// öffnen, installiert --install nichts und meldet Exit 1.
+func TestRun_InstallOpenSelfFails(t *testing.T) {
+	r := newRig(t)
+	r.l.openSelf = func() (*os.File, error) { return nil, errors.New("kein /proc") }
+	if code := r.l.run([]string{"--install"}); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	if fileExists(r.layout(t).BinPath) {
+		t.Error("Programm trotz Fehler installiert")
 	}
 }
 

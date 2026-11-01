@@ -106,8 +106,10 @@ func TestAptCommandsAreFixed(t *testing.T) {
 	if WebKitPackage != "libwebkit2gtk-4.1-0" {
 		t.Fatalf("WebKitPackage = %q", WebKitPackage)
 	}
-	wantInstall := []string{"pkexec", "apt-get", "install", "-y", "libwebkit2gtk-4.1-0"}
-	wantUpdate := []string{"pkexec", "apt-get", "update"}
+	// H3: absolute Pfade, keine Suche über PATH (ein ~/.local/bin/apt-get
+	// liefe sonst nach der Passworteingabe als root)
+	wantInstall := []string{"/usr/bin/pkexec", "/usr/bin/apt-get", "install", "-y", "libwebkit2gtk-4.1-0"}
+	wantUpdate := []string{"/usr/bin/pkexec", "/usr/bin/apt-get", "update"}
 
 	first := AptInstallCommand()
 	if !reflect.DeepEqual(first, wantInstall) {

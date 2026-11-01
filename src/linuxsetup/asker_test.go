@@ -29,6 +29,11 @@ func fakeLookPath(programs ...string) func(string) (string, error) {
 	return func(name string) (string, error) {
 		for _, p := range programs {
 			if p == name {
+				// Wie exec.LookPath: ein Name mit "/" wird direkt geprüft,
+				// ohne PATH (H3: absolute Pfade für pkexec/apt-get).
+				if strings.Contains(name, "/") {
+					return name, nil
+				}
 				return "/usr/bin/" + name, nil
 			}
 		}

@@ -179,6 +179,26 @@ initTextMode();
 })();
 
 /**
+ * Unterdrückt das Kontextmenü im gesamten App-Fenster (Fund F1, Build 47;
+ * Nutzerentscheidung 2026-11-01).
+ *
+ * WebKitGTKs Standardmenü bietet „Verweis öffnen“: Das navigiert das
+ * App-Fenster selbst zur fremden Seite – am Klick-Handler vorbei – und die
+ * fremde Seite bekäme die Go-Bindings. Die App bietet nur dieses
+ * System-Menü an, es wird nicht gebraucht – deshalb immer unterdrücken.
+ * Kopieren per Strg+C / ⌘C bleibt unberührt (Tastatur, kein Menü).
+ * Zweite Schicht neben dem nativen Navigationsschutz (Go:
+ * ui.AllowNavigation). Verdrahtet in initUIListeners (keine Inline-Handler
+ * wegen CSP).
+ *
+ * @param {MouseEvent} e contextmenu-Ereignis.
+ * @lastModified 2026-11-01
+ */
+function suppressContextMenu(e) {
+  e.preventDefault();
+}
+
+/**
  * Öffnet einen externen Link über das Go-Binding im System-Browser.
  *
  * @param {string} url Absolute URL (a.href, vom Browser normalisiert).
@@ -1021,9 +1041,10 @@ function initKaTeX(container) {
  *
  * Früher standen die Handler als onclick="…" im HTML. Die strikte CSP
  * (RISK-006/007, kein 'unsafe-inline') blockiert solche Inline-Handler –
- * daher werden sie hier zentral gesetzt.
+ * daher werden sie hier zentral gesetzt. Dazu gehört auch das Unterdrücken
+ * des Kontextmenüs (F1).
  *
- * @lastModified 2026-10-14
+ * @lastModified 2026-11-01
  */
 (function initUIListeners() {
   // Element-ID → Klick-Funktion
@@ -1054,6 +1075,9 @@ function initKaTeX(container) {
     searchInput.addEventListener('input', function() { onSearchInput(searchInput.value); });
     searchInput.addEventListener('keydown', function(e) { onSearchKeydown(e); });
   }
+  // Kontextmenü im ganzen Fenster unterdrücken (F1: „Verweis öffnen“ würde
+  // das App-Fenster wegnavigieren). Capture-Phase: greift vor allen anderen.
+  document.addEventListener('contextmenu', suppressContextMenu, true);
 })();
 
 /**

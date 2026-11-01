@@ -5,9 +5,9 @@ go 1.26.0
 require (
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
-	github.com/yuin/goldmark v1.7.8
+	github.com/yuin/goldmark v1.8.7
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 )
 
 require (

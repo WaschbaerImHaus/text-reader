@@ -5,7 +5,7 @@
 // lokale Bilder, persistente Einstellungen, letzte Datei öffnen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-28 (Programm-Identität, Abbruch ohne Display)
+// Letzte Änderung: 2026-11-01 (nativer Navigationsschutz vor dem ersten SetHtml, F1)
 package main
 
 import (
@@ -90,6 +90,11 @@ func main() {
 
 	// App-Icon setzen (Titelleiste, Taskleiste, Alt+Tab)
 	setAppIcon(w)
+
+	// Nativer Navigationsschutz (F1): Das Fenster darf nur die eigene Seite
+	// und die eigene Temp-Ansichtsdatei laden – muss vor dem ersten SetHtml
+	// stehen. Linux: WebKitGTK decide-policy; Windows/macOS: No-Op (RISK-013).
+	setupNavigationGuard(w)
 
 	// Nativen GTK-Drag&Drop-Handler einrichten (Linux: WebKitGTK liefert
 	// im JS-Drop-Event keine Dateipfade – GTK-Signal direkt abfangen)

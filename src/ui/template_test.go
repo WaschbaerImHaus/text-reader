@@ -481,3 +481,31 @@ func TestScripts_CommandKeyWorksOnMac(t *testing.T) {
 		}
 	}
 }
+
+// TestScripts_ContextMenuSuppressed prüft (F1, Build 47, Nutzerentscheidung
+// 2026-11-01), dass das Kontextmenü im App-Fenster vollständig unterdrückt
+// wird: WebKitGTKs „Verweis öffnen“ navigierte sonst das App-Fenster zur
+// fremden Seite – am Klick-Handler vorbei, und die fremde Seite bekäme die
+// Go-Bindings. Die App bietet nur das System-Kontextmenü, es wird nicht
+// gebraucht. Listener auf document in der Capture-Phase, ohne Bedingung,
+// verdrahtet in initUIListeners (keine Inline-Handler, CSP).
+func TestScripts_ContextMenuSuppressed(t *testing.T) {
+	fn := regexp.MustCompile(`(?s)function suppressContextMenu\(e\)\s*\{(.*?)\n\}`).FindStringSubmatch(htmlJavaScript)
+	if fn == nil {
+		t.Fatal("function suppressContextMenu(e) fehlt in scripts.js")
+	}
+	body := strings.TrimSpace(fn[1])
+	if body != "e.preventDefault();" {
+		t.Errorf("suppressContextMenu muss bedingungslos nur preventDefault aufrufen, Rumpf: %q", body)
+	}
+	if strings.Contains(htmlJavaScript, "suppressLinkContextMenu") {
+		t.Error("alte, nur auf Links beschränkte Unterdrückung ist noch vorhanden")
+	}
+	listeners := regexp.MustCompile(`(?s)\(function initUIListeners\(\) \{(.*?)\n\}\)\(\);`).FindStringSubmatch(htmlJavaScript)
+	if listeners == nil {
+		t.Fatal("initUIListeners nicht gefunden")
+	}
+	if !strings.Contains(listeners[1], "document.addEventListener('contextmenu', suppressContextMenu, true)") {
+		t.Error("contextmenu-Listener auf document (Capture-Phase) ist nicht in initUIListeners verdrahtet")
+	}
+}

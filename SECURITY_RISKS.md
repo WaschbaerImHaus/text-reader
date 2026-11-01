@@ -2,6 +2,13 @@
 
 ## Offen ⚠️
 
+### RISK-013: Kontextmenü-/Navigationsschutz unter Windows und macOS nur per JavaScript (OFFEN, Restrisiko – Build 47)
+**Beschreibung**: Audit-Fund F1 (Build 47): WebKitGTKs Kontextmenü „Verweis öffnen“ navigierte das App-Fenster zu einer fremden Seite, die dort die Go-Bindings erhielt (unter Linux nachgewiesen). Unter Linux ist das jetzt doppelt geschlossen (nativer `decide-policy`-Handler mit Erlaubnisliste + kein Kontextmenü, siehe SECURITY_FIXED.md). Unter **Windows (WebView2) und macOS (WKWebView)** gibt es keinen nativen Navigationsschutz: webview_go bietet keinen Zugang zu `NavigationStarting`/`NewWindowRequested` bzw. `decidePolicyForNavigationAction` ohne umfangreichen COM-/Objective-C-Unterbau, den hier niemand auf echter Hardware testen kann. Dort schützt nur die JS-Schicht: das Kontextmenü ist im ganzen Fenster unterdrückt (`suppressContextMenu`, Capture-Phase auf `document`), Links-Klicks und Mittelklicks werden abgefangen (RISK-008).
+
+**Restgefahr**: Fällt die JS-Schicht aus (Skript lädt nicht, ein künftiger Weg an den Handlern vorbei), könnte das Fenster unter Windows/macOS wieder wegnavigieren. Unter Windows wäre dann z. B. `loadNativeFile("\\\\server\\x.md")` → `os.Stat` → SMB/NTLM-Leck denkbar. Laut Standard bietet WebView2 im Kontextmenü nur „In neuem Fenster öffnen“ (Popup ohne Bindings); **auf Windows/macOS nicht getestet.**
+
+**Warum nicht automatisch behebbar**: Eigener WebView2-COM-Ereignishandler (C, mingw) bzw. eigene WKNavigationDelegate-Klasse (Objective-C) wären nötig; ohne Testmöglichkeit unter Windows/macOS besteht die Gefahr, dass die eigene Seite (`NavigateToString`, `loadHTMLString`) selbst blockiert wird und das Fenster leer bleibt. Empfehlung: mit Testgerät nachrüsten (die Erlaubnisliste `ui.AllowNavigation` und `handleNavigationRequest` sind plattformunabhängig und wiederverwendbar).
+
 ### RISK-012: macOS-App nicht notarisiert (OFFEN, akzeptiert – Build 46)
 **Beschreibung**: `md-reader-macos.zip` ist nur ad hoc signiert (`codesign -s -`), nicht mit einer Apple-Developer-ID und nicht notarisiert. Gatekeeper blockiert den ersten Start; Nutzer müssen „Dennoch öffnen“ wählen bzw. das Quarantäne-Attribut entfernen. Damit lässt sich für Nutzer nicht prüfen, ob die ZIP-Datei unverändert vom Projekt stammt (keine Herkunftsgarantie wie bei notarisierten Apps).
 
@@ -9,12 +16,22 @@
 
 **Mitigierung**: Download nur über die GitHub-Releases des Projekts; das ZIP wird auf dem GitHub-Runner aus dem getaggten Quellstand gebaut (nachvollziehbar im Workflow-Log); Anleitung in README.
 
-(Sonst keine offenen Sicherheitsrisiken – Stand Build 46, 2026-10-24)
+(Sonst keine offenen Sicherheitsrisiken – Stand Build 47, 2026-11-01)
 
 ### Hinweis zu RISK-003
 Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzwischen 10 Bindings, u. a. `loadNativeFile(path)`. Seit Build 41 schützen Bereinigung (EPUB/LaTeX) und strikte CSP (Nonce) davor, dass Dokumentinhalte sie aufrufen; seit Build 42 verlässt das App-Fenster die eigene Seite nicht mehr (RISK-008), fremde Websites erhalten die Bindings also nicht.
 
 ## Mitigiert / Behoben
+
+### RISK-014: Gefährliche Link-Schemata in Markdown (BEHOBEN – Build 47)
+**Beschreibung**: Audit-Fund F2 / CVE-2026-5160: goldmark < 1.7.17 erzeugte über Entities `href="javascript:…"`; goldmark filtert auch danach nur per Sperrliste (smb:, ms-settings:, ftp: kamen durch).
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
+### RISK-015: Installation kopierte die Datei unter dem Pfad statt der laufenden Datei (BEHOBEN – Build 47)
+**Beschreibung**: Audit-Fund F3 (TOCTOU): Wurde die Starter-Datei während der bis zu 120 s langen Installationsfrage ersetzt, landete die fremde Datei in `~/.local/bin`.
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
 
 ### RISK-011: Umgehung der Gerätenamen-Sperre bei Bildpfaden (BEHOBEN – Build 44)
 **Beschreibung**: `COM1 .png`, `CONIN$`, `COM¹` u. ä. umgingen die Gerätenamen-Prüfung (DoS durch blockierendes Lesen).

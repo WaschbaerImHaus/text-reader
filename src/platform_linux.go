@@ -11,17 +11,24 @@
 // Widget abfangen, bevor WebKit es verarbeitet. Der C-Callback ruft
 // goFileDropCallback() auf (definiert in platform_linux_drop.go via //export).
 //
+// Navigationsschutz (F1, Build 47): Ein decide-policy-Handler am
+// WebKitWebView lässt nur die eigene Seite und die eigene Temp-Ansichtsdatei
+// zu (ui.AllowNavigation). So kann auch das Kontextmenü („Verweis öffnen“)
+// das App-Fenster nicht zu einer fremden Seite mit Go-Bindings navigieren.
+// Zusätzlich unterdrückt das Signal context-menu das Kontextmenü ganz.
+//
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-28 (setupPlatformIdentity, ensureDisplayAvailable)
+// Letzte Änderung: 2026-11-01 (setupNavigationGuard: decide-policy-Erlaubnisliste und kein Kontextmenü, F1)
 
 //go:build linux
 
 package main
 
 /*
-#cgo pkg-config: gtk+-3.0
+#cgo pkg-config: gtk+-3.0 webkit2gtk-4.0
 
 #include <gtk/gtk.h>
+#include <webkit2/webkit2.h>
 #include <string.h>
 #include <sys/prctl.h>
 
@@ -182,6 +189,94 @@ void setupNativeFileDrop(void *gtkWindow) {
     g_signal_connect(target, "drag-data-received", G_CALLBACK(onDragDataReceived), NULL);
 }
 
+// Vorwärtsdeklaration der Go-Export-Funktion für den Navigationsschutz
+// (implementiert in platform_linux_nav.go). Rückgabe 1 = erlauben.
+extern int goDecideNavigation(const char* uri, int userAction);
+
+// onDecidePolicy entscheidet über jede Navigation des WebKitWebView (F1).
+//
+// - NAVIGATION_ACTION: Go (ui.AllowNavigation) entscheidet; erlaubt sind nur
+//   die eigene Seite (about:blank) und die eigene Temp-Ansichtsdatei.
+//   Abgelehnte http/https/mailto-Ziele öffnet Go bei Nutzeraktion extern
+//   (Geste oder Linkklick), nie im App-Fenster.
+// - NEW_WINDOW_ACTION: immer ablehnen (kein zweites Fenster mit Bindings).
+// - RESPONSE: WebKit-Standard (Antwort einer bereits erlaubten Navigation).
+//
+// @return TRUE = Entscheidung getroffen, FALSE = WebKit-Standard verwenden.
+static gboolean onDecidePolicy(
+    WebKitWebView *webView, WebKitPolicyDecision *decision,
+    WebKitPolicyDecisionType type, gpointer userData
+) {
+    if (type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
+        webkit_policy_decision_ignore(decision);
+        return TRUE;
+    }
+    if (type != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
+        return FALSE;
+    }
+    WebKitNavigationAction *action = webkit_navigation_policy_decision_get_navigation_action(
+        WEBKIT_NAVIGATION_POLICY_DECISION(decision));
+    const char *uri = NULL;
+    int userAction = 0;
+    if (action) {
+        WebKitURIRequest *request = webkit_navigation_action_get_request(action);
+        if (request) uri = webkit_uri_request_get_uri(request);
+        // Nutzeraktion: echte Geste oder Linkklick. „Verweis öffnen“ aus dem
+        // Kontextmenü meldet WebKitGTK als LINK_CLICKED ohne Geste (gemessen).
+        // Skripte könnten Links nicht anklicken: CSP mit Nonce, Bereiniger.
+        userAction = (webkit_navigation_action_is_user_gesture(action) ||
+            webkit_navigation_action_get_navigation_type(action) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED) ? 1 : 0;
+    }
+    // Ohne Adresse: ablehnen (fail closed)
+    if (uri && goDecideNavigation(uri, userAction)) {
+        webkit_policy_decision_use(decision);
+    } else {
+        webkit_policy_decision_ignore(decision);
+    }
+    return TRUE;
+}
+
+// onContextMenu unterdrückt das WebKit-Kontextmenü vollständig (F1,
+// Nutzerentscheidung 2026-11-01): Es enthält „Verweis öffnen“, „In neuem
+// Fenster öffnen“ und „Verweisziel herunterladen“. Wirkt auch, bevor das
+// Seitenskript geladen ist. Tastenkürzel (Strg+C) sind nicht betroffen.
+//
+// @return TRUE = Menü nicht anzeigen.
+static gboolean onContextMenu(
+    WebKitWebView *webView, WebKitContextMenu *menu,
+    GdkEvent *event, WebKitHitTestResult *hit, gpointer userData
+) {
+    return TRUE;
+}
+
+// setupNavigationGuard verbindet onDecidePolicy (Navigations-Erlaubnisliste)
+// und onContextMenu (kein Kontextmenü) mit dem WebKitWebView.
+//
+// Die verwendete webview_go-Version legt das WebKitWebView direkt in das
+// GtkWindow (gtk_container_add, webview.h). Ältere Versionen schoben ein
+// GtkScrolledWindow dazwischen – deshalb wird bis zu zwei Ebenen tief
+// gesucht (gtk_bin_get_child) und das Ziel per WEBKIT_IS_WEB_VIEW geprüft.
+// Wird kein WebKitWebView gefunden, bleibt nur der JS-Schutz – Rückgabe 0,
+// Go protokolliert das.
+//
+// WICHTIG: Muss auf dem GTK-Hauptthread aufgerufen werden!
+//
+// @param gtkWindow GtkWindow-Zeiger (wie von w.Window() zurückgegeben).
+// @return 1 = Handler verbunden, 0 = WebKitWebView nicht gefunden.
+int setupNavigationGuard(void *gtkWindow) {
+    GtkWidget *child = GTK_WIDGET(gtkWindow);
+    int depth;
+    for (depth = 0; depth < 2 && child && GTK_IS_BIN(child) && !WEBKIT_IS_WEB_VIEW(child); depth++) {
+        child = gtk_bin_get_child(GTK_BIN(child));
+    }
+    if (!child || !WEBKIT_IS_WEB_VIEW(child)) {
+        return 0;
+    }
+    g_signal_connect(child, "decide-policy", G_CALLBACK(onDecidePolicy), NULL);
+    g_signal_connect(child, "context-menu", G_CALLBACK(onContextMenu), NULL);
+    return 1;
+}
+
 // toggleWindowFullscreen wechselt den Vollbild-Modus des GTK-Fensters.
 //
 // @param window       GtkWindow-Zeiger.
@@ -269,6 +364,7 @@ import "C"
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -388,6 +484,26 @@ func setupNativeFileDrop(w webview.WebView) {
 	w.Dispatch(func() {
 		C.setupNativeFileDrop(unsafe.Pointer(ptr))
 	})
+}
+
+// setupNavigationGuard aktiviert den nativen Navigationsschutz (F1):
+// Das App-Fenster darf nur die eigene Seite und die eigene Temp-Ansichtsdatei
+// laden (ui.AllowNavigation), neue Fenster werden nie geöffnet.
+//
+// Wird direkt (ohne Dispatch) vor dem ersten SetHtml aufgerufen: main läuft
+// auf dem GTK-Hauptthread (runtime.LockOSThread), und der Schutz muss stehen,
+// bevor irgendein Inhalt geladen wird.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F1)
+//
+// @param w Die WebView-Instanz.
+func setupNavigationGuard(w webview.WebView) {
+	ptr := w.Window()
+	if ptr == nil || C.setupNavigationGuard(unsafe.Pointer(ptr)) == 0 {
+		// Kein WebKitWebView gefunden: Es bleibt der JS-Schutz (scripts.js)
+		log.Printf("Navigationsschutz nicht aktiv: WebKitWebView nicht gefunden")
+	}
 }
 
 // openFilePickerBlocking öffnet den Datei-Dialog und blockiert bis zur Auswahl.

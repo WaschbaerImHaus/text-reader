@@ -92,7 +92,7 @@ func missingEnv(t *testing.T, asker *scriptedAsker, calls *[][]string, results .
 		Asker:    asker,
 		Lang:     LangDE,
 		Run:      scriptedRun(t, calls, results...),
-		LookPath: fakeLookPath("apt-get", "pkexec"),
+		LookPath: fakeLookPath("apt-get", "/usr/bin/pkexec", "/usr/bin/apt-get"),
 		Stderr:   &stderr,
 	}, &stderr
 }
@@ -393,6 +393,32 @@ func TestHandleMissing_NoApt(t *testing.T) {
 	checkStderrHint(t, &stderr, "dnf install webkit2gtk4.1")
 }
 
+// TestHandleMissing_PkexecOnlyInPATH prüft (H3, Build 47): Liegen pkexec
+// und apt-get nur irgendwo im PATH (z. B. ~/.local/bin), aber nicht unter
+// /usr/bin, wird weder gefragt noch etwas mit Root-Rechten gestartet – nur
+// der Hinweis mit dem apt-Befehl erscheint.
+func TestHandleMissing_PkexecOnlyInPATH(t *testing.T) {
+	asker := &scriptedAsker{answers: []string{"install"}}
+	var calls [][]string
+	var stderr bytes.Buffer
+	e := Env{
+		Asker:    asker,
+		Lang:     LangDE,
+		Run:      scriptedRun(t, &calls),
+		LookPath: fakeLookPath("apt-get", "pkexec"),
+		Stderr:   &stderr,
+	}
+	if HandleMissingLibraries(e, testMissing) {
+		t.Fatal("erwartet false ohne /usr/bin/pkexec und /usr/bin/apt-get")
+	}
+	if len(asker.asks) != 0 || len(calls) != 0 {
+		t.Errorf("Fragen %d, Run-Aufrufe %v – erwartet keine", len(asker.asks), calls)
+	}
+	if len(asker.informs) != 1 {
+		t.Errorf("Hinweise = %d, erwartet 1", len(asker.informs))
+	}
+}
+
 // TestHandleMissing_NoPkexec: apt-get vorhanden, aber kein pkexec → keine
 // Frage, kein Run; nur der Hinweis mit dem apt-Befehl (wie ohne apt).
 func TestHandleMissing_NoPkexec(t *testing.T) {
@@ -486,7 +512,7 @@ func TestHandleInstallOffer(t *testing.T) {
 			asker := &scriptedAsker{answers: []string{tc.answer}}
 			e := Env{Asker: asker, Lang: LangDE, Stderr: &bytes.Buffer{}}
 
-			if err := HandleInstallOffer(e, c, self, testIcons()); err != nil {
+			if err := HandleInstallOffer(e, c, openSource(t, self), testIcons()); err != nil {
 				t.Fatalf("HandleInstallOffer: %v", err)
 			}
 			if len(asker.asks) != 1 {
@@ -555,7 +581,7 @@ func TestHandleInstallOffer_Nothing(t *testing.T) {
 			asker := &scriptedAsker{answers: []string{"yes", "replace"}}
 			e := Env{Asker: asker, Lang: LangDE, Stderr: &bytes.Buffer{}}
 
-			if err := HandleInstallOffer(e, c, self, testIcons()); err != nil {
+			if err := HandleInstallOffer(e, c, openSource(t, self), testIcons()); err != nil {
 				t.Fatalf("HandleInstallOffer: %v", err)
 			}
 			if len(asker.asks) != 0 || len(asker.informs) != 0 {
@@ -580,7 +606,7 @@ func installedContext(t *testing.T) (StartContext, string) {
 	t.Helper()
 	c, self := offerContext(t)
 	old := writeSource(t, "altes-programm")
-	if err := Install(c.Layout, old, 46, testIcons()); err != nil {
+	if err := Install(c.Layout, openSource(t, old), 46, testIcons()); err != nil {
 		t.Fatalf("Install (alt): %v", err)
 	}
 	build, installed := InstalledBuild(c.Layout)
@@ -612,7 +638,7 @@ func TestHandleInstallOffer_Update(t *testing.T) {
 			asker := &scriptedAsker{answers: []string{tc.answer}}
 			e := Env{Asker: asker, Lang: LangDE, Stderr: &bytes.Buffer{}}
 
-			if err := HandleInstallOffer(e, c, self, testIcons()); err != nil {
+			if err := HandleInstallOffer(e, c, openSource(t, self), testIcons()); err != nil {
 				t.Fatalf("HandleInstallOffer: %v", err)
 			}
 			if len(asker.asks) != 1 {
@@ -664,7 +690,7 @@ func TestHandleInstallOffer_InstallError(t *testing.T) {
 	asker := &scriptedAsker{answers: []string{"yes"}}
 	e := Env{Asker: asker, Lang: LangDE, Stderr: &bytes.Buffer{}}
 
-	if err := HandleInstallOffer(e, c, missing, testIcons()); err == nil {
+	if err := HandleInstallOffer(e, c, openSource(t, missing), testIcons()); err == nil {
 		t.Fatal("erwartet Fehler bei fehlender Quelldatei")
 	}
 	if len(asker.informs) != 0 {
@@ -691,7 +717,7 @@ func TestHandleInstallOffer_SavePrefsError(t *testing.T) {
 	asker := &scriptedAsker{answers: []string{"never"}}
 	e := Env{Asker: asker, Lang: LangDE, Stderr: &bytes.Buffer{}}
 
-	if err := HandleInstallOffer(e, c, self, testIcons()); err == nil {
+	if err := HandleInstallOffer(e, c, openSource(t, self), testIcons()); err == nil {
 		t.Fatal("erwartet Fehler beim Speichern")
 	}
 }
@@ -704,7 +730,7 @@ func TestHandleInstallOffer_AskError(t *testing.T) {
 	asker := &scriptedAsker{askErr: errors.New("kaputt")}
 	e := Env{Asker: asker, Lang: LangDE, Stderr: &bytes.Buffer{}}
 
-	if err := HandleInstallOffer(e, c, self, testIcons()); err == nil {
+	if err := HandleInstallOffer(e, c, openSource(t, self), testIcons()); err == nil {
 		t.Fatal("erwartet Fehler der Frage")
 	}
 	if _, installed := InstalledBuild(c.Layout); installed {

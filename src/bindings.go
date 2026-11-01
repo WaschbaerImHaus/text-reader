@@ -5,7 +5,7 @@
 // Kein JS-Binding-Roundtrip mehr für Dateiinhalte.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (macOS: große Seiten direkt laden)
+// Letzte Änderung: 2026-11-01 (handleNavigationRequest: Navigationsschutz F1)
 package main
 
 import (
@@ -34,6 +34,38 @@ const trimScrollHistoryKept = 150
 
 // externalOpener öffnet externe Links im Standardprogramm des Systems (RISK-008).
 var externalOpener = extlink.NewOpener()
+
+// handleNavigationRequest entscheidet über eine Navigation des App-Fensters
+// (nativer Navigationsschutz, Fund F1, Build 47).
+//
+// Erlaubt sind nur die eigene Seite und die eigene Temp-Ansichtsdatei
+// (ui.AllowNavigation, Erlaubnisliste). Jede andere Navigation wird
+// abgelehnt. War sie eine Nutzeraktion (z. B. Kontextmenü „Verweis öffnen“),
+// wird das Ziel stattdessen an open übergeben – im Betrieb extlink, das nur
+// http/https/mailto zulässt und alles andere selbst zurückweist. Ohne
+// Nutzeraktion (automatische Weiterleitung) wird nichts gestartet.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F1)
+//
+// @param uri         Ziel der Navigation, wie die WebView es meldet.
+// @param userAction  true bei Nutzeraktion (Geste oder Linkklick).
+// @param tempViewURL file://-URL der eigenen Temp-Ansichtsdatei.
+// @param open        Öffnet eine URL extern (prüft sie selbst).
+// @return true, wenn das App-Fenster die Navigation ausführen darf.
+func handleNavigationRequest(uri string, userAction bool, tempViewURL string, open func(string) error) bool {
+	if ui.AllowNavigation(uri, tempViewURL) {
+		return true
+	}
+	if userAction {
+		if err := open(uri); err != nil {
+			log.Printf("Navigation blockiert, nicht extern geöffnet: %v", err)
+		}
+	} else {
+		log.Printf("Navigation ohne Nutzeraktion blockiert")
+	}
+	return false
+}
 
 // computeHash berechnet einen FNV-64a-Hash der gegebenen Bytes.
 //

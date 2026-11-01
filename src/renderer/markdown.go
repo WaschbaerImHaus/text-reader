@@ -11,19 +11,23 @@
 //   - PostScript (.ps)          → gs-Konvertierung zu PDF, Fallback: <pre>-Block
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-04-15
+// Letzte Änderung: 2026-11-01 (Link-/Bild-Erlaubnisliste per AST-Transformer, F2)
 package renderer
 
 import (
 	"bytes"
+	stdhtml "html"
 	"os"
 	"path/filepath"
 	"strings"
 
-	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"github.com/yuin/goldmark"
+	highlighting "github.com/yuin/goldmark-highlighting/v2"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // Result enthält das Ergebnis des Markdown-Parsings.
@@ -49,6 +53,9 @@ var md = goldmark.New(
 	goldmark.WithParserOptions(
 		// Automatische Anker-IDs für Überschriften
 		parser.WithAutoHeadingID(),
+		// Sicherheit (F2): Link- und Bildziele nach Erlaubnisliste prüfen,
+		// unabhängig von goldmarks eigener Sperrliste (CVE-2026-5160)
+		parser.WithASTTransformers(util.Prioritized(linkAllowListTransformer{}, 100)),
 	),
 	// Sicherheit: Eingebettetes HTML in Markdown wird bewusst nicht zugelassen (RISK-001 behoben)
 	// <script>, <iframe> etc. aus Markdown werden escaped statt gerendert.
@@ -196,4 +203,134 @@ func extractTitle(content, fallback string) string {
 		return strings.TrimSuffix(fallback, ext)
 	}
 	return fallback
+}
+
+// isSafeMarkdownImageURL prüft ein Bildziel aus Markdown (Erlaubnisliste, F2).
+//
+// Erlaubt sind nur Ziele, die ResolveImagePaths später als lokale Datei
+// einbettet, oder bereits eingebettete Bilder:
+//   - relative Pfade und absolute Unix-Pfade (kein Schema, wie isSafeLinkURL),
+//   - Windows-Laufwerkspfade "C:\…" bzw. "C:/…" (sonst als Schema "c" erkannt),
+//   - "data:image/…".
+//
+// Alles andere (javascript:, file:, data:text/html, http(s) …) wird verworfen.
+// Externe Bilder würde die CSP (img-src data:) ohnehin blockieren.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F2)
+//
+// @param value Entschlüsseltes Bildziel.
+// @return true, wenn das Ziel eingebettet werden darf.
+func isSafeMarkdownImageURL(value string) bool {
+	if isDataImageURI(value) {
+		return true
+	}
+	normalized := normalizeURLForCheck(value)
+	colon := strings.Index(normalized, ":")
+	if colon < 0 || strings.ContainsAny(normalized[:colon], "/?#") {
+		return true // kein Schema → relativer oder absoluter lokaler Pfad
+	}
+	// Windows-Laufwerk: genau ein Buchstabe, dann ":" und ein Trenner
+	if colon == 1 && normalized[0] >= 'a' && normalized[0] <= 'z' &&
+		len(normalized) > 2 && (normalized[2] == '\\' || normalized[2] == '/') {
+		return true
+	}
+	return false
+}
+
+// linkAllowListTransformer entfernt Links und Bilder mit nicht erlaubten
+// Zielen aus dem Markdown-Syntaxbaum (Fund F2, Build 47).
+//
+// Hintergrund: goldmark filtert selbst nur per Sperrliste (javascript:,
+// vbscript:, file:, data:) und ließ bis 1.7.16 über Entities wie
+// "javascript&colon;" sogar javascript:-Links durch (CVE-2026-5160).
+// Schemata wie smb: (NTLM-Leck unter Windows) oder ms-settings: kommen auch
+// in neueren Versionen durch. Hier gilt deshalb dieselbe Erlaubnisliste wie
+// in SanitizeHTML: Links nur http/https/mailto/#/relativ (isSafeLinkURL),
+// Bilder nur lokal oder data:image/ (isSafeMarkdownImageURL).
+//
+// Abgelehnte Links und Bilder werden „ausgepackt“: Der Linktext bzw. der
+// Alternativtext bleibt als normaler Text stehen, nur der Verweis entfällt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F2)
+type linkAllowListTransformer struct{}
+
+// Transform prüft alle Link-, Bild- und Autolink-Knoten des Dokuments.
+//
+// Die Knoten werden erst gesammelt und danach umgebaut, weil ein Umbau
+// während ast.Walk die Durchlaufreihenfolge stören würde.
+//
+// @param doc    Wurzel des Syntaxbaums.
+// @param reader Quelltext-Leser (für Autolink-Adressen).
+// @param pc     Parser-Kontext (nicht verwendet).
+func (linkAllowListTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
+	source := reader.Source()
+	var unwrap []ast.Node
+	var autoLinks []*ast.AutoLink
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch node := n.(type) {
+		case *ast.Link:
+			if !isSafeDestination(node.Destination, isSafeLinkURL) {
+				unwrap = append(unwrap, node)
+			}
+		case *ast.Image:
+			if !isSafeDestination(node.Destination, isSafeMarkdownImageURL) {
+				unwrap = append(unwrap, node)
+			}
+		case *ast.AutoLink:
+			// E-Mail-Autolinks rendert goldmark als mailto: – immer erlaubt
+			if node.AutoLinkType != ast.AutoLinkEmail && !isSafeLinkURL(string(node.URL(source))) {
+				autoLinks = append(autoLinks, node)
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	for _, n := range unwrap {
+		unwrapNode(n)
+	}
+	for _, a := range autoLinks {
+		// Adresse als reinen Text stehen lassen (der Renderer escaped ihn)
+		if parent := a.Parent(); parent != nil {
+			parent.ReplaceChild(parent, a, ast.NewString(a.Label(source)))
+		}
+	}
+}
+
+// isSafeDestination prüft ein Ziel roh UND nach dem Entschlüsseln von
+// HTML-Entities – beide Formen müssen die Prüfung bestehen (fail closed).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F2)
+//
+// @param dest  Ziel aus dem Syntaxbaum.
+// @param check Prüffunktion (isSafeLinkURL bzw. isSafeMarkdownImageURL).
+// @return true, wenn das Ziel erlaubt ist.
+func isSafeDestination(dest []byte, check func(string) bool) bool {
+	raw := string(dest)
+	return check(raw) && check(stdhtml.UnescapeString(raw))
+}
+
+// unwrapNode ersetzt einen Knoten durch seine Kinder (Linktext bzw.
+// Alternativtext eines Bildes bleibt erhalten, der Verweis entfällt).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F2)
+//
+// @param n Zu entfernender Link- oder Bildknoten.
+func unwrapNode(n ast.Node) {
+	parent := n.Parent()
+	if parent == nil {
+		return
+	}
+	for child := n.FirstChild(); child != nil; {
+		next := child.NextSibling()
+		// InsertBefore löst das Kind selbst aus dem alten Elternknoten
+		parent.InsertBefore(parent, n, child)
+		child = next
+	}
+	parent.RemoveChild(parent, n)
 }

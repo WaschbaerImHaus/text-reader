@@ -15,13 +15,14 @@
 // AptUpdateCommand; Bibliotheksnamen landen nur in Texten, nie in Befehlen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 5: Ablaufsteuerung)
+// Letzte Änderung: 2026-11-01 (geöffnete laufende Datei F3, pkexec/apt-get nur unter /usr/bin H3)
 package linuxsetup
 
 import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -170,7 +171,9 @@ func HandleMissingLibraries(e Env, missing []string) (retry bool) {
 
 	// Ohne apt oder ohne pkexec (grafische Passwortabfrage) kein automatisches
 	// Nachinstallieren, nur der passende Befehl – eine Frage wäre zwecklos.
-	if pm != PMApt || !hasProgram(e.lookPath(), "pkexec") {
+	// H3: Beide müssen genau unter /usr/bin liegen (keine PATH-Suche); ein
+	// Programm gleichen Namens anderswo im PATH zählt nicht.
+	if pm != PMApt || !hasProgram(e.lookPath(), PkexecPath) || !hasProgram(e.lookPath(), AptGetPath) {
 		e.inform(MsgWebKitHint, hint)
 		return false
 	}
@@ -252,17 +255,17 @@ func writeTerminalHint(e Env, libs, hint string) {
 //
 // @param e Umgebung (Asker, Sprache).
 // @param c Lage beim Start (enthält Layout und aktuelle Build-Nummer).
-// @param selfPath Pfad der laufenden Datei (Quelle der Kopie).
+// @param self Geöffnete laufende Datei (Quelle der Kopie, F3: /proc/self/exe).
 // @param icons Icon-Inhalte für Install.
 // @return Fehler von Install, SavePrefs oder der Frage; der Starter
 // protokolliert ihn und startet die Oberfläche trotzdem.
-func HandleInstallOffer(e Env, c StartContext, selfPath string, icons Icons) error {
+func HandleInstallOffer(e Env, c StartContext, self *os.File, icons Icons) error {
 	switch Decide(c) {
 	case OfferInstall:
 		key, askErr := e.ask(MsgOfferInstall, Buttons(e.Lang, "yes", "never", "later"))
 		switch key {
 		case "yes":
-			return installAndConfirm(e, c, selfPath, icons)
+			return installAndConfirm(e, c, self, icons)
 		case "never":
 			return savePrompt(c, PromptNever)
 		}
@@ -275,7 +278,7 @@ func HandleInstallOffer(e Env, c StartContext, selfPath string, icons Icons) err
 		}
 		key, askErr := e.ask(MsgOfferUpdate, buttons)
 		if key == "replace" {
-			return installAndConfirm(e, c, selfPath, icons)
+			return installAndConfirm(e, c, self, icons)
 		}
 		return askErr
 	}
@@ -283,8 +286,8 @@ func HandleInstallOffer(e Env, c StartContext, selfPath string, icons Icons) err
 }
 
 // installAndConfirm installiert und bestätigt den Erfolg mit MsgInstalled.
-func installAndConfirm(e Env, c StartContext, selfPath string, icons Icons) error {
-	if err := Install(c.Layout, selfPath, c.CurrentBuild, icons); err != nil {
+func installAndConfirm(e Env, c StartContext, self *os.File, icons Icons) error {
+	if err := Install(c.Layout, self, c.CurrentBuild, icons); err != nil {
 		return fmt.Errorf("Installation gescheitert: %w", err)
 	}
 	e.inform(MsgInstalled)

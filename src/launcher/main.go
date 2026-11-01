@@ -19,6 +19,9 @@
 //	--uninstall                         Nutzerinstallation entfernen
 //	--launcher-version                  Build-Nummer ausgeben
 //	--print-desktop-entry <Programmpfad> Desktop-Datei ausgeben (für das .deb)
+//	-- <Argumente>                      Ende der Optionen: alles danach geht
+//	                                    unverändert an die Oberfläche (z. B.
+//	                                    "md-reader -- *" mit einer Datei "--uninstall")
 //
 // Intern (nicht für Nutzer): "--offer-install" stellt die Installationsfrage,
 // "--offer-install --detach" ist die Zwischenstufe, die diesen Prozess
@@ -29,7 +32,7 @@
 // stecken im Typ launcher und werden in Tests durch Fakes ersetzt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess, Fehlermeldungen)
+// Letzte Änderung: 2026-11-01 (Quelle /proc/self/exe F3, Pfadprüfung H1, "--" als Optionsende H5)
 package main
 
 import (
@@ -97,6 +100,8 @@ func main() {
 //   - "--uninstall", "--launcher-version": ohne weitere Argumente.
 //   - "--print-desktop-entry" <Pfad>: rest enthält den Pfad.
 //   - "--offer-install" [--detach]: interner Befehl des Angebotsprozesses.
+//   - "--": Ende der Optionen (H5, 2026-11-01) – kein Befehl; alle folgenden
+//     Argumente gehen ohne dieses "--" an die GUI, auch "--uninstall".
 //
 // Unerwartete übrige Argumente bei Befehlen weist run zurück (Exit 2).
 //
@@ -108,6 +113,9 @@ func parseCommand(args []string) (cmd string, force bool, rest []string) {
 		return cmdNone, false, nil
 	}
 	switch args[0] {
+	case "--":
+		// Ende der Optionen: alles danach ist Dokument-Argument der GUI.
+		return cmdNone, false, copyStrings(args[1:])
 	case "--install":
 		tail := args[1:]
 		if len(tail) > 0 && tail[0] == optionForce {
@@ -162,14 +170,14 @@ func iconsFromFS(fsys fs.FS, dir string) linuxsetup.Icons {
 
 // resolveExePath ermittelt den Pfad der laufenden Datei.
 //
-// Symlinks werden aufgelöst (selfPath ist die echte Datei, Quelle einer
-// Installation). Ist sie dieselbe Datei wie binPath – etwa weil HOME hinter
+// Symlinks werden aufgelöst (selfPath ist die echte Datei; Quelle einer
+// Installation ist seit F3 nicht mehr dieser Pfad, sondern openSelf). Ist sie dieselbe Datei wie binPath – etwa weil HOME hinter
 // einem Symlink liegt –, wird binPath als exePath geliefert, damit Decide den
 // Start aus ~/.local/bin erkennt.
 //
 // @param executable os.Executable oder Test-Fake.
 // @param binPath Layout.BinPath.
-// @return exePath für StartContext, selfPath für Install; Fehler, wenn der
+// @return exePath für StartContext, selfPath (aufgelöster Pfad); Fehler, wenn der
 // Pfad nicht ermittelt werden kann.
 func resolveExePath(executable func() (string, error), binPath string) (exePath, selfPath string, err error) {
 	exe, err := executable()
@@ -408,6 +416,9 @@ type launcher struct {
 	newLayout func() (linuxsetup.Layout, error)
 	// executable liefert den Pfad der laufenden Datei (os.Executable).
 	executable func() (string, error)
+	// openSelf öffnet die laufende Datei selbst (/proc/self/exe) – Quelle
+	// jeder Installation, unabhängig davon, was später unter dem Pfad liegt (F3).
+	openSelf func() (*os.File, error)
 	// runCommand führt pkexec/apt-get aus (runArgv).
 	runCommand func(argv []string) (int, error)
 	// spawnOffer startet den abgetrennten Angebotsprozess (kehrt sofort zurück).
@@ -434,6 +445,7 @@ func newLauncher() *launcher {
 		newAsker:    func() linuxsetup.Asker { return linuxsetup.NewAsker(exec.LookPath) },
 		newLayout:   func() (linuxsetup.Layout, error) { return linuxsetup.NewLayout(os.Getenv) },
 		executable:  os.Executable,
+		openSelf:    openRunningBinary,
 		runCommand:  runArgv,
 		spawnOffer:  spawnOfferProcess,
 		detachOffer: startDetachedOffer,
@@ -442,6 +454,25 @@ func newLauncher() *launcher {
 		icons:       iconFiles,
 		build:       buildNumber,
 	}
+}
+
+// runningBinaryPath ist der Linux-Verweis auf die laufende Programmdatei.
+// Er zeigt auf den Inhalt, mit dem der Prozess gestartet wurde – auch wenn
+// die Datei unter ihrem Pfad inzwischen ersetzt oder gelöscht wurde.
+const runningBinaryPath = "/proc/self/exe"
+
+// openRunningBinary öffnet die laufende Programmdatei als Quelle einer
+// Installation (F3, TOCTOU): Der Angebotsprozess fragt bis zu 120 s; der
+// Pfad aus os.Executable könnte danach auf eine fremde Datei zeigen.
+// Der Angebotsprozess wurde selbst über /proc/self/exe des Starters
+// gestartet, ist also dieselbe Datei.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F3)
+//
+// @return Geöffnete laufende Datei oder Fehler (z. B. ohne /proc).
+func openRunningBinary() (*os.File, error) {
+	return os.Open(runningBinaryPath)
 }
 
 // lang liefert die Sprache aus LC_ALL, LC_MESSAGES bzw. LANG.
@@ -521,8 +552,10 @@ func (l *launcher) run(args []string) int {
 }
 
 // printDesktopEntry gibt die Desktop-Datei für den genannten Programmpfad aus.
+// Pfade mit Steuerzeichen (z. B. Zeilenumbruch → eingeschleuste Schlüssel)
+// werden wie ein fehlender Pfad abgelehnt (H1, 2026-11-01).
 func (l *launcher) printDesktopEntry(rest []string) int {
-	if len(rest) != 1 || strings.TrimSpace(rest[0]) == "" {
+	if len(rest) != 1 || strings.TrimSpace(rest[0]) == "" || linuxsetup.ValidatePath(rest[0]) != nil {
 		_, _ = fmt.Fprintln(l.stderr, l.text(lmUsageDesktop))
 		return 2
 	}
@@ -569,12 +602,14 @@ func (l *launcher) install(force bool) int {
 		_, _ = fmt.Fprintln(l.stderr, l.text(lmNoPayload))
 		return 1
 	}
-	_, selfPath, err := resolveExePath(l.executable, layout.BinPath)
+	// Quelle ist immer die laufende Datei selbst (F3), nicht ihr Pfad.
+	self, err := l.openSelf()
 	if err != nil {
 		l.say(l.stderr, lmInstallFailed, err.Error())
 		return 1
 	}
-	if err := linuxsetup.Install(layout, selfPath, buildInt(l.build), l.icons); err != nil {
+	defer self.Close()
+	if err := linuxsetup.Install(layout, self, buildInt(l.build), l.icons); err != nil {
 		l.say(l.stderr, lmInstallFailed, err.Error())
 		return 1
 	}
@@ -651,15 +686,18 @@ func (l *launcher) checkLibraries(fd int, asker linuxsetup.Asker) (int, bool) {
 // über /proc/self/exe des Starters gestartet, sein os.Executable ist also
 // wieder die Starter-Datei.
 //
-// @return Lage, selfPath (Quelle einer Installation) und Fehler.
-func (l *launcher) startContext() (linuxsetup.StartContext, string, error) {
+// Die Quelle einer Installation liefert nicht mehr der Pfad, sondern
+// openSelf (/proc/self/exe, F3).
+//
+// @return Lage und Fehler.
+func (l *launcher) startContext() (linuxsetup.StartContext, error) {
 	layout, err := l.newLayout()
 	if err != nil {
-		return linuxsetup.StartContext{}, "", err
+		return linuxsetup.StartContext{}, err
 	}
-	exePath, selfPath, err := resolveExePath(l.executable, layout.BinPath)
+	exePath, _, err := resolveExePath(l.executable, layout.BinPath)
 	if err != nil {
-		return linuxsetup.StartContext{}, "", err
+		return linuxsetup.StartContext{}, err
 	}
 	ctx := linuxsetup.StartContext{
 		ExePath:      exePath,
@@ -669,13 +707,13 @@ func (l *launcher) startContext() (linuxsetup.StartContext, string, error) {
 		Prefs:        linuxsetup.LoadPrefs(layout.PrefsPath),
 	}
 	ctx.InstalledBuild, ctx.Installed = linuxsetup.InstalledBuild(layout)
-	return ctx, selfPath, nil
+	return ctx, nil
 }
 
 // maybeSpawnOffer startet den Angebotsprozess, wenn Decide etwas anbieten
 // will. Fehler werden nur protokolliert; der Start der GUI geht weiter.
 func (l *launcher) maybeSpawnOffer() {
-	ctx, _, err := l.startContext()
+	ctx, err := l.startContext()
 	if err != nil {
 		l.warn(err)
 		return
@@ -709,13 +747,21 @@ func (l *launcher) offerInstall() int {
 		_, _ = fmt.Fprintln(l.stderr, l.text(lmNoPayload))
 		return 1
 	}
-	ctx, selfPath, err := l.startContext()
+	// Die laufende Datei sofort öffnen – vor der bis zu 120 s langen Frage.
+	// Kopiert wird später genau dieser Inhalt, nicht der Pfad (F3, TOCTOU).
+	self, err := l.openSelf()
+	if err != nil {
+		l.warn(err)
+		return 1
+	}
+	defer self.Close()
+	ctx, err := l.startContext()
 	if err != nil {
 		l.warn(err)
 		return 1
 	}
 	asker := &lazyAsker{factory: l.newAsker}
-	if err := linuxsetup.HandleInstallOffer(l.env(asker), ctx, selfPath, l.icons); err != nil {
+	if err := linuxsetup.HandleInstallOffer(l.env(asker), ctx, self, l.icons); err != nil {
 		l.warn(err)
 		return 1
 	}

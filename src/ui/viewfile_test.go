@@ -112,3 +112,81 @@ func TestCleanupTempViewFile(t *testing.T) {
 		t.Error("CleanupTempViewFile() hat die Datei nicht gelöscht")
 	}
 }
+
+// TestTempViewFileURL prüft, dass TempViewFileURL genau die URL liefert, die
+// WriteTempViewFile zurückgibt (beide müssen für den Navigationsschutz
+// übereinstimmen, sonst würde die eigene große Seite blockiert).
+func TestTempViewFileURL(t *testing.T) {
+	defer ui.CleanupTempViewFile()
+	written, err := ui.WriteTempViewFile("<html></html>")
+	if err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	if got := ui.TempViewFileURL(); got != written {
+		t.Errorf("TempViewFileURL() = %q, WriteTempViewFile lieferte %q", got, written)
+	}
+	if !strings.HasPrefix(written, "file:///") {
+		t.Errorf("Temp-URL %q beginnt nicht mit file:///", written)
+	}
+}
+
+// TestAllowNavigation prüft die Erlaubnisliste für Navigationen des
+// App-Fensters (F1, Build 47): Nur die eigene Seite (SetHtml lädt unter
+// WebKitGTK als about:blank, Basis-URI NULL) und genau die eigene
+// Temp-Ansichtsdatei dürfen geladen werden. Alles andere – fremde Websites
+// (sonst Go-Bindings auf fremder Seite), lokale Dateien, javascript:, data: –
+// wird abgelehnt (fail closed).
+func TestAllowNavigation(t *testing.T) {
+	tempURL := "file:///tmp/md-reader-view-4711.html"
+	cases := []struct {
+		uri  string
+		want bool
+	}{
+		// Eigene Seite (SetHtml) und Anker innerhalb dieser Seite
+		{"about:blank", true},
+		{"about:blank#kapitel-2", true},
+		// Eigene Temp-Ansichtsdatei (große Dokumente) samt Anker
+		{tempURL, true},
+		{tempURL + "#abschnitt", true},
+		// Fremde Websites und Mail: nie im App-Fenster
+		{"http://x", false},
+		{"https://example.com/index.html", false},
+		{"http://127.0.0.1:8765/index.html", false},
+		{"mailto:a@b.c", false},
+		// Andere lokale Dateien, auch ähnlich benannte
+		{"file:///etc/passwd", false},
+		{"file:///tmp/md-reader-view-4711.html.evil", false},
+		{"file:///tmp/md-reader-view-4711.html?x=1", false},
+		{"file://server/tmp/md-reader-view-4711.html", false},
+		{"file:///tmp/../tmp/md-reader-view-4711.htm", false},
+		// Skript- und Daten-URLs (SetHtml nutzt unter WebKitGTK kein data:)
+		{"javascript:alert(1)", false},
+		{"data:text/html,<h1>x</h1>", false},
+		{"data:text/html;charset=utf-8;base64,PGgxPng8L2gxPg==", false},
+		// Sonstiges: leer, andere about:-Seiten, Großschreibung, Leerzeichen
+		{"", false},
+		{"about:srcdoc", false},
+		{"about:blankx", false},
+		{"ABOUT:BLANK", false},
+		{" about:blank", false},
+		{"blob:about:blank/1234", false},
+	}
+	for _, c := range cases {
+		if got := ui.AllowNavigation(c.uri, tempURL); got != c.want {
+			t.Errorf("AllowNavigation(%q) = %v, erwartet %v", c.uri, got, c.want)
+		}
+	}
+}
+
+// TestAllowNavigation_NoTempViewURL prüft, dass eine leere Temp-URL nie eine
+// file://-Navigation freigibt (z. B. wenn noch keine Temp-Datei existiert).
+func TestAllowNavigation_NoTempViewURL(t *testing.T) {
+	for _, uri := range []string{"", "file:///", "file:///tmp/x.html"} {
+		if ui.AllowNavigation(uri, "") {
+			t.Errorf("AllowNavigation(%q, \"\") = true, erwartet false", uri)
+		}
+	}
+	if !ui.AllowNavigation("about:blank", "") {
+		t.Error("about:blank muss auch ohne Temp-URL erlaubt sein")
+	}
+}

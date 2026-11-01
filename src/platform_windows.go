@@ -6,7 +6,7 @@
 //   - Icon-Setzung aus go:embed (CreateIconFromResourceEx + SetClassLongPtrW)
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-28 (setupPlatformIdentity, ensureDisplayAvailable als No-Op)
+// Letzte Änderung: 2026-11-01 (setupNavigationGuard als No-Op, RISK-013)
 
 //go:build windows
 
@@ -226,6 +226,18 @@ func setAppIcon(w webview.WebView) {
 //
 // @param w Die WebView-Instanz (nicht verwendet).
 func setupNativeFileDrop(w webview.WebView) {}
+
+// setupNavigationGuard ist hier ein No-Op: webview_go bietet keinen Zugang zu
+// den nativen Navigationsereignissen (WebView2 NavigationStarting/
+// NewWindowRequested bzw. WKNavigationDelegate) ohne umfangreichen COM-/
+// Objective-C-Unterbau. Hier schützt nur der JS-Link- und Kontextmenü-Handler
+// in scripts.js (Restrisiko RISK-013, F1).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F1)
+//
+// @param w Die WebView-Instanz (nicht verwendet).
+func setupNavigationGuard(w webview.WebView) {}
 
 // setupPlatformMenu ist hier ein No-Op: Die App hat kein Menü, nur die Toolbar.
 // Nur macOS braucht eine Menüleiste (Tastenkürzel ⌘C/⌘V/⌘Q, siehe platform_darwin.go).

@@ -6,12 +6,16 @@
 // damit der Starter erkennt, ob eine neuere Datei gestartet wurde.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 2: Desktop-Datei)
+// Letzte Änderung: 2026-11-01 (ValidatePath: keine Steuerzeichen in Pfaden, H1)
 package linuxsetup
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // AppID ist die Desktop-ID (md-reader.desktop), der Icon-Name und die
@@ -25,6 +29,35 @@ const buildKey = "X-MD-Reader-Build"
 const desktopMimeTypes = "text/markdown;text/x-markdown;text/plain;" +
 	"application/epub+zip;application/x-fictionbook+xml;text/x-tex;" +
 	"text/html;application/pdf;application/postscript;"
+
+// ValidatePath prüft einen Pfad, der in die Desktop-Datei oder ins
+// Dateisystem geschrieben wird (Härtung H1, Build 47).
+//
+// Abgelehnt werden leere Pfade, ungültiges UTF-8 und Steuerzeichen (alle
+// Unicode-Steuerzeichen: < 0x20, 0x7f und C1 0x80–0x9f). Ein Zeilenumbruch
+// im Pfad würde sonst weitere Schlüssel in die Desktop-Datei einschleusen
+// (z. B. eine zweite Exec=-Zeile). Leerzeichen, Umlaute und Zeichen wie
+// " $ % \ sind erlaubt – sie maskiert quoteExec.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, H1)
+//
+// @param path Zu prüfender Pfad.
+// @return nil, wenn der Pfad unbedenklich ist; sonst ein Fehler.
+func ValidatePath(path string) error {
+	if path == "" {
+		return errors.New("leerer Pfad")
+	}
+	if !utf8.ValidString(path) {
+		return fmt.Errorf("Pfad %q ist kein gültiges UTF-8", path)
+	}
+	for _, r := range path {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("Pfad %q enthält ein Steuerzeichen", path)
+		}
+	}
+	return nil
+}
 
 // DesktopEntry erzeugt den Inhalt der Desktop-Datei.
 //

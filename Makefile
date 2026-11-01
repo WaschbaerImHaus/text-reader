@@ -57,8 +57,15 @@ PAYLOAD_DIR := $(SRC_DIR)/launcher/payload
 ICON_SRC    := $(SRC_DIR)/ui/assets
 
 # Höchste erlaubte glibc-Version der Linux-Dateien (Ubuntu 24.04 / KDE neon).
-# Überschreibbar (make GLIBC_MAX=2.30), um den Wächter zu testen.
-GLIBC_MAX   ?= 2.39
+# Nur auf der Befehlszeile überschreibbar (make GLIBC_MAX=2.30), um den
+# Wächter zu testen. Eine Umgebungsvariable GLIBC_MAX (auch mit make -e)
+# würde den Wächter still abschwächen und bricht deshalb ab (Härtung H4,
+# 2026-11-01). Die Prüfung muss VOR der Zuweisung stehen: Danach meldet
+# $(origin) "file" statt "environment".
+ifneq ($(filter environment%,$(origin GLIBC_MAX)),)
+$(error GLIBC_MAX darf nicht aus der Umgebung kommen (gefunden: $(GLIBC_MAX)). Zum Testen des Wächters auf der Befehlszeile angeben: make GLIBC_MAX=2.30 ...)
+endif
+GLIBC_MAX   := 2.39
 CHECK_GLIBC := installer/linux/check-glibc.sh
 BUILD_DEB   := installer/linux/build-deb.sh
 

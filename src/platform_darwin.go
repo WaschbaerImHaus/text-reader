@@ -10,7 +10,7 @@
 // im JS-Drop-Event (FileReader-Weg in scripts.js).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-28 (setupPlatformIdentity, ensureDisplayAvailable als No-Op)
+// Letzte Änderung: 2026-11-01 (setupNavigationGuard als No-Op, RISK-013)
 package main
 
 /*
@@ -213,6 +213,18 @@ func openFilePickerBlocking(w webview.WebView) string {
 //
 // @param w Die WebView-Instanz (nicht verwendet).
 func setupNativeFileDrop(w webview.WebView) {}
+
+// setupNavigationGuard ist hier ein No-Op: webview_go bietet keinen Zugang zu
+// den nativen Navigationsereignissen (WebView2 NavigationStarting/
+// NewWindowRequested bzw. WKNavigationDelegate) ohne umfangreichen COM-/
+// Objective-C-Unterbau. Hier schützt nur der JS-Link- und Kontextmenü-Handler
+// in scripts.js (Restrisiko RISK-013, F1).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F1)
+//
+// @param w Die WebView-Instanz (nicht verwendet).
+func setupNavigationGuard(w webview.WebView) {}
 
 // setupPlatformMenu baut die macOS-Menüleiste (App, Bearbeiten, Fenster).
 //

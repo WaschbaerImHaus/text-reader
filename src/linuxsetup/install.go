@@ -7,10 +7,11 @@
 // so zeigt ein Startmenü-Eintrag nie auf ein nicht vorhandenes Programm.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 3: Installieren, Entfernen, Entscheiden)
+// Letzte Änderung: 2026-11-01 (Quelle ist die geöffnete laufende Datei F3, Pfadprüfung H1, atomares Schreiben H2)
 package linuxsetup
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -134,20 +135,38 @@ func validIconKey(key string) bool {
 // zuletzt. Danach werden – falls vorhanden – update-desktop-database und
 // gtk-update-icon-cache aufgerufen; deren Fehler werden ignoriert.
 //
+// Sicherheit (F3, TOCTOU): Quelle ist eine bereits geöffnete Datei – im
+// Betrieb /proc/self/exe, geöffnet beim Start des Angebots. Damit wird immer
+// die laufende Datei kopiert, auch wenn unter ihrem Pfad inzwischen (während
+// der bis zu 120 s langen Frage) eine andere Datei liegt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (self statt selfPath, F3; Pfadprüfung H1)
+//
 // @param l Zielpfade.
-// @param selfPath Pfad der laufenden Datei (Quelle der Kopie).
+// @param self Geöffnete laufende Datei (Quelle der Kopie; wird nicht geschlossen).
 // @param build Build-Nummer für die Desktop-Datei.
 // @param icons Icon-Inhalte; unbekannte Schlüssel ergeben einen Fehler.
 // @return Fehler beim ersten gescheiterten Schritt.
-func Install(l Layout, selfPath string, build int, icons Icons) error {
+func Install(l Layout, self *os.File, build int, icons Icons) error {
 	// Zuerst prüfen, dann schreiben: ein falscher Schlüssel darf nichts hinterlassen.
+	if self == nil {
+		return errors.New("laufende Programmdatei nicht geöffnet")
+	}
+	// H1: keine Steuerzeichen in den Zielpfaden (Zeilenumbruch → eingeschleuste
+	// Schlüssel in der Desktop-Datei); geprüft, bevor etwas angelegt wird.
+	for _, p := range []string{l.BinPath, l.DesktopPath, l.IconBase} {
+		if err := ValidatePath(p); err != nil {
+			return err
+		}
+	}
 	for key := range icons {
 		if !validIconKey(key) {
 			return fmt.Errorf("unbekannter Icon-Schlüssel %q", key)
 		}
 	}
 
-	if err := installBinary(selfPath, l.BinPath); err != nil {
+	if err := installBinary(self, l.BinPath); err != nil {
 		return err
 	}
 	for _, key := range iconKeys {
@@ -169,40 +188,73 @@ func Install(l Layout, selfPath string, build int, icons Icons) error {
 	return nil
 }
 
-// installBinary kopiert src nach dst: erst dst+".tmp" (Modus 0755), dann Umbenennen.
-// Ist src schon dst (Start aus ~/.local/bin), geschieht nichts.
-func installBinary(src, dst string) error {
-	if srcInfo, err := os.Stat(src); err == nil {
-		if dstInfo, err := os.Stat(dst); err == nil && os.SameFile(srcInfo, dstInfo) {
-			return nil
-		}
-	}
-	in, err := os.Open(src)
+// installBinary kopiert die geöffnete Datei src nach dst (Modus 0755, über
+// writeFileAtomic). Ist src schon dst (Start aus ~/.local/bin, gleiche Datei
+// laut fstat), geschieht nichts. Gelesen wird ab Position 0 (ReadAt),
+// unabhängig von der aktuellen Leseposition von src.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (geöffnete Quelle statt Pfad, F3; writeFileAtomic, H2)
+func installBinary(src *os.File, dst string) error {
+	srcInfo, err := src.Stat()
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	if dstInfo, err := os.Stat(dst); err == nil && os.SameFile(srcInfo, dstInfo) {
+		return nil
+	}
+	return writeFileAtomic(dst, io.NewSectionReader(src, 0, srcInfo.Size()), 0o755)
+}
 
+// writeFileMkdir schreibt Desktop-Datei bzw. Icon atomar über writeFileAtomic
+// (Härtung H2: früher os.WriteFile – folgte Symlinks und hinterließ bei einem
+// Abbruch eine halbe Datei).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (atomar, ohne Symlink-Verfolgung, H2)
+func writeFileMkdir(path string, data []byte, mode os.FileMode) error {
+	return writeFileAtomic(path, bytes.NewReader(data), mode)
+}
+
+// writeFileAtomic schreibt den Inhalt von r nach dst, ohne einem Symlink zu
+// folgen und ohne je eine halbe Datei unter dst zu hinterlassen.
+//
+// Ablauf: fehlende Verzeichnisse (0755) anlegen → Altlast dst+".tmp" entfernen
+// (auch ein untergeschobener Symlink wird entfernt, nicht verfolgt) →
+// dst+".tmp" mit O_CREATE|O_EXCL neu anlegen → schreiben, Modus setzen
+// (gleicht die umask aus), schließen → Rename auf dst. Rename ersetzt einen
+// Symlink an der Stelle von dst, statt ihm zu folgen.
+//
+// O_EXCL folgt laut POSIX nie einem Symlink (auch keinem verwaisten) und
+// scheitert, falls zwischen Remove und Open etwas angelegt wurde – das deckt
+// O_NOFOLLOW mit ab. O_NOFOLLOW selbst gibt es im Paket syscall unter Windows
+// nicht; linuxsetup muss aber auch für GOOS=windows übersetzbar bleiben.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, aus installBinary herausgelöst, H2)
+//
+// @param dst  Zieldatei.
+// @param r    Inhalt.
+// @param mode Dateimodus der Zieldatei.
+// @return Fehler beim ersten gescheiterten Schritt (.tmp wird dann entfernt).
+func writeFileAtomic(dst string, r io.Reader, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
 	tmp := dst + ".tmp"
-	// Eine Altlast (auch ein untergeschobener Symlink) wird entfernt, nicht verfolgt.
 	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	// O_EXCL: scheitert, falls zwischen Remove und Open etwas neu angelegt wurde.
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := io.Copy(out, r); err != nil {
 		out.Close()
 		os.Remove(tmp)
 		return err
 	}
-	// Chmod gleicht die umask aus, damit das Programm sicher 0755 hat.
-	if err := out.Chmod(0o755); err != nil {
+	if err := out.Chmod(mode); err != nil {
 		out.Close()
 		os.Remove(tmp)
 		return err
@@ -216,18 +268,6 @@ func installBinary(src, dst string) error {
 		return err
 	}
 	return nil
-}
-
-// writeFileMkdir schreibt eine Datei und legt fehlende Verzeichnisse (0755) an.
-// Der Dateimodus wird auch bei einer bestehenden Datei gesetzt.
-func writeFileMkdir(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, data, mode); err != nil {
-		return err
-	}
-	return os.Chmod(path, mode)
 }
 
 // Uninstall entfernt Programm, Desktop-Datei und alle Icons.

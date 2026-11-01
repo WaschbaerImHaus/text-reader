@@ -10,7 +10,7 @@
 // eine Shell und nie mit Inhalten aus Dokumenten, Dateinamen oder Umgebung.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 1: Ladeprotokoll und Paketmanager)
+// Letzte Änderung: 2026-11-01 (absolute Pfade für pkexec/apt-get, H3)
 package linuxsetup
 
 import (
@@ -107,18 +107,33 @@ func InstallHint(pm PackageManager) string {
 	return "Install WebKitGTK 4.1 with your package manager"
 }
 
+// PkexecPath ist der feste Pfad von pkexec (Härtung H3, Build 47).
+// Keine Suche über PATH: Ein ~/.local/bin/pkexec oder ~/.local/bin/apt-get
+// vor /usr/bin liefe sonst nach der Passworteingabe (bzw. mit dem
+// Vertrauen des Nutzers) statt des echten Programms.
+const PkexecPath = "/usr/bin/pkexec"
+
+// AptGetPath ist der feste Pfad von apt-get (Härtung H3, Build 47).
+const AptGetPath = "/usr/bin/apt-get"
+
 // AptInstallCommand liefert den festen Befehl zum Installieren von WebKitGTK.
 // Jeder Aufruf gibt eine neue Kopie zurück, damit Aufrufer die Liste ändern dürfen.
 //
-// @return Argumentliste für exec.Command: pkexec apt-get install -y libwebkit2gtk-4.1-0.
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (absolute Pfade, H3)
+//
+// @return Argumentliste für exec.Command: /usr/bin/pkexec /usr/bin/apt-get install -y libwebkit2gtk-4.1-0.
 func AptInstallCommand() []string {
-	return []string{"pkexec", "apt-get", "install", "-y", WebKitPackage}
+	return []string{PkexecPath, AptGetPath, "install", "-y", WebKitPackage}
 }
 
 // AptUpdateCommand liefert den festen Befehl zum Aktualisieren der Paketlisten.
 // Jeder Aufruf gibt eine neue Kopie zurück.
 //
-// @return Argumentliste für exec.Command: pkexec apt-get update.
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (absolute Pfade, H3)
+//
+// @return Argumentliste für exec.Command: /usr/bin/pkexec /usr/bin/apt-get update.
 func AptUpdateCommand() []string {
-	return []string{"pkexec", "apt-get", "update"}
+	return []string{PkexecPath, AptGetPath, "update"}
 }

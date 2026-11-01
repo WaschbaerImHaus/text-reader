@@ -8,7 +8,7 @@
 // und WebView2 (Windows) und hat kein Größenlimit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (macOS lädt direkt)
+// Letzte Änderung: 2026-11-01 (TempViewFileURL, AllowNavigation: Navigationsschutz F1)
 package ui
 
 import (
@@ -80,16 +80,94 @@ func WriteTempViewFile(html string) (string, error) {
 	if err := os.WriteFile(p, []byte(html), 0600); err != nil {
 		return "", fmt.Errorf("Temp-Ansichtsdatei konnte nicht geschrieben werden: %w", err)
 	}
+	return TempViewFileURL(), nil
+}
 
+// TempViewFileURL gibt die file://-URL der Temp-Ansichtsdatei zurück, ohne
+// die Datei zu schreiben. Der Navigationsschutz (AllowNavigation) vergleicht
+// damit, ob das Fenster die eigene große Seite lädt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (aus WriteTempViewFile herausgelöst, F1)
+//
+// @return file://-URL der Temp-Ansichtsdatei.
+func TempViewFileURL() string {
 	// Pfad in eine korrekte file://-URL umwandeln:
 	// Windows-Pfade (C:\...) brauchen einen führenden Slash und Vorwärts-Slashes,
 	// Sonderzeichen (Leerzeichen, Umlaute) werden von url.URL korrekt kodiert.
-	slashPath := filepath.ToSlash(p)
+	slashPath := filepath.ToSlash(TempViewFilePath())
 	if !strings.HasPrefix(slashPath, "/") {
 		slashPath = "/" + slashPath
 	}
 	u := url.URL{Scheme: "file", Path: slashPath}
-	return u.String(), nil
+	return u.String()
+}
+
+// ownPageURI ist die Adresse, unter der die per SetHtml geladene eigene Seite
+// läuft. webview_go ruft unter WebKitGTK webkit_web_view_load_html mit
+// Basis-URI NULL auf – WebKit meldet die Navigation dann als "about:blank"
+// (unter Xvfb gemessen, Build 47). Eine data:-URL entsteht dabei nicht,
+// data: bleibt deshalb verboten.
+const ownPageURI = "about:blank"
+
+// AllowNavigation entscheidet, ob das App-Fenster zu einer Adresse navigieren
+// darf (Erlaubnisliste, fail closed; Fund F1, Build 47).
+//
+// Hintergrund: webview_go stellt die Go-Bindings JEDER Seite im Hauptfenster
+// zur Verfügung. Navigiert das Fenster zu einer fremden Seite (z. B. über den
+// Kontextmenüpunkt „Verweis öffnen“, der am JS-Klick-Handler vorbeigeht),
+// könnte deren Code loadNativeFile, openExternal usw. aufrufen. Erlaubt sind
+// deshalb nur:
+//   - die eigene SetHtml-Seite ("about:blank"), auch mit Anker (#…),
+//   - genau die eigene Temp-Ansichtsdatei (tempViewURL), auch mit Anker.
+//
+// Der Vergleich ist bewusst streng: exakte Schreibweise, keine Query, kein
+// Host, kein abweichender Pfad. Fremde Links (http/https/mailto) öffnet der
+// Aufrufer stattdessen über extlink im Standardprogramm.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F1)
+//
+// @param rawURI      Ziel der Navigation, wie die WebView es meldet.
+// @param tempViewURL file://-URL der eigenen Temp-Ansichtsdatei (leer = keine).
+// @return true, wenn die Navigation im App-Fenster erlaubt ist.
+func AllowNavigation(rawURI, tempViewURL string) bool {
+	// Anker abtrennen: Ein Sprung innerhalb derselben Seite verlässt sie nicht.
+	base, _, _ := strings.Cut(rawURI, "#")
+	if base == ownPageURI {
+		return true
+	}
+	if tempViewURL == "" || base == "" {
+		return false
+	}
+	return sameFileURL(base, tempViewURL)
+}
+
+// sameFileURL prüft, ob zwei file://-URLs exakt dieselbe lokale Datei
+// bezeichnen. Kodierungsunterschiede (z. B. %20 gegen Leerzeichen) werden
+// durch das Entschlüsseln des Pfads ausgeglichen; alles andere muss gleich
+// sein (Schema file, kein Host, keine Query, keine Benutzerangabe).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, F1)
+//
+// @param a Erste URL (ohne Anker).
+// @param b Zweite URL (ohne Anker).
+// @return true bei exakt gleicher lokaler Datei.
+func sameFileURL(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	for _, u := range []*url.URL{ua, ub} {
+		// Nur lokale file://-URLs in Normalform (kein Host, keine Query usw.)
+		if u.Scheme != "file" || u.Host != "" || u.User != nil || u.Opaque != "" ||
+			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Path == "" {
+			return false
+		}
+	}
+	return ua.Path == ub.Path
 }
 
 // CleanupTempViewFile löscht die Temp-Ansichtsdatei (falls vorhanden).
