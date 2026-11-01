@@ -6,7 +6,7 @@
 // bleiben.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14
+// Letzte Änderung: 2026-11-01 (Netzwerkpfad-Links, N2)
 package renderer_test
 
 import (
@@ -257,4 +257,36 @@ func TestSanitizeHTML_SimpleStylesKept(t *testing.T) {
 			t.Errorf("Harmloser Stil %q fehlt: %s", style, got)
 		}
 	}
+}
+
+// TestSanitizeHTML_NetworkPathLinksRemoved prüft Fund N2 (Build 47):
+// Protokoll-relative und UNC-artige Ziele ("//host/x", "\\host\x", "/\host",
+// "\/host", gemischte Schrägstriche, mit Tab/Zeilenumbruch dazwischen) sind
+// keine relativen Links. Auf einer Seite mit Basis file:/// zeigen sie auf
+// file://host/… – unter Windows ein SMB-Zugriff mit NTLM-Anmeldung.
+// Der Bereiniger muss das href-Attribut verwerfen, der Linktext bleibt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N2)
+func TestSanitizeHTML_NetworkPathLinksRemoved(t *testing.T) {
+	cases := []string{
+		`<a href="//evil.example/x">x</a>`,
+		`<a href="/\evil.example/x">x</a>`,
+		`<a href="\/evil.example/x">x</a>`,
+		`<a href="\\evil.example\share\x">x</a>`,
+		`<a href="/\/evil.example/x">x</a>`,
+		`<a href="  //evil.example/x">x</a>`,
+		`<a href="/&#x09;/evil.example/x">x</a>`,
+		`<a href="/&#10;\evil.example/x">x</a>`,
+		`<a href="&#x5c;&#x5c;evil.example\x">x</a>`,
+		`<a href="//evil.example:445/x">x</a>`,
+	}
+	for _, c := range cases {
+		got := renderer.SanitizeHTML(c)
+		mustNotContain(t, got, "href", "evil")
+		mustContain(t, got, ">x</a>")
+	}
+	// Gegenprobe: echte relative und absolute Pfade bleiben erlaubt
+	got := renderer.SanitizeHTML(`<a href="/kapitel/a.xhtml">a</a><a href="./b.xhtml">b</a><a href="c/d.xhtml#e">c</a>`)
+	mustContain(t, got, `href="/kapitel/a.xhtml"`, `href="./b.xhtml"`, `href="c/d.xhtml#e"`)
 }

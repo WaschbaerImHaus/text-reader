@@ -7,16 +7,25 @@
 // per file://-URL geladen. Das funktioniert identisch auf WebKitGTK (Linux)
 // und WebView2 (Windows) und hat kein Größenlimit.
 //
+// Sicherheit (Fund N1, Build 47): Die Datei ist der einzige file://-Pfad,
+// zu dem das Fenster navigieren darf. Sie liegt deshalb in einem privaten
+// Verzeichnis mit Zufallsnamen (os.MkdirTemp, 0700) und wird selbst mit
+// Zufallsnamen exklusiv angelegt (os.CreateTemp: O_EXCL, 0600). Eine von
+// einem anderen Nutzer vorab abgelegte Datei oder ein Symlink wird so nie
+// benutzt.
+//
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (TempViewFileURL, AllowNavigation: Navigationsschutz F1)
+// Letzte Änderung: 2026-11-01 (privates Verzeichnis, Zufallsname, O_EXCL: N1)
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // MaxInlineHTMLSize ist die maximale HTML-Größe (in Bytes) für direktes
@@ -24,10 +33,155 @@ import (
 // NavigateToString; mit 1,5 MB bleibt ein Sicherheitsabstand.
 const MaxInlineHTMLSize = 1_500_000
 
-// tempViewFilePath merkt sich den Pfad der aktuell verwendeten Temp-Datei,
-// damit wiederholtes Schreiben dieselbe Datei überschreibt (kein Müll im
-// Temp-Verzeichnis) und Cleanup sie zuverlässig löschen kann.
-var tempViewFilePath string
+// tempViewStore verwaltet die Temp-Ansichtsdatei einer Programmsitzung
+// (Fund N1, Build 47).
+//
+// Beim ersten Schreiben entstehen ein privates Verzeichnis mit Zufallsnamen
+// (0700) und darin die Datei mit Zufallsnamen (0600, exklusiv angelegt).
+// Weitere Schreibvorgänge überschreiben genau diese Datei, damit die URL
+// gleich bleibt – aber nur, wenn sie noch dieselbe eigene Datei ist
+// (os.SameFile über das offene Handle). Fehlt sie oder wurde sie ersetzt
+// (z. B. durch einen Symlink), wird eine neue Datei angelegt.
+//
+// Der Mutex schützt die Felder, weil der Navigationsschutz die URL aus
+// einem GTK-Rückruf liest.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+type tempViewStore struct {
+	mu   sync.Mutex
+	dir  string      // privates Verzeichnis (leer = noch keine Datei)
+	path string      // Pfad der aktuellen Temp-Ansichtsdatei
+	info os.FileInfo // Kennung der selbst angelegten Datei (für SameFile)
+}
+
+// tempView ist die Temp-Ansichtsdatei dieses Prozesses.
+var tempView tempViewStore
+
+// errTempViewReplaced meldet, dass die eigene Datei nicht mehr dieselbe ist.
+var errTempViewReplaced = errors.New("Temp-Ansichtsdatei wurde ersetzt")
+
+// write schreibt das HTML in die Temp-Ansichtsdatei und gibt deren Pfad
+// zurück. Ist die bisherige Datei nicht mehr nutzbar, entsteht eine neue.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+//
+// @param html Vollständiges Seiten-HTML.
+// @return Pfad der geschriebenen Datei, oder Fehler.
+func (s *tempViewStore) write(html string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.path != "" {
+		if err := s.overwriteLocked(html); err == nil {
+			return s.path, nil
+		}
+		// Datei (oder Verzeichnis) fehlt oder wurde ersetzt → alles neu anlegen
+		s.discardLocked()
+	}
+	if err := s.createLocked(html); err != nil {
+		return "", err
+	}
+	return s.path, nil
+}
+
+// createLocked legt privates Verzeichnis und Datei neu an und schreibt das
+// HTML hinein. Aufrufer hält den Mutex.
+//
+// os.MkdirTemp erzeugt das Verzeichnis mit Zufallsnamen und Rechten 0700,
+// os.CreateTemp die Datei mit Zufallsnamen per O_CREATE|O_EXCL und 0600 –
+// beide scheitern, statt einem vorhandenen Eintrag oder Symlink zu folgen.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+//
+// @param html Vollständiges Seiten-HTML.
+// @return Fehler beim Anlegen oder Schreiben.
+func (s *tempViewStore) createLocked(html string) error {
+	dir, err := os.MkdirTemp("", "md-reader-view-")
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, "view-*.html")
+	if err != nil {
+		os.RemoveAll(dir)
+		return err
+	}
+	info, err := f.Stat()
+	if err == nil {
+		_, err = f.WriteString(html)
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.RemoveAll(dir)
+		return err
+	}
+	s.dir, s.path, s.info = dir, f.Name(), info
+	return nil
+}
+
+// overwriteLocked überschreibt die vorhandene eigene Datei. Aufrufer hält
+// den Mutex.
+//
+// Die Datei wird ohne O_CREATE und ohne O_TRUNC geöffnet; erst wenn das
+// offene Handle nachweislich dieselbe Datei wie beim Anlegen ist, wird sie
+// gekürzt und beschrieben. Ein zwischenzeitlich eingeschobener Symlink
+// verändert so nie ein fremdes Ziel.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+//
+// @param html Vollständiges Seiten-HTML.
+// @return Fehler, wenn die Datei fehlt, ersetzt wurde oder nicht schreibbar ist.
+func (s *tempViewStore) overwriteLocked(html string) error {
+	if st, err := os.Lstat(s.path); err != nil || !st.Mode().IsRegular() {
+		return errTempViewReplaced
+	}
+	f, err := os.OpenFile(s.path, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	st, err := f.Stat()
+	if err != nil || !os.SameFile(st, s.info) {
+		f.Close()
+		return errTempViewReplaced
+	}
+	err = f.Truncate(0)
+	if err == nil {
+		_, err = f.WriteString(html)
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+// discardLocked löscht das private Verzeichnis samt Inhalt und vergisst
+// die Datei. Aufrufer hält den Mutex. RemoveAll folgt Symlinks nicht, ein
+// eingeschobener Symlink wird nur selbst entfernt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+func (s *tempViewStore) discardLocked() {
+	if s.dir != "" {
+		os.RemoveAll(s.dir)
+	}
+	s.dir, s.path, s.info = "", "", nil
+}
+
+// currentPath gibt den Pfad der aktuellen Datei zurück (leer = keine).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+//
+// @return Absoluter Pfad oder "".
+func (s *tempViewStore) currentPath() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.path
+}
 
 // NeedsFileNavigation entscheidet, ob ein HTML-Dokument zu groß für
 // direktes SetHtml ist und stattdessen als Datei geladen werden muss.
@@ -53,34 +207,38 @@ func NeedsFileNavigationFor(goos, html string) bool {
 	return NeedsFileNavigation(html)
 }
 
-// TempViewFilePath gibt den Pfad der Temp-Ansichtsdatei zurück.
+// TempViewFilePath gibt den Pfad der aktuellen Temp-Ansichtsdatei zurück.
 //
-// Der Dateiname enthält die Prozess-ID, damit mehrere gleichzeitig laufende
-// md-reader-Instanzen sich nicht gegenseitig die Datei überschreiben.
+// Der Pfad ist zufällig (privates Verzeichnis, Zufallsname; N1) und erst
+// nach dem ersten WriteTempViewFile bekannt.
 //
-// @return Absoluter Pfad der Temp-Ansichtsdatei.
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (Zufallspfad statt Prozess-ID, N1)
+//
+// @return Absoluter Pfad, oder "" wenn (noch) keine Datei existiert.
 func TempViewFilePath() string {
-	if tempViewFilePath == "" {
-		tempViewFilePath = filepath.Join(os.TempDir(),
-			fmt.Sprintf("md-reader-view-%d.html", os.Getpid()))
-	}
-	return tempViewFilePath
+	return tempView.currentPath()
 }
 
 // WriteTempViewFile schreibt das HTML in die Temp-Ansichtsdatei und gibt
 // die zugehörige file://-URL zurück.
 //
-// Die Datei wird mit 0600 angelegt (nur der Besitzer darf lesen), da sie
-// den kompletten Dokumentinhalt enthält.
+// Die Datei liegt in einem privaten Verzeichnis (0700), ist selbst 0600
+// (nur der Besitzer darf lesen, sie enthält den kompletten Dokumentinhalt)
+// und wird exklusiv angelegt – siehe tempViewStore (N1). Wiederholtes
+// Schreiben in derselben Sitzung behält die URL bei.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (privat und exklusiv, N1)
 //
 // @param html Vollständiges Seiten-HTML.
 // @return file://-URL der geschriebenen Datei, oder Fehler.
 func WriteTempViewFile(html string) (string, error) {
-	p := TempViewFilePath()
-	if err := os.WriteFile(p, []byte(html), 0600); err != nil {
+	p, err := tempView.write(html)
+	if err != nil {
 		return "", fmt.Errorf("Temp-Ansichtsdatei konnte nicht geschrieben werden: %w", err)
 	}
-	return TempViewFileURL(), nil
+	return fileURLFromPath(p), nil
 }
 
 // TempViewFileURL gibt die file://-URL der Temp-Ansichtsdatei zurück, ohne
@@ -88,14 +246,29 @@ func WriteTempViewFile(html string) (string, error) {
 // damit, ob das Fenster die eigene große Seite lädt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (aus WriteTempViewFile herausgelöst, F1)
+// Letzte Änderung: 2026-11-01 (leer, solange keine Datei existiert, N1)
 //
-// @return file://-URL der Temp-Ansichtsdatei.
+// @return file://-URL der Temp-Ansichtsdatei, oder "" (keine Datei, also keine file://-Navigation erlaubt).
 func TempViewFileURL() string {
-	// Pfad in eine korrekte file://-URL umwandeln:
-	// Windows-Pfade (C:\...) brauchen einen führenden Slash und Vorwärts-Slashes,
-	// Sonderzeichen (Leerzeichen, Umlaute) werden von url.URL korrekt kodiert.
-	slashPath := filepath.ToSlash(TempViewFilePath())
+	p := TempViewFilePath()
+	if p == "" {
+		return ""
+	}
+	return fileURLFromPath(p)
+}
+
+// fileURLFromPath wandelt einen absoluten Pfad in eine file://-URL um.
+//
+// Windows-Pfade (C:\...) brauchen einen führenden Slash und Vorwärts-Slashes,
+// Sonderzeichen (Leerzeichen, Umlaute) werden von url.URL korrekt kodiert.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (aus TempViewFileURL herausgelöst, N1)
+//
+// @param p Absoluter Dateipfad.
+// @return file://-URL.
+func fileURLFromPath(p string) string {
+	slashPath := filepath.ToSlash(p)
 	if !strings.HasPrefix(slashPath, "/") {
 		slashPath = "/" + slashPath
 	}
@@ -170,12 +343,16 @@ func sameFileURL(a, b string) bool {
 	return ua.Path == ub.Path
 }
 
-// CleanupTempViewFile löscht die Temp-Ansichtsdatei (falls vorhanden).
+// CleanupTempViewFile löscht die Temp-Ansichtsdatei samt privatem
+// Verzeichnis (falls vorhanden).
 //
 // Wird beim Beenden der App aufgerufen, damit keine Buchinhalte im
-// Temp-Verzeichnis zurückbleiben.
+// Temp-Verzeichnis zurückbleiben. Danach liefert TempViewFileURL "".
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (privates Verzeichnis löschen, N1)
 func CleanupTempViewFile() {
-	if tempViewFilePath != "" {
-		os.Remove(tempViewFilePath)
-	}
+	tempView.mu.Lock()
+	defer tempView.mu.Unlock()
+	tempView.discardLocked()
 }

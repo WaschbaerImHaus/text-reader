@@ -9,7 +9,7 @@
 // keine Zeichenfolge aus der Quelle die Struktur verändern kann.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-14 (style-Filter gegen Ressourcen-Nachladen)
+// Letzte Änderung: 2026-11-01 (Netzwerkpfade in Links abgelehnt, N2)
 package renderer
 
 import (
@@ -264,11 +264,20 @@ func normalizeURLForCheck(value string) string {
 // isSafeLinkURL prüft, ob ein Link-Ziel ungefährlich ist.
 //
 // Erlaubt: Anker (#…), relative Ziele ohne Schema, http, https, mailto.
+// Abgelehnt sind auch protokoll-relative und UNC-artige Ziele ("//host",
+// "\\host", "/\host", "\/host"): Sie sind nicht relativ, sondern
+// zeigen auf einen fremden Rechner (Fund N2, isNetworkPathReference).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (Netzwerkpfade abgelehnt, N2)
 //
 // @param value Entschlüsselter href-Wert.
 // @return true wenn der Link sicher ist.
 func isSafeLinkURL(value string) bool {
 	normalized := normalizeURLForCheck(value)
+	if isNetworkPathReference(normalized) {
+		return false
+	}
 	colon := strings.Index(normalized, ":")
 	if colon < 0 {
 		return true // kein Schema → relativ oder Anker
@@ -278,6 +287,27 @@ func isSafeLinkURL(value string) bool {
 		return true
 	}
 	return allowedLinkSchemes[normalized[:colon]]
+}
+
+// isNetworkPathReference erkennt Ziele, die mit zwei Trennzeichen beginnen
+// – "/" oder "\" in beliebiger Mischung (Fund N2, Build 47).
+//
+// Hintergrund: "//host/x" ist eine protokoll-relative Adresse und übernimmt
+// das Schema der Seite. Läuft die Seite als Temp-Datei (Basis file:///…),
+// wird daraus file://host/x – unter Windows ein SMB-Zugriff, der den
+// NTLM-Hash des Nutzers preisgeben kann. Browser behandeln "\" in solchen
+// Adressen wie "/" (WHATWG URL), also sind "\\host", "/\host" und "\/host"
+// gleichwertig; dazu kommen UNC- und Gerätepfade wie "\\?\C:\…".
+// Ein einzelner führender Trenner ("/kapitel/a.xhtml") bleibt erlaubt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N2)
+//
+// @param normalized Ziel nach normalizeURLForCheck (ohne Steuer-/Leerzeichen).
+// @return true, wenn das Ziel auf einen Netzwerkpfad zeigt.
+func isNetworkPathReference(normalized string) bool {
+	isSeparator := func(c byte) bool { return c == '/' || c == '\\' }
+	return len(normalized) >= 2 && isSeparator(normalized[0]) && isSeparator(normalized[1])
 }
 
 // isDataImageURI prüft, ob ein Wert eine eingebettete Bild-Daten-URI ist.

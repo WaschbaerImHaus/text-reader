@@ -7,7 +7,7 @@
 // isSafeLinkURL nicht exportiert ist.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (neu, F2)
+// Letzte Änderung: 2026-11-01 (Netzwerkpfade, N2)
 package renderer
 
 import (
@@ -98,6 +98,62 @@ func TestIsSafeMarkdownImageURL(t *testing.T) {
 	for in, want := range cases {
 		if got := isSafeMarkdownImageURL(in); got != want {
 			t.Errorf("isSafeMarkdownImageURL(%q) = %v, erwartet %v", in, got, want)
+		}
+	}
+}
+
+// TestParseMarkdown_NetworkPathTargetsRemoved prüft Fund N2 (Build 47) im
+// Markdown-Pfad: Links und Bilder mit protokoll-relativen oder UNC-artigen
+// Zielen ("//host/x", "\\host\x", "/\host", "\/host") werden ausgepackt –
+// kein href/src bleibt übrig, Link- und Alternativtext bleiben lesbar.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N2)
+func TestParseMarkdown_NetworkPathTargetsRemoved(t *testing.T) {
+	// In Markdown ist "\\" ein maskierter Backslash, "\\\\" ergibt also "\\".
+	input := "[a](//evil.example/x) [b](</\\evil.example/x>) [c](\\\\\\\\evil.example\\\\x) " +
+		"[d](\\\\/evil.example/x) [e](/\\\\/evil.example/x) [f][ref]\n\n" +
+		"![i](//server/x.png) ![j](\\\\\\\\server\\\\share\\\\x.png) ![k](/\\\\server/x.png)\n\n" +
+		"[ref]: //evil.example/ref\n"
+	res, err := ParseContent(input, "x.md")
+	if err != nil {
+		t.Fatalf("ParseContent: %v", err)
+	}
+	if strings.Contains(res.HTML, "<a ") || strings.Contains(res.HTML, "<img") {
+		t.Errorf("Netzwerkpfad-Link/-Bild überlebt: %s", res.HTML)
+	}
+	if strings.Contains(res.HTML, "evil") || strings.Contains(res.HTML, "server") {
+		t.Errorf("Netzwerkziel steht noch in der Ausgabe: %s", res.HTML)
+	}
+	for _, text := range []string{"a b c d e f", "i j k"} {
+		if !strings.Contains(res.HTML, text) {
+			t.Errorf("Text %q fehlt in %q", text, res.HTML)
+		}
+	}
+}
+
+// TestIsSafeLinkURL_NetworkPaths prüft die gemeinsame Prüffunktion direkt
+// (N2): Ziele, die mit zwei Schräg- oder Backslashes in beliebiger
+// Mischung beginnen, sind abgelehnt; einfache Pfade bleiben erlaubt.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N2)
+func TestIsSafeLinkURL_NetworkPaths(t *testing.T) {
+	cases := map[string]bool{
+		"//h/x": false, `\\h\x`: false, `/\h`: false, `\/h`: false, `/\/h`: false,
+		" //h": false, "/\t/h": false, "/\n\\h": false, `\\?\C:\x`: false,
+		"/abs/x.md": true, "rel/x.md": true, "./x": true, "#a": true, `\x`: true,
+		"https://h/x": true,
+	}
+	for in, want := range cases {
+		if got := isSafeLinkURL(in); got != want {
+			t.Errorf("isSafeLinkURL(%q) = %v, erwartet %v", in, got, want)
+		}
+		// Bilder: dieselben Netzwerkziele sind verboten
+		if !want {
+			if isSafeMarkdownImageURL(in) {
+				t.Errorf("isSafeMarkdownImageURL(%q) = true, erwartet false", in)
+			}
 		}
 	}
 }

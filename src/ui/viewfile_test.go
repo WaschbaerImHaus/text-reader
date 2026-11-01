@@ -5,11 +5,14 @@
 // file://-URL geladen werden.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (macOS ohne Temp-Datei)
+// Letzte Änderung: 2026-11-01 (privates Temp-Verzeichnis, zufälliger Name, N1)
 package ui_test
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -102,14 +105,225 @@ func TestWriteTempViewFileOverwrite(t *testing.T) {
 	}
 }
 
-// TestCleanupTempViewFile prüft, dass die Temp-Datei gelöscht wird.
+// TestCleanupTempViewFile prüft, dass die Temp-Datei samt privatem
+// Verzeichnis gelöscht wird und danach keine Temp-URL mehr gilt (der
+// Navigationsschutz gibt dann keine file://-Adresse mehr frei, N1).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (Verzeichnis und leere URL geprüft, N1)
 func TestCleanupTempViewFile(t *testing.T) {
 	if _, err := ui.WriteTempViewFile("wegwerfen"); err != nil {
 		t.Fatalf("WriteTempViewFile() Fehler: %v", err)
 	}
+	path := ui.TempViewFilePath()
 	ui.CleanupTempViewFile()
-	if _, err := os.Stat(ui.TempViewFilePath()); !os.IsNotExist(err) {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("CleanupTempViewFile() hat die Datei nicht gelöscht")
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Errorf("CleanupTempViewFile() hat das private Verzeichnis %s nicht gelöscht", filepath.Dir(path))
+	}
+	if got := ui.TempViewFileURL(); got != "" {
+		t.Errorf("TempViewFileURL() nach Cleanup = %q, erwartet leer", got)
+	}
+	if got := ui.TempViewFilePath(); got != "" {
+		t.Errorf("TempViewFilePath() nach Cleanup = %q, erwartet leer", got)
+	}
+}
+
+// useIsolatedTempDir lenkt os.TempDir() für einen Test auf ein eigenes,
+// leeres Verzeichnis um (Linux/macOS: TMPDIR, Windows: TMP/TEMP) und räumt
+// vorher und nachher die Temp-Ansichtsdatei auf.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+//
+// @param t Laufender Test.
+// @return Pfad des umgelenkten Temp-Verzeichnisses.
+func useIsolatedTempDir(t *testing.T) string {
+	t.Helper()
+	ui.CleanupTempViewFile()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
+	t.Cleanup(ui.CleanupTempViewFile)
+	return dir
+}
+
+// requireStrictlyInside bricht den Test ab, wenn path nicht echt unterhalb
+// von dir liegt. Schutz vor Schäden durch fehlerhaften Code: Ohne diese
+// Prüfung würde z. B. ein RemoveAll auf das Elternverzeichnis einer Datei
+// direkt in /tmp das ganze gemeinsame Temp-Verzeichnis leeren.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+//
+// @param t    Laufender Test.
+// @param dir  Isoliertes Temp-Verzeichnis des Tests.
+// @param path Pfad, der gelöscht werden soll.
+func requireStrictlyInside(t *testing.T, dir, path string) {
+	t.Helper()
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(rel) {
+		t.Fatalf("Pfad %s liegt nicht im isolierten Temp-Verzeichnis %s – Löschen verweigert", path, dir)
+	}
+}
+
+// TestWriteTempViewFile_IgnoresPlantedFile prüft Fund N1 (Build 47): Ein
+// anderer lokaler Nutzer kennt den alten, vorhersagbaren Namen
+// md-reader-view-<pid>.html im gemeinsamen Temp-Verzeichnis und legt dort
+// vorab eine Datei oder einen Symlink ab. WriteTempViewFile darf diesen
+// Pfad nie benutzen und keinem Symlink folgen: Weder das Symlink-Ziel noch
+// die vorab angelegte Datei dürfen verändert werden.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+func TestWriteTempViewFile_IgnoresPlantedFile(t *testing.T) {
+	dir := useIsolatedTempDir(t)
+	victim := filepath.Join(dir, "victim.txt")
+	if err := os.WriteFile(victim, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	planted := filepath.Join(dir, fmt.Sprintf("md-reader-view-%d.html", os.Getpid()))
+	usedSymlink := os.Symlink(victim, planted) == nil
+	if !usedSymlink {
+		// z. B. Windows ohne Symlink-Recht: normale fremde Datei ablegen
+		if err := os.WriteFile(planted, []byte("planted"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := ui.WriteTempViewFile("<html>geheim</html>"); err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	if data, _ := os.ReadFile(victim); string(data) != "original" {
+		t.Errorf("Symlink-Ziel wurde überschrieben: %q", data)
+	}
+	if !usedSymlink {
+		if data, _ := os.ReadFile(planted); string(data) != "planted" {
+			t.Errorf("vorab angelegte Datei wurde überschrieben: %q", data)
+		}
+	}
+	if got := ui.TempViewFilePath(); got == planted {
+		t.Errorf("Temp-Ansichtsdatei nutzt den vorhersagbaren Pfad %s", got)
+	}
+}
+
+// TestWriteTempViewFile_PrivateAndUnpredictable prüft Fund N1: Die Datei
+// liegt in einem eigenen Unterverzeichnis des Temp-Verzeichnisses (nur für
+// den Besitzer, 0700), ist selbst 0600, und ihr Pfad ist nicht vorhersagbar
+// (zwei Sitzungen nacheinander ergeben verschiedene Pfade, die Prozess-ID
+// steht nicht im Namen).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+func TestWriteTempViewFile_PrivateAndUnpredictable(t *testing.T) {
+	dir := useIsolatedTempDir(t)
+	if _, err := ui.WriteTempViewFile("eins"); err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	first := ui.TempViewFilePath()
+	parent := filepath.Dir(first)
+	if filepath.Clean(parent) == filepath.Clean(dir) {
+		t.Fatalf("Temp-Ansichtsdatei liegt direkt im gemeinsamen Temp-Verzeichnis: %s", first)
+	}
+	if filepath.Dir(parent) != filepath.Clean(dir) {
+		t.Errorf("privates Verzeichnis %s liegt nicht im Temp-Verzeichnis %s", parent, dir)
+	}
+	if strings.Contains(filepath.Base(first), fmt.Sprint(os.Getpid())) ||
+		strings.Contains(filepath.Base(parent), fmt.Sprint(os.Getpid())) {
+		t.Errorf("Pfad enthält die vorhersagbare Prozess-ID: %s", first)
+	}
+	if runtime.GOOS != "windows" {
+		// Unter Windows schützt die Nutzer-ACL von %TEMP%, Unix-Rechte gibt es dort nicht
+		if st, err := os.Stat(parent); err != nil || st.Mode().Perm() != 0700 {
+			t.Errorf("privates Verzeichnis: Rechte %v (Fehler %v), erwartet 0700", st.Mode().Perm(), err)
+		}
+		if st, err := os.Stat(first); err != nil || st.Mode().Perm() != 0600 {
+			t.Errorf("Temp-Ansichtsdatei: Rechte %v (Fehler %v), erwartet 0600", st.Mode().Perm(), err)
+		}
+	}
+	ui.CleanupTempViewFile()
+	if _, err := ui.WriteTempViewFile("zwei"); err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	if second := ui.TempViewFilePath(); second == first {
+		t.Errorf("zwei Sitzungen ergeben denselben Pfad %s – Name ist vorhersagbar", first)
+	}
+}
+
+// TestWriteTempViewFile_RecreatesMissingFile prüft, dass das Schreiben auch
+// dann klappt, wenn ein Aufräumdienst (z. B. systemd-tmpfiles) die Datei oder
+// das ganze private Verzeichnis gelöscht hat: Dann entsteht eine neue Datei,
+// und TempViewFileURL liefert genau deren URL (Navigationsschutz).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+func TestWriteTempViewFile_RecreatesMissingFile(t *testing.T) {
+	dir := useIsolatedTempDir(t)
+	if _, err := ui.WriteTempViewFile("eins"); err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	// Erst prüfen, dass Datei UND Verzeichnis im isolierten Bereich liegen
+	requireStrictlyInside(t, dir, filepath.Dir(ui.TempViewFilePath()))
+	if err := os.Remove(ui.TempViewFilePath()); err != nil {
+		t.Fatal(err)
+	}
+	fileURL, err := ui.WriteTempViewFile("zwei")
+	if err != nil {
+		t.Fatalf("Schreiben nach gelöschter Datei: %v", err)
+	}
+	if data, _ := os.ReadFile(ui.TempViewFilePath()); string(data) != "zwei" {
+		t.Errorf("Inhalt nach Neuanlage = %q, erwartet \"zwei\"", data)
+	}
+	if fileURL != ui.TempViewFileURL() {
+		t.Errorf("URL %q passt nicht zu TempViewFileURL() %q", fileURL, ui.TempViewFileURL())
+	}
+	requireStrictlyInside(t, dir, filepath.Dir(ui.TempViewFilePath()))
+	if err := os.RemoveAll(filepath.Dir(ui.TempViewFilePath())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ui.WriteTempViewFile("drei"); err != nil {
+		t.Fatalf("Schreiben nach gelöschtem Verzeichnis: %v", err)
+	}
+	if data, _ := os.ReadFile(ui.TempViewFilePath()); string(data) != "drei" {
+		t.Errorf("Inhalt nach neuem Verzeichnis = %q, erwartet \"drei\"", data)
+	}
+}
+
+// TestWriteTempViewFile_DoesNotFollowSwappedSymlink prüft, dass ein späteres
+// Überschreiben keinem Symlink folgt, der die eigene Datei ersetzt hat: Das
+// Ziel bleibt unverändert, es entsteht eine neue eigene Datei.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, N1)
+func TestWriteTempViewFile_DoesNotFollowSwappedSymlink(t *testing.T) {
+	dir := useIsolatedTempDir(t)
+	if _, err := ui.WriteTempViewFile("eins"); err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	path := ui.TempViewFilePath()
+	requireStrictlyInside(t, dir, filepath.Dir(path))
+	victim := filepath.Join(dir, "victim.txt")
+	if err := os.WriteFile(victim, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, path); err != nil {
+		t.Skipf("Symlink nicht möglich: %v", err)
+	}
+	if _, err := ui.WriteTempViewFile("zwei"); err != nil {
+		t.Fatalf("WriteTempViewFile: %v", err)
+	}
+	if data, _ := os.ReadFile(victim); string(data) != "original" {
+		t.Errorf("Symlink-Ziel wurde überschrieben: %q", data)
+	}
+	if data, _ := os.ReadFile(ui.TempViewFilePath()); string(data) != "zwei" {
+		t.Errorf("neue Temp-Ansichtsdatei enthält %q, erwartet \"zwei\"", data)
 	}
 }
 

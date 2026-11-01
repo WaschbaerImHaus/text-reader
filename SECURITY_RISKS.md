@@ -7,6 +7,12 @@
 
 **Restgefahr**: Fällt die JS-Schicht aus (Skript lädt nicht, ein künftiger Weg an den Handlern vorbei), könnte das Fenster unter Windows/macOS wieder wegnavigieren. Unter Windows wäre dann z. B. `loadNativeFile("\\\\server\\x.md")` → `os.Stat` → SMB/NTLM-Leck denkbar. Laut Standard bietet WebView2 im Kontextmenü nur „In neuem Fenster öffnen“ (Popup ohne Bindings); **auf Windows/macOS nicht getestet.**
 
+**macOS**: Das Standard-Kontextmenü von WKWebView enthält für Links – wie WebKitGTK – „Link öffnen“, also eine Navigation **im selben Fenster**. Das ist genau der unter Linux nachgewiesene Angriffsweg (F1). Unter macOS ist `suppressContextMenu` damit die **einzige** Hürde dagegen; einen nativen Navigationsschutz gibt es dort nicht (`setupNavigationGuard` ist ein No-Op).
+
+**Zeitfenster vor dem Skriptstart**: Die JS-Schicht wirkt erst, wenn `initUIListeners` gelaufen ist. Bis dahin ist das Kontextmenü unter Windows und macOS kurz verfügbar – länger bei großen Seiten (unter Windows über die Temp-Datei per `file://` geladen) oder langsamem Laden. Ein Angriff braucht in diesem Moment einen Rechtsklick des Nutzers auf einen präparierten Link; ausgeschlossen ist es nicht.
+
+**Linux** ist davon nicht betroffen: Dort sperren zwei native Schichten unabhängig vom Seitenskript – `decide-policy` mit Erlaubnisliste (vor dem ersten `SetHtml` verbunden) und das GTK-Signal `context-menu`, das das Menü schon vor dem Laden der Skripte unterdrückt.
+
 **Warum nicht automatisch behebbar**: Eigener WebView2-COM-Ereignishandler (C, mingw) bzw. eigene WKNavigationDelegate-Klasse (Objective-C) wären nötig; ohne Testmöglichkeit unter Windows/macOS besteht die Gefahr, dass die eigene Seite (`NavigateToString`, `loadHTMLString`) selbst blockiert wird und das Fenster leer bleibt. Empfehlung: mit Testgerät nachrüsten (die Erlaubnisliste `ui.AllowNavigation` und `handleNavigationRequest` sind plattformunabhängig und wiederverwendbar).
 
 ### RISK-012: macOS-App nicht notarisiert (OFFEN, akzeptiert – Build 46)
@@ -30,6 +36,16 @@ Die Bewertung „nur closeApp und nativeFullscreen“ ist veraltet: Es gibt inzw
 
 ### RISK-015: Installation kopierte die Datei unter dem Pfad statt der laufenden Datei (BEHOBEN – Build 47)
 **Beschreibung**: Audit-Fund F3 (TOCTOU): Wurde die Starter-Datei während der bis zu 120 s langen Installationsfrage ersetzt, landete die fremde Datei in `~/.local/bin`.
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
+### RISK-016: Vorhersagbare Temp-Ansichtsdatei für große Seiten (BEHOBEN – Build 47)
+**Beschreibung**: Audit-Fund N1 (NIEDRIG): `md-reader-view-<pid>.html` im gemeinsamen Temp-Verzeichnis, geschrieben ohne `O_EXCL` – ein anderer lokaler Nutzer hätte die Datei bzw. einen Symlink vorab anlegen, mitlesen und eigenes HTML unterschieben können. Die Datei ist der einzige erlaubte `file:`-Navigationspfad (RISK-013).
+
+**Status**: Behoben – siehe SECURITY_FIXED.md.
+
+### RISK-017: Protokoll-relative und UNC-artige Link-/Bildziele galten als relativ (BEHOBEN – Build 47)
+**Beschreibung**: Audit-Fund N2 (NIEDRIG): `//host/x`, `\\host\x`, `/\host`, `\/host` passierten `isSafeLinkURL` bzw. `isSafeMarkdownImageURL`. Auf einer Seite aus der Temp-Datei (Basis `file:///…`) zeigen sie auf `file://host/…` – unter Windows SMB mit NTLM-Anmeldung.
 
 **Status**: Behoben – siehe SECURITY_FIXED.md.
 

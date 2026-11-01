@@ -11,7 +11,7 @@
 //   - PostScript (.ps)          → gs-Konvertierung zu PDF, Fallback: <pre>-Block
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (Link-/Bild-Erlaubnisliste per AST-Transformer, F2)
+// Letzte Änderung: 2026-11-01 (Netzwerkpfade in Links/Bildern abgelehnt, N2)
 package renderer
 
 import (
@@ -213,11 +213,12 @@ func extractTitle(content, fallback string) string {
 //   - Windows-Laufwerkspfade "C:\…" bzw. "C:/…" (sonst als Schema "c" erkannt),
 //   - "data:image/…".
 //
+// Netzwerkpfade ("//server/…", "\\server\…", N2) sind nie erlaubt.
 // Alles andere (javascript:, file:, data:text/html, http(s) …) wird verworfen.
 // Externe Bilder würde die CSP (img-src data:) ohnehin blockieren.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (neu, F2)
+// Letzte Änderung: 2026-11-01 (Netzwerkpfade abgelehnt, N2)
 //
 // @param value Entschlüsseltes Bildziel.
 // @return true, wenn das Ziel eingebettet werden darf.
@@ -226,6 +227,10 @@ func isSafeMarkdownImageURL(value string) bool {
 		return true
 	}
 	normalized := normalizeURLForCheck(value)
+	// "//server/x.png", "\\server\x.png" usw.: Netzwerkpfad, nie einbetten (N2)
+	if isNetworkPathReference(normalized) {
+		return false
+	}
 	colon := strings.Index(normalized, ":")
 	if colon < 0 || strings.ContainsAny(normalized[:colon], "/?#") {
 		return true // kein Schema → relativer oder absoluter lokaler Pfad
