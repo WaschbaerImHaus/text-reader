@@ -2,7 +2,7 @@
 // und die festen Installationsbefehle.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-24 (Aufgabe 1: Ladeprotokoll und Paketmanager)
+// Letzte Änderung: 2026-11-01 (fehlende Symbolversionen: ParseMissingVersions, DescribeRequiredVersions – Bug-Runde Build 47)
 package linuxsetup
 
 import (
@@ -127,5 +127,55 @@ func TestAptCommandsAreFixed(t *testing.T) {
 	firstUp[1] = "evil"
 	if secondUp := AptUpdateCommand(); !reflect.DeepEqual(secondUp, wantUpdate) {
 		t.Errorf("AptUpdateCommand nach Änderung der Kopie = %v, erwartet %v", secondUp, wantUpdate)
+	}
+}
+
+// TestParseMissingVersions prüft die Erkennung fehlender Symbolversionen im
+// Ladeprotokoll (stderr des Laders): nur Zeilen „version `…' not found“
+// zählen, harmlose Meldungen wie „no version information available“ nicht.
+// Ergebnis sortiert und ohne Duplikate (Bug-Runde Build 47, Fund 2).
+func TestParseMissingVersions(t *testing.T) {
+	loader := "md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.36' not found (required by md-reader)\n" +
+		"md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by md-reader)\n" +
+		"md-reader: /usr/lib/libfoo.so.1: no version information available (required by md-reader)\n" +
+		"md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by /lib/libbar.so)\r\n" +
+		"md-reader: /lib/libstdc++.so.6: version 'GLIBCXX_3.4.30' not found (required by md-reader)\n"
+	got := ParseMissingVersions(loader)
+	want := []string{"GLIBCXX_3.4.30", "GLIBC_2.36", "GLIBC_2.38"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ParseMissingVersions = %v, erwartet %v", got, want)
+	}
+	for _, harmless := range []string{
+		"",
+		"md-reader: /usr/lib/libfoo.so.1: no version information available (required by md-reader)\n",
+		"\tlibwebkit2gtk-4.1.so.0 => not found\n",
+		"ERROR: ld.so: object 'x.so' from LD_PRELOAD cannot be preloaded: ignored.\n",
+	} {
+		if got := ParseMissingVersions(harmless); len(got) != 0 {
+			t.Errorf("ParseMissingVersions(%q) = %v, erwartet leer", harmless, got)
+		}
+	}
+}
+
+// TestDescribeRequiredVersions prüft den Text für die Meldung „System zu
+// alt“: GLIBC_x.y wird zur höchsten Version „glibc x.y“ (numerisch
+// verglichen, 2.38 > 2.9), andere Versionen werden unverändert genannt.
+func TestDescribeRequiredVersions(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"GLIBC_2.36", "GLIBC_2.38"}, "glibc 2.38"},
+		{[]string{"GLIBC_2.38", "GLIBC_2.9"}, "glibc 2.38"},
+		{[]string{"GLIBC_2.35.1", "GLIBC_2.35"}, "glibc 2.35.1"},
+		{[]string{"GLIBCXX_3.4.30", "GLIBC_2.38"}, "glibc 2.38, GLIBCXX_3.4.30"},
+		{[]string{"MDR_2"}, "MDR_2"},
+		{[]string{"GLIBC_PRIVATE"}, "GLIBC_PRIVATE"},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := DescribeRequiredVersions(c.in); got != c.want {
+			t.Errorf("DescribeRequiredVersions(%v) = %q, erwartet %q", c.in, got, c.want)
+		}
 	}
 }

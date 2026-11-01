@@ -41,7 +41,7 @@
 //     (siehe spawnOfferProcess).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess, Lader-stderr)
+// Letzte Änderung: 2026-11-01 (Auswertung in evaluateTrace, Marke MD_READER_OFFER – Bug-Runde Build 47)
 package main
 
 import (
@@ -54,12 +54,9 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 	"unsafe"
-
-	"md-reader/linuxsetup"
 )
 
 // Flags von memfd_create (linux/memfd.h).
@@ -72,10 +69,6 @@ const (
 
 // memfdName ist der Name des memfd (sichtbar als "/memfd:md-reader").
 const memfdName = "md-reader"
-
-// guiArgv0 ist argv[0] der Oberfläche (GTK leitet daraus WM_CLASS ab,
-// passend zu StartupWMClass=md-reader).
-const guiArgv0 = "md-reader"
 
 // traceTimeout begrenzt das Ladeprotokoll (der Lader beendet sich sofort;
 // das Zeitlimit schützt nur vor einem hängenden Programm).
@@ -158,7 +151,8 @@ func dupCloexec(fd int) (int, error) {
 // @param fd memfd aus createMemFile.
 // @return Fehlende Bibliotheken (leer, wenn alles da ist). *execStartError,
 // wenn das Programm gar nicht startet (z. B. memfd nicht ausführbar);
-// anderer Fehler bei Exit-Code ungleich 0 ohne fehlende Bibliothek.
+// *systemTooOldError bei fehlenden Symbolversionen; anderer Fehler bei
+// Exit-Code ungleich 0 oder „not found“-Meldungen des Laders (siehe evaluateTrace).
 func traceMissing(fd int) ([]string, error) {
 	dup, err := dupCloexec(fd)
 	if err != nil {
@@ -185,20 +179,9 @@ func traceMissing(fd int) ([]string, error) {
 		return nil, &execStartError{err: err}
 	}
 	waitErr := cmd.Wait()
-
-	if missing := linuxsetup.ParseMissingLibraries(out.String()); len(missing) > 0 {
-		return missing, nil
-	}
-	loader := strings.TrimSpace(loaderErr.String())
-	switch {
-	case waitErr != nil && loader != "":
-		return nil, fmt.Errorf("Ladeprotokoll: %w; Lader: %s", waitErr, loader)
-	case waitErr != nil:
-		return nil, fmt.Errorf("Ladeprotokoll: %w", waitErr)
-	case loader != "":
-		return nil, fmt.Errorf("Ladeprotokoll meldet: %s", loader)
-	}
-	return nil, nil
+	// Auswertung (zu altes System, fehlende Bibliotheken, Lader-Meldungen)
+	// in der reinen Funktion evaluateTrace (main.go).
+	return evaluateTrace(out.String(), loaderErr.String(), waitErr)
 }
 
 // execGUI ersetzt den laufenden Prozess durch das Programm im memfd.
@@ -211,10 +194,6 @@ func execGUI(fd int, rest []string) error {
 	err := syscall.Exec("/proc/self/fd/"+strconv.Itoa(fd), argv, os.Environ())
 	return fmt.Errorf("exec: %w", err)
 }
-
-// selfExe ist der Pfad, über den sich der Starter selbst erneut startet.
-// Im neuen Prozess zeigt /proc/self/exe wieder auf die Starter-Datei.
-const selfExe = "/proc/self/exe"
 
 // detachStageTimeout begrenzt das Warten auf die Zwischenstufe (sie startet
 // nur einen Prozess und endet; normal dauert das wenige Millisekunden).
@@ -239,15 +218,18 @@ func terminalStderr() io.Writer {
 // ersetzt sich gleich per exec durch die GUI. Ein direktes Kind bliebe nach
 // seinem Ende bis zum Schließen der GUI als Zombie stehen, weil die GUI es
 // nicht abholt. Das Kind der Zwischenstufe übernimmt dagegen init bzw. der
-// Subreaper der Sitzung. stdin und stdout sind /dev/null, stderr wird nur bei
+// Subreaper der Sitzung. Beide Stufen tragen die Umgebungsmarke
+// MD_READER_OFFER=1 (newOfferCommand); ohne sie gilt "--offer-install" als
+// Dokument-Argument. stdin und stdout sind /dev/null, stderr wird nur bei
 // einem Terminal geerbt.
 //
 // @return Fehler, wenn die Zwischenstufe nicht startet oder scheitert.
 func spawnOfferProcess() error {
 	ctx, cancel := context.WithTimeout(context.Background(), detachStageTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, selfExe, offerInstallFlag, optionDetach)
-	cmd.Args[0] = guiArgv0
+	// newOfferCommand: /proc/self/exe (im neuen Prozess wieder die
+	// Starter-Datei), argv[0] "md-reader", Marke MD_READER_OFFER=1.
+	cmd := newOfferCommand(ctx, offerInstallFlag, optionDetach)
 	cmd.Stderr = terminalStderr()
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("Angebotsprozess: %w", err)
@@ -258,8 +240,7 @@ func spawnOfferProcess() error {
 // startDetachedOffer startet "--offer-install" in einer eigenen Sitzung
 // (Setsid, unabhängig vom Terminal und von der GUI) und wartet nicht.
 func startDetachedOffer() error {
-	cmd := exec.Command(selfExe, offerInstallFlag)
-	cmd.Args[0] = guiArgv0
+	cmd := newOfferCommand(context.Background(), offerInstallFlag)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stderr = terminalStderr()
 	if err := cmd.Start(); err != nil {

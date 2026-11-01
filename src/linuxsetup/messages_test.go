@@ -2,7 +2,7 @@
 // Button-Beschriftungen (Deutsch und Englisch).
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopf-Reihenfolge, „Fehlende Bibliotheken“)
+// Letzte Änderung: 2026-11-01 (MsgSystemTooOld – Bug-Runde Build 47)
 package linuxsetup
 
 import (
@@ -52,8 +52,8 @@ func TestText_AllIDsBothLangs(t *testing.T) {
 			}
 		}
 	}
-	if messageCount != 8 {
-		t.Errorf("messageCount = %d, erwartet 8 Nachrichten", messageCount)
+	if messageCount != 9 {
+		t.Errorf("messageCount = %d, erwartet 9 Nachrichten", messageCount)
 	}
 
 	_, body := Text(LangDE, MsgInstalled)
@@ -201,6 +201,32 @@ func TestButtons(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("Buttons[%d] = %v, erwartet %v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestText_SystemTooOld prüft die Meldung „System zu alt“ in beiden
+// Sprachen: fester Titel, die verlangte Version steht im Text, Rat zum
+// Aktualisieren (Bug-Runde Build 47, Fund 2).
+func TestText_SystemTooOld(t *testing.T) {
+	title, body := Text(LangDE, MsgSystemTooOld, "glibc 2.38")
+	if title != "MD Reader: Dieses Linux ist zu alt" {
+		t.Errorf("Titel de = %q", title)
+	}
+	if !strings.Contains(body, "Benötigt wird glibc 2.38 oder neuer.") || !strings.Contains(body, "Bitte das System aktualisieren.") {
+		t.Errorf("Text de = %q", body)
+	}
+	title, body = Text(LangEN, MsgSystemTooOld, "glibc 2.38")
+	if title != "MD Reader: This Linux is too old" {
+		t.Errorf("Titel en = %q", title)
+	}
+	if !strings.Contains(body, "Required: glibc 2.38 or newer.") || !strings.Contains(body, "Please update the system.") {
+		t.Errorf("Text en = %q", body)
+	}
+	// Ohne Argument bleibt kein Platzhalter stehen.
+	for _, lang := range []Lang{LangDE, LangEN} {
+		if _, body := Text(lang, MsgSystemTooOld); strings.Contains(body, argPlaceholder) || !strings.Contains(body, "glibc") {
+			t.Errorf("%s ohne Argument: %q", lang, body)
 		}
 	}
 }

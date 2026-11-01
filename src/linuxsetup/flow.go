@@ -15,7 +15,7 @@
 // AptUpdateCommand; Bibliotheksnamen landen nur in Texten, nie in Befehlen.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (geöffnete laufende Datei F3, pkexec/apt-get nur unter /usr/bin H3)
+// Letzte Änderung: 2026-11-01 (Hinweis nur einmal auf stderr, pkexec-Exit-Codes richtig benannt – Bug-Runde Build 47)
 package linuxsetup
 
 import (
@@ -31,12 +31,14 @@ import (
 // askTimeout ist das Zeitlimit jeder Frage; danach gilt der harmlose Knopf.
 const askTimeout = 120 * time.Second
 
-// Exit-Codes von pkexec, bei denen nie weiter gefragt wird.
+// Exit-Codes von pkexec, bei denen nie weiter gefragt wird (laut pkexec(1)).
 const (
-	// exitAuthAborted: Passwortabfrage abgebrochen oder abgelehnt.
-	exitAuthAborted = 126
-	// exitNotFound: pkexec (oder das Zielprogramm) nicht gefunden.
-	exitNotFound = 127
+	// exitAuthDismissed: Der Nutzer hat den Passwort-Dialog geschlossen
+	// bzw. abgebrochen.
+	exitAuthDismissed = 126
+	// exitNotAuthorized: nicht berechtigt (z. B. falsches Passwort, keine
+	// Berechtigung zu erhalten) oder ein anderer Fehler von pkexec.
+	exitNotAuthorized = 127
 )
 
 // missingLabels ist die Überschrift der Bibliotheksliste auf stderr.
@@ -58,7 +60,7 @@ type Env struct {
 	Lang Lang
 	// Run führt eine feste Argumentliste ohne Shell aus und liefert den
 	// Exit-Code. err != nil mit exitCode <= 0 bedeutet „ließ sich nicht
-	// starten“ und wird wie Exit 127 behandelt. nil: nichts wird ausgeführt.
+	// starten“ und wird wie Exit 127 (exitNotAuthorized) behandelt. nil: nichts wird ausgeführt.
 	Run func(argv []string) (exitCode int, err error)
 	// LookPath sucht Programme (exec.LookPath oder Test-Fake). nil: exec.LookPath.
 	LookPath func(string) (string, error)
@@ -121,8 +123,9 @@ type runOutcome int
 const (
 	// runOK: Exit 0.
 	runOK runOutcome = iota
-	// runAborted: Passwortabfrage abgebrochen, pkexec fehlt oder der Befehl
-	// ließ sich nicht starten – nie weiter fragen.
+	// runAborted: Passwort-Dialog geschlossen (126), nicht berechtigt bzw.
+	// Fehler von pkexec (127) oder der Befehl ließ sich nicht starten – nie
+	// weiter fragen.
 	runAborted
 	// runFailed: anderer Fehler (z. B. apt-get Exit 100) – Wiederholung möglich.
 	runFailed
@@ -133,7 +136,7 @@ func classify(code int, err error) runOutcome {
 	switch {
 	case code == 0 && err == nil:
 		return runOK
-	case code == exitAuthAborted || code == exitNotFound:
+	case code == exitAuthDismissed || code == exitNotAuthorized:
 		return runAborted
 	case err != nil && code <= 0:
 		// Ließ sich gar nicht starten (z. B. pkexec nicht gefunden).
@@ -146,13 +149,18 @@ func classify(code int, err error) runOutcome {
 //
 // Ablauf:
 //  1. Immer zuerst: Titel, fehlende Bibliotheken und InstallHint auf Stderr.
+//     Ist der Asker nur eine Textausgabe auf stderr (IsTextOnly, auch ohne
+//     Asker), endet der Ablauf hier mit false: Alles steht schon da, eine
+//     Frage wäre unbeantwortbar, ein Hinweis stünde doppelt da.
 //  2. Ohne apt-get oder ohne pkexec: nur der Hinweis MsgWebKitHint, keine
 //     Frage, false.
-//  3. Mit apt-get: Frage MsgWebKitMissing mit "install" / "cancel" (120 s).
-//     Bei "install" läuft AptInstallCommand. Exit 0 → true. Exit 126/127
-//     oder nicht startbar → Hinweis, false, keine weitere Frage.
+//  3. Mit apt-get und pkexec: Frage MsgWebKitMissing mit "install" / "cancel"
+//     (120 s). Bei "install" läuft AptInstallCommand. Exit 0 → true. Exit 126
+//     (Dialog geschlossen), 127 (nicht berechtigt/Fehler) oder nicht startbar
+//     → Hinweis, false, keine weitere Frage.
 //  4. Anderer Fehler → Frage MsgInstallFailed mit "update" / "cancel".
-//     Bei "update": AptUpdateCommand (bricht nur bei 126/127 ab), dann noch
+//     Bei "update": AptUpdateCommand (bricht nur bei 126/127 bzw. nicht
+//     startbar ab), dann noch
 //     einmal AptInstallCommand. Exit 0 → true, sonst Hinweis und false.
 //     Höchstens dieser eine Wiederholungsversuch.
 //
@@ -168,6 +176,11 @@ func HandleMissingLibraries(e Env, missing []string) (retry bool) {
 	hint := InstallHint(pm)
 	libs := strings.Join(missing, ", ")
 	writeTerminalHint(e, libs, hint)
+	// Fund 1: Ein reiner stderr-Asker würde Titel und Hinweis ein zweites
+	// Mal schreiben und kann ohnehin keine Antwort liefern.
+	if IsTextOnly(e.asker()) {
+		return false
+	}
 
 	// Ohne apt oder ohne pkexec (grafische Passwortabfrage) kein automatisches
 	// Nachinstallieren, nur der passende Befehl – eine Frage wäre zwecklos.

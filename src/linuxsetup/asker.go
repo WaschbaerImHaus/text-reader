@@ -9,7 +9,7 @@
 //  4. Text auf stderr (diese Datei) – ohne Antwortmöglichkeit.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: gemeinsame Knopfprüfung)
+// Letzte Änderung: 2026-11-01 (IsTextOnly – Hinweis nur einmal auf stderr, Bug-Runde Build 47)
 package linuxsetup
 
 import (
@@ -153,6 +153,34 @@ func (a *stderrAsker) Ask(title, body string, buttons []Button, timeout time.Dur
 // @param body Text.
 func (a *stderrAsker) Inform(title, body string) {
 	a.write(title, body)
+}
+
+// TextOnly meldet, dass dieser Asker nur Text auf stderr ausgibt und nie
+// eine Antwort liefert (siehe IsTextOnly).
+//
+// @return Immer true.
+func (a *stderrAsker) TextOnly() bool {
+	return true
+}
+
+// textOnlyAsker ist ein Asker, der angeben kann, ob er nur Text ausgibt
+// (stderrAsker; im Starter auch der verzögerte Asker, der weiterreicht).
+type textOnlyAsker interface {
+	TextOnly() bool
+}
+
+// IsTextOnly meldet, ob ein Asker nur Text auf stderr schreibt und keine
+// Antwort liefern kann. Dann stünde ein Hinweis, den der Ablauf schon selbst
+// auf stderr geschrieben hat, doppelt da (Fund 1, Bug-Runde Build 47).
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, Bug-Runde Build 47)
+//
+// @param a Asker (nil erlaubt).
+// @return true für stderrAsker und Asker, deren TextOnly() true liefert; sonst false.
+func IsTextOnly(a Asker) bool {
+	t, ok := a.(textOnlyAsker)
+	return ok && t.TextOnly()
 }
 
 // write schreibt "Titel", Leerzeile, Text; Schreibfehler werden ignoriert.

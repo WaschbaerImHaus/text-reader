@@ -25,17 +25,26 @@
 //
 // Intern (nicht für Nutzer): "--offer-install" stellt die Installationsfrage,
 // "--offer-install --detach" ist die Zwischenstufe, die diesen Prozess
-// abgetrennt startet (siehe spawnOfferProcess in memexec_linux.go).
+// abgetrennt startet (siehe spawnOfferProcess in memexec_linux.go). Beides
+// gilt nur mit der Umgebungsmarke MD_READER_OFFER=1, die allein der Starter
+// seinem Angebotsprozess mitgibt; sonst ist "--offer-install" ein gewöhnliches
+// Argument der Oberfläche (z. B. ein Dokument dieses Namens).
+//
+// Zu altes System: Vermisst der Lader Symbolversionen (z. B. "version
+// `GLIBC_2.38' not found"), kann die Oberfläche nie starten. Dann gibt es
+// weder Installationsangebot noch exec, sondern die Meldung MsgSystemTooOld
+// (stderr und Hinweis) und Exit 1; auch --install verweigert.
 //
 // Die Fachlogik liegt im Paket linuxsetup; diese Datei verbindet sie nur.
 // Alle Abhängigkeiten nach außen (Umgebung, Ausgaben, Fragen, memfd, Befehle)
 // stecken im Typ launcher und werden in Tests durch Fakes ersetzt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-01 (Quelle /proc/self/exe F3, Pfadprüfung H1, "--" als Optionsende H5)
+// Letzte Änderung: 2026-11-01 (System zu alt, Marke für --offer-install, Hinweis nur einmal – Bug-Runde Build 47)
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -71,6 +80,18 @@ const (
 	// optionDetach kennzeichnet die Zwischenstufe des Angebotsprozesses.
 	optionDetach = "--detach"
 )
+
+// offerEnvKey und offerEnvValue bilden die Umgebungsmarke des
+// Angebotsprozesses: Nur mit MD_READER_OFFER=1 gilt "--offer-install" als
+// interner Befehl. So öffnet ein Dokument namens "--offer-install" normal.
+const (
+	offerEnvKey   = "MD_READER_OFFER"
+	offerEnvValue = "1"
+)
+
+// guiArgv0 ist argv[0] der Oberfläche und des Angebotsprozesses (GTK leitet
+// daraus WM_CLASS ab, passend zu StartupWMClass=md-reader).
+const guiArgv0 = "md-reader"
 
 // loaderStderrLimit begrenzt die gesammelten Meldungen des Laders (stderr).
 const loaderStderrLimit = 4096
@@ -242,6 +263,93 @@ func isStartError(err error) bool {
 	return errors.As(err, &se)
 }
 
+// systemTooOldError meldet, dass der Lader Symbolversionen vermisst (meist
+// der glibc): Das System ist zu alt, die Oberfläche kann nie starten.
+type systemTooOldError struct {
+	// versions sind die fehlenden Versionen aus dem Ladeprotokoll
+	// (sortiert, z. B. ["GLIBC_2.36", "GLIBC_2.38"]).
+	versions []string
+}
+
+// Error liefert einen Text mit den fehlenden Versionen.
+func (e *systemTooOldError) Error() string {
+	return "Ladeprotokoll: fehlende Symbolversionen: " + strings.Join(e.versions, ", ")
+}
+
+// loaderNotFoundMarker kennzeichnet die Zeilen des Laders, die zählen.
+const loaderNotFoundMarker = "not found"
+
+// evaluateTrace wertet ein Ladeprotokoll aus (Ausgabe, Meldungen des Laders,
+// Ende des Kindprozesses). Reine Funktion ohne Systemaufrufe, damit sie auf
+// jedem System getestet werden kann.
+//
+// Reihenfolge:
+//  1. Fehlende Symbolversionen ("version `X' not found", in stderr oder
+//     stdout) → *systemTooOldError. Vorrang vor fehlenden Bibliotheken:
+//     WebKit nachzuinstallieren hülfe auf einem zu alten System nicht.
+//  2. Fehlende Bibliotheken ("=> not found") → Liste, kein Fehler.
+//  3. Exit ungleich 0 → Fehler mit allen Meldungen des Laders.
+//  4. Exit 0: nur Lader-Zeilen mit "not found" ergeben einen Fehler
+//     (Warnung beim Start); harmlose Meldungen wie „no version information
+//     available“ werden ignoriert.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, Bug-Runde Build 47: System zu alt)
+//
+// @param stdout Ausgabe des Ladeprotokolls (Liste der Bibliotheken).
+// @param loaderStderr Meldungen des Laders.
+// @param waitErr Ergebnis von cmd.Wait (nil bei Exit 0).
+// @return Fehlende Bibliotheken; Fehler wie oben beschrieben.
+func evaluateTrace(stdout, loaderStderr string, waitErr error) ([]string, error) {
+	if versions := linuxsetup.ParseMissingVersions(loaderStderr + "\n" + stdout); len(versions) > 0 {
+		return nil, &systemTooOldError{versions: versions}
+	}
+	if missing := linuxsetup.ParseMissingLibraries(stdout); len(missing) > 0 {
+		return missing, nil
+	}
+	loader := strings.TrimSpace(loaderStderr)
+	switch {
+	case waitErr != nil && loader != "":
+		return nil, fmt.Errorf("Ladeprotokoll: %w; Lader: %s", waitErr, loader)
+	case waitErr != nil:
+		return nil, fmt.Errorf("Ladeprotokoll: %w", waitErr)
+	}
+	if relevant := notFoundLines(loader); relevant != "" {
+		return nil, fmt.Errorf("Ladeprotokoll meldet: %s", relevant)
+	}
+	return nil, nil
+}
+
+// notFoundLines liefert die Zeilen mit "not found" (mit "\n" verbunden).
+func notFoundLines(text string) string {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if line = strings.TrimSpace(line); strings.Contains(line, loaderNotFoundMarker) {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// newOfferCommand baut den Befehl, mit dem sich der Starter als
+// Angebotsprozess erneut startet: Programm ist die laufende Datei
+// (/proc/self/exe), argv[0] "md-reader", die Umgebung trägt zuletzt die
+// Marke MD_READER_OFFER=1 (bei doppelten Schlüsseln gilt in os/exec der
+// letzte Eintrag). stdin/stdout/stderr setzt der Aufrufer.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, Marke für --offer-install)
+//
+// @param ctx Kontext (Zeitlimit) des Prozesses.
+// @param args Argumente (z. B. "--offer-install", "--detach").
+// @return Vorbereiteter, nicht gestarteter Befehl.
+func newOfferCommand(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, runningBinaryPath, args...)
+	cmd.Args[0] = guiArgv0
+	cmd.Env = append(os.Environ(), offerEnvKey+"="+offerEnvValue)
+	return cmd
+}
+
 // limitedBuffer sammelt höchstens max Bytes (z. B. stderr des Laders) und
 // verwirft den Rest. Write meldet immer alles als geschrieben, damit der
 // schreibende Kindprozess nie an einem vollen Puffer scheitert.
@@ -291,6 +399,12 @@ func (a *lazyAsker) Ask(title, body string, buttons []linuxsetup.Button, timeout
 // Inform reicht den Hinweis an den echten Asker weiter.
 func (a *lazyAsker) Inform(title, body string) {
 	a.get().Inform(title, body)
+}
+
+// TextOnly meldet, ob der echte Asker nur Text auf stderr schreibt (baut
+// ihn dafür, siehe linuxsetup.IsTextOnly).
+func (a *lazyAsker) TextOnly() bool {
+	return linuxsetup.IsTextOnly(a.get())
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +641,10 @@ func (l *launcher) run(args []string) int {
 	case cmdDesktopEntry:
 		return l.printDesktopEntry(rest)
 	case cmdOfferInstall:
+		// Ohne die Marke des Starters ist "--offer-install" ein Dokument.
+		if l.getenv(offerEnvKey) != offerEnvValue {
+			return l.startGUI(copyStrings(args))
+		}
 		if len(rest) == 1 && rest[0] == optionDetach {
 			return l.detachOfferStage()
 		}
@@ -602,6 +720,10 @@ func (l *launcher) install(force bool) int {
 		_, _ = fmt.Fprintln(l.stderr, l.text(lmNoPayload))
 		return 1
 	}
+	// Auf einem zu alten System startete der Menüeintrag nie (nur Text, kein Dialog).
+	if versions := l.missingVersions(); len(versions) > 0 {
+		return l.systemTooOld(nil, versions)
+	}
 	// Quelle ist immer die laufende Datei selbst (F3), nicht ihr Pfad.
 	self, err := l.openSelf()
 	if err != nil {
@@ -646,13 +768,19 @@ func (l *launcher) startGUI(rest []string) int {
 }
 
 // checkLibraries prüft per Ladeprotokoll, ob Bibliotheken fehlen, und bietet
-// das Nachinstallieren an (danach höchstens eine zweite Prüfung).
+// das Nachinstallieren an (danach höchstens eine zweite Prüfung). Ist das
+// System zu alt (fehlende Symbolversionen), endet der Start mit der Meldung
+// MsgSystemTooOld – ohne Frage, ohne Angebot, ohne exec.
 //
 // @return (0, true), wenn der Start weitergehen soll; sonst (Exit-Code, false).
 func (l *launcher) checkLibraries(fd int, asker linuxsetup.Asker) (int, bool) {
 	missing, err := l.mem.trace(fd)
 	if isStartError(err) {
 		return l.memExecFailed(asker, err), false
+	}
+	var tooOld *systemTooOldError
+	if errors.As(err, &tooOld) {
+		return l.systemTooOld(asker, tooOld.versions), false
 	}
 	if len(missing) == 0 {
 		if err != nil {
@@ -669,6 +797,9 @@ func (l *launcher) checkLibraries(fd int, asker linuxsetup.Asker) (int, bool) {
 	missing, err = l.mem.trace(fd)
 	if isStartError(err) {
 		return l.memExecFailed(asker, err), false
+	}
+	if errors.As(err, &tooOld) {
+		return l.systemTooOld(asker, tooOld.versions), false
 	}
 	if len(missing) > 0 {
 		l.say(l.stderr, lmStillMissing, strings.Join(missing, ", "))
@@ -766,6 +897,47 @@ func (l *launcher) offerInstall() int {
 		return 1
 	}
 	return 0
+}
+
+// missingVersions prüft für --install per Ladeprotokoll, ob das System zu alt
+// ist. Jeder andere Ausgang (memfd scheitert, WebKit fehlt, unklares
+// Protokoll) hindert die Installation nicht – WebKit lässt sich nachholen.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, Bug-Runde Build 47: System zu alt)
+//
+// @return Fehlende Symbolversionen; leer, wenn keine erkannt wurden.
+func (l *launcher) missingVersions() []string {
+	fd, err := l.mem.create(l.gui)
+	if err != nil {
+		return nil
+	}
+	_, err = l.mem.trace(fd)
+	var tooOld *systemTooOldError
+	if errors.As(err, &tooOld) {
+		return tooOld.versions
+	}
+	return nil
+}
+
+// systemTooOld meldet, dass das System zu alt ist: Titel und Text von
+// MsgSystemTooOld (mit der verlangten Version aus dem Ladeprotokoll) auf
+// stderr und – wenn asker nicht nil ist und nicht selbst nur auf stderr
+// schreibt – als Hinweis.
+//
+// Autor: Kurt Ingwer
+// Letzte Änderung: 2026-11-01 (neu, Bug-Runde Build 47: System zu alt)
+//
+// @param asker Asker für den Hinweis oder nil (nur Textausgabe, --install).
+// @param versions Fehlende Symbolversionen.
+// @return Exit-Code 1.
+func (l *launcher) systemTooOld(asker linuxsetup.Asker, versions []string) int {
+	title, body := linuxsetup.Text(l.lang(), linuxsetup.MsgSystemTooOld, linuxsetup.DescribeRequiredVersions(versions))
+	_, _ = fmt.Fprintf(l.stderr, "%s\n%s\n", title, body)
+	if asker != nil && !linuxsetup.IsTextOnly(asker) {
+		asker.Inform(title, body)
+	}
+	return 1
 }
 
 // memExecFailed meldet, dass die GUI nicht starten kann (stderr und

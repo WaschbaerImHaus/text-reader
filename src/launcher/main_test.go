@@ -14,11 +14,12 @@
 // auf anderen Systemen selbst.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 6, Korrekturrunde 1: Angebotsprozess, Fehlermeldungen)
+// Letzte Änderung: 2026-11-01 (System zu alt, Marke für --offer-install, Hinweis nur einmal, harmlose Lader-Meldungen – Bug-Runde Build 47)
 package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -373,6 +374,8 @@ type testRig struct {
 	spawnBeforeExec bool
 	detached        int
 	detachErr       error
+	// env ist die Umgebung des Starters (getenv); Tests dürfen sie ändern.
+	env map[string]string
 }
 
 // newRig baut einen Launcher mit eigenem HOME im Temp-Verzeichnis, deutscher
@@ -396,6 +399,7 @@ func newRig(t *testing.T) *testRig {
 		t.Fatal(err)
 	}
 	env := map[string]string{"HOME": r.home, "LANG": "de_DE.UTF-8"}
+	r.env = env
 	r.l = &launcher{
 		stdout: &r.stdout,
 		stderr: &r.stderr,
@@ -443,6 +447,12 @@ func newRig(t *testing.T) *testRig {
 		build: "47",
 	}
 	return r
+}
+
+// markOffer setzt die Umgebungsmarke, die nur der Starter seinem
+// Angebotsprozess mitgibt – erst damit gilt "--offer-install" als Befehl.
+func (r *testRig) markOffer() {
+	r.env[offerEnvKey] = offerEnvValue
 }
 
 // layout liefert die Zielpfade des Rigs.
@@ -715,14 +725,15 @@ func TestRun_TraceStartFails(t *testing.T) {
 
 // TestRun_TraceOtherError prüft: Ein anderer Fehler des Ladeprotokolls (z. B.
 // Exit-Code ungleich 0 oder Meldungen des Laders) wird nur protokolliert –
-// samt Text des Laders –, die GUI startet trotzdem.
+// samt Text des Laders –, die GUI startet trotzdem. Fehlende Symbolversionen
+// haben einen eigenen Weg (TestRun_SystemTooOld).
 func TestRun_TraceOtherError(t *testing.T) {
 	r := newRig(t)
-	r.mem.traceErrs = []error{errors.New("exit status 1; Lader: version `GLIBC_2.40' not found")}
+	r.mem.traceErrs = []error{errors.New("exit status 1; Lader: symbol lookup error: undefined symbol: foo")}
 	if code := r.l.run([]string{"doc.md"}); code != 0 {
 		t.Errorf("Exit %d", code)
 	}
-	if r.mem.execCalls != 1 || !strings.Contains(r.stderr.String(), "version `GLIBC_2.40' not found") {
+	if r.mem.execCalls != 1 || !strings.Contains(r.stderr.String(), "undefined symbol: foo") {
 		t.Errorf("execCalls %d, stderr %q", r.mem.execCalls, r.stderr.String())
 	}
 }
@@ -929,6 +940,7 @@ func TestRun_ExecFails(t *testing.T) {
 // Installationsfrage, speichert „Später“, startet keine GUI, Exit 0.
 func TestRun_OfferInstallCmd_Later(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	r.asker.answers = []string{"later"}
 	if code := r.l.run([]string{"--offer-install"}); code != 0 {
 		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
@@ -950,6 +962,7 @@ func TestRun_OfferInstallCmd_Later(t *testing.T) {
 // Icons und Build-Nummer, Exit 0.
 func TestRun_OfferInstallCmd_Yes(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	r.asker.answers = []string{"yes"}
 	if code := r.l.run([]string{"--offer-install"}); code != 0 {
 		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
@@ -1006,6 +1019,7 @@ func TestRun_PrintDesktopEntryRejectsControlChars(t *testing.T) {
 // während der Frage, darf die fremde Datei nicht installiert werden.
 func TestOfferInstall_CopiesRunningBinaryNotPath(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	r.asker.answers = []string{"yes"}
 	// Die laufende Datei ("alt") – wie /proc/self/exe: ein Verweis auf den
 	// Inhalt beim Start, unabhängig vom späteren Pfadinhalt.
@@ -1050,6 +1064,7 @@ func TestRun_InstallOpenSelfFails(t *testing.T) {
 // Grund auf stderr und der Exit-Code ist 1 (niemand wartet darauf).
 func TestRun_OfferInstallCmd_Fails(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	r.asker.answers = []string{"yes"}
 	// Eine Datei an der Stelle von ~/.local lässt MkdirAll scheitern.
 	if err := os.MkdirAll(r.home, 0o755); err != nil {
@@ -1070,6 +1085,7 @@ func TestRun_OfferInstallCmd_Fails(t *testing.T) {
 // (inzwischen installiert), fragt der Angebotsprozess nicht, Exit 0.
 func TestRun_OfferInstallCmd_NothingToOffer(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	if code := r.l.run([]string{"--install"}); code != 0 {
 		t.Fatalf("Installation: Exit %d", code)
 	}
@@ -1085,6 +1101,7 @@ func TestRun_OfferInstallCmd_NothingToOffer(t *testing.T) {
 // angeboten (eine Installation wäre nutzlos), Exit 1.
 func TestRun_OfferInstallCmd_NoPayload(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	r.l.gui = nil
 	if code := r.l.run([]string{"--offer-install"}); code != 1 {
 		t.Errorf("Exit %d, erwartet 1", code)
@@ -1099,6 +1116,7 @@ func TestRun_OfferInstallCmd_NoPayload(t *testing.T) {
 // ohne selbst zu fragen; scheitert der Start, Exit 1.
 func TestRun_OfferInstallCmd_Detach(t *testing.T) {
 	r := newRig(t)
+	r.markOffer()
 	if code := r.l.run([]string{"--offer-install", "--detach"}); code != 0 {
 		t.Fatalf("Exit %d", code)
 	}
@@ -1124,6 +1142,7 @@ func TestRun_ExtraArgs(t *testing.T) {
 	}
 	for _, args := range cases {
 		r := newRig(t)
+		r.markOffer()
 		if code := r.l.run(args); code != 2 {
 			t.Errorf("%q: Exit %d, erwartet 2", args, code)
 		}
@@ -1185,6 +1204,246 @@ func TestLazyAsker(t *testing.T) {
 	k2, _ := la.Ask("t", "b", nil, time.Second)
 	if made != 1 || k1 != "a" || k2 != "b" || len(inner.informs) != 1 {
 		t.Errorf("made %d, keys %q %q, informs %d", made, k1, k2, len(inner.informs))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Zu altes System (Fund 2, Bug-Runde Build 47)
+// ---------------------------------------------------------------------------
+
+// tooOldTrace ist das Ladeprotokoll von Ubuntu 22.04 (glibc 2.35) für eine
+// GUI, die GLIBC_2.36 und GLIBC_2.38 verlangt – WebKit fehlt zusätzlich.
+const tooOldTrace = "\tlibwebkit2gtk-4.1.so.0 => not found\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x7f)\n"
+
+// tooOldLoader ist stderr des Laders auf diesem System.
+const tooOldLoader = "md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.36' not found (required by md-reader)\n" +
+	"md-reader: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by md-reader)\n"
+
+// TestEvaluateTrace prüft die Auswertung des Ladeprotokolls:
+//   - fehlende Symbolversion → systemTooOldError (auch wenn WebKit fehlt –
+//     Nachinstallieren hülfe nicht),
+//   - fehlende Bibliotheken → Liste,
+//   - harmlose Lader-Meldungen („no version information available“) bei
+//     Exit 0 → kein Fehler, keine Warnung (Task-6-Nachtrag),
+//   - andere „not found“-Zeilen oder Exit ungleich 0 → Fehler mit Lader-Text.
+func TestEvaluateTrace(t *testing.T) {
+	missing, err := evaluateTrace(tooOldTrace, tooOldLoader, nil)
+	var old *systemTooOldError
+	if len(missing) != 0 || !errors.As(err, &old) || !reflect.DeepEqual(old.versions, []string{"GLIBC_2.36", "GLIBC_2.38"}) {
+		t.Errorf("zu alt: (%q, %v), erwartet systemTooOldError [GLIBC_2.36 GLIBC_2.38]", missing, err)
+	}
+	if _, err := evaluateTrace("", tooOldLoader, errors.New("exit status 127")); !errors.As(err, &old) {
+		t.Errorf("zu alt mit Exit 127: %v, erwartet systemTooOldError", err)
+	}
+
+	harmless := "md-reader: /usr/lib/libfoo.so.1: no version information available (required by md-reader)\n"
+	missing, err = evaluateTrace(tooOldTrace, harmless, nil)
+	if !sameStrings(missing, []string{"libwebkit2gtk-4.1.so.0"}) || err != nil {
+		t.Errorf("WebKit fehlt: (%q, %v)", missing, err)
+	}
+	if missing, err := evaluateTrace("\tlibc.so.6 => /lib/libc.so.6 (0x7f)\n", harmless, nil); len(missing) != 0 || err != nil {
+		t.Errorf("harmlose Meldung: (%q, %v), erwartet (nil, nil)", missing, err)
+	}
+	if missing, err := evaluateTrace("", "", nil); len(missing) != 0 || err != nil {
+		t.Errorf("leer: (%q, %v)", missing, err)
+	}
+
+	odd := harmless + "md-reader: symbol foo not found\n"
+	if _, err := evaluateTrace("", odd, nil); err == nil || !strings.Contains(err.Error(), "symbol foo not found") || strings.Contains(err.Error(), "no version information") {
+		t.Errorf("andere not-found-Zeile: %v, erwartet Fehler nur mit dieser Zeile", err)
+	}
+	if _, err := evaluateTrace("", "kaputt", errors.New("exit status 1")); err == nil || !strings.Contains(err.Error(), "kaputt") || errors.As(err, &old) {
+		t.Errorf("Exit 1: %v, erwartet Fehler mit Lader-Text", err)
+	}
+}
+
+// tooOldErr ist der Fehler, den traceMissing auf einem zu alten System liefert.
+func tooOldErr() error {
+	_, err := evaluateTrace(tooOldTrace, tooOldLoader, nil)
+	return err
+}
+
+// TestRun_SystemTooOld prüft: Meldet das Ladeprotokoll fehlende
+// Symbolversionen, kommt die Meldung „Dieses Linux ist zu alt“ mit der
+// verlangten Version auf stderr und als Hinweis (Dialog), Exit 1 – ohne
+// Frage nach WebKit, ohne Installationsangebot, ohne exec.
+func TestRun_SystemTooOld(t *testing.T) {
+	r := newRig(t)
+	r.tools["apt-get"], r.tools["/usr/bin/apt-get"], r.tools["/usr/bin/pkexec"] = true, true, true
+	r.mem.traceErrs = []error{tooOldErr()}
+	if code := r.l.run([]string{"doc.md"}); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	title, body := linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgSystemTooOld, "glibc 2.38")
+	if !strings.Contains(r.stderr.String(), title) || !strings.Contains(r.stderr.String(), "glibc 2.38") {
+		t.Errorf("stderr ohne Meldung: %q", r.stderr.String())
+	}
+	if len(r.asker.informs) != 1 || r.asker.informs[0] != title+"\n"+body {
+		t.Errorf("Hinweise %q, erwartet genau die Meldung", r.asker.informs)
+	}
+	if r.mem.execCalls != 0 || r.spawned != 0 || len(r.asker.asks) != 0 || len(r.runs) != 0 || r.mem.traceCalls != 1 {
+		t.Errorf("exec %d, spawned %d, asks %q, runs %q, trace %d", r.mem.execCalls, r.spawned, r.asker.asks, r.runs, r.mem.traceCalls)
+	}
+	if strings.Contains(r.stderr.String(), "WebKitGTK") {
+		t.Errorf("WebKit-Hinweis trotz zu altem System: %q", r.stderr.String())
+	}
+}
+
+// TestRun_SystemTooOld_English prüft die englische Meldung.
+func TestRun_SystemTooOld_English(t *testing.T) {
+	r := newRig(t)
+	r.env["LANG"] = "en_US.UTF-8"
+	r.mem.traceErrs = []error{tooOldErr()}
+	if code := r.l.run(nil); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	if !strings.Contains(r.stderr.String(), "MD Reader: This Linux is too old") || !strings.Contains(r.stderr.String(), "Required: glibc 2.38 or newer.") {
+		t.Errorf("stderr: %q", r.stderr.String())
+	}
+}
+
+// TestRun_SystemTooOld_AfterInstall prüft: Meldet erst das zweite
+// Ladeprotokoll (nach dem Nachinstallieren) fehlende Versionen, kommt
+// ebenfalls die Meldung „zu alt“, Exit 1, kein exec.
+func TestRun_SystemTooOld_AfterInstall(t *testing.T) {
+	r := newRig(t)
+	r.tools["apt-get"], r.tools["/usr/bin/apt-get"], r.tools["/usr/bin/pkexec"] = true, true, true
+	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
+	r.mem.traceErrs = []error{nil, tooOldErr()}
+	r.asker.answers = []string{"install"}
+	if code := r.l.run(nil); code != 1 {
+		t.Errorf("Exit %d, erwartet 1", code)
+	}
+	title, _ := linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgSystemTooOld)
+	if r.mem.execCalls != 0 || r.spawned != 0 || !strings.Contains(r.stderr.String(), title) {
+		t.Errorf("exec %d, spawned %d, stderr %q", r.mem.execCalls, r.spawned, r.stderr.String())
+	}
+}
+
+// textAsker ist ein Test-Asker, der wie der stderr-Asker nur Text schreibt
+// (TextOnly), hier in denselben Puffer wie stderr des Starters.
+type textAsker struct {
+	w *bytes.Buffer
+}
+
+func (a *textAsker) Ask(title, body string, buttons []linuxsetup.Button, timeout time.Duration) (string, error) {
+	a.w.WriteString(title + "\n\n" + body + "\n")
+	return "", nil
+}
+
+func (a *textAsker) Inform(title, body string) { a.w.WriteString(title + "\n\n" + body + "\n") }
+
+func (a *textAsker) TextOnly() bool { return true }
+
+// TestRun_TextOnlyAskerOnce prüft (Fund 1): Ist der Asker nur eine
+// Textausgabe auf stderr, stehen die Meldung „zu alt“ und der WebKit-Hinweis
+// genau einmal da (der verzögerte Asker reicht TextOnly weiter).
+func TestRun_TextOnlyAskerOnce(t *testing.T) {
+	for _, name := range []string{"zu alt", "WebKit fehlt"} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			r.l.newAsker = func() linuxsetup.Asker { return &textAsker{w: &r.stderr} }
+			title, _ := linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgSystemTooOld)
+			if name == "zu alt" {
+				r.mem.traceErrs = []error{tooOldErr()}
+			} else {
+				r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
+				title, _ = linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgWebKitMissing)
+			}
+			if code := r.l.run(nil); code != 1 {
+				t.Errorf("Exit %d, erwartet 1", code)
+			}
+			if n := strings.Count(r.stderr.String(), title); n != 1 {
+				t.Errorf("Titel %d-mal auf stderr, erwartet 1:\n%s", n, r.stderr.String())
+			}
+		})
+	}
+}
+
+// TestRun_Install_SystemTooOld prüft: --install (auch mit --force) verweigert
+// auf einem zu alten System mit derselben Meldung (nur Text), Exit 1, nichts
+// wird installiert.
+func TestRun_Install_SystemTooOld(t *testing.T) {
+	for _, args := range [][]string{{"--install"}, {"--install", "--force"}} {
+		r := newRig(t)
+		r.mem.traceErrs = []error{tooOldErr()}
+		if code := r.l.run(args); code != 1 {
+			t.Errorf("%q: Exit %d, erwartet 1", args, code)
+		}
+		title, _ := linuxsetup.Text(linuxsetup.LangDE, linuxsetup.MsgSystemTooOld)
+		if !strings.Contains(r.stderr.String(), title) || !strings.Contains(r.stderr.String(), "glibc 2.38") {
+			t.Errorf("%q: stderr %q", args, r.stderr.String())
+		}
+		if fileExists(r.layout(t).BinPath) || r.askerMade != 0 || r.mem.execCalls != 0 || r.stdout.Len() != 0 {
+			t.Errorf("%q: installiert, gefragt oder gestartet", args)
+		}
+	}
+}
+
+// TestRun_Install_MissingWebKitStillInstalls prüft: Fehlt nur WebKit (oder
+// ist das Ladeprotokoll unklar), installiert --install wie bisher – WebKit
+// lässt sich später nachinstallieren.
+func TestRun_Install_MissingWebKitStillInstalls(t *testing.T) {
+	r := newRig(t)
+	r.mem.traces = [][]string{{"libwebkit2gtk-4.1.so.0"}}
+	if code := r.l.run([]string{"--install"}); code != 0 {
+		t.Fatalf("Exit %d, stderr %q", code, r.stderr.String())
+	}
+	if !fileExists(r.layout(t).BinPath) {
+		t.Error("nicht installiert")
+	}
+	r2 := newRig(t)
+	r2.mem.createErr = errors.New("kein memfd")
+	if code := r2.l.run([]string{"--install"}); code != 0 || !fileExists(r2.layout(t).BinPath) {
+		t.Errorf("ohne memfd: Exit %d, stderr %q", code, r2.stderr.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Marke für den internen Befehl --offer-install (Task-6-Nachtrag)
+// ---------------------------------------------------------------------------
+
+// TestRun_OfferInstallNeedsMarker prüft: Ohne die Umgebungsmarke, die nur
+// der Starter seinem Angebotsprozess mitgibt, ist "--offer-install" ein
+// gewöhnliches Dokument-Argument – die GUI startet damit, es wird nichts
+// gefragt und nichts abgetrennt gestartet.
+func TestRun_OfferInstallNeedsMarker(t *testing.T) {
+	cases := [][]string{{"--offer-install"}, {"--offer-install", "--detach"}, {"--offer-install", "x"}}
+	for _, args := range cases {
+		r := newRig(t)
+		r.env[offerEnvKey] = "0"
+		if code := r.l.run(args); code != 0 {
+			t.Fatalf("%q: Exit %d, stderr %q", args, code, r.stderr.String())
+		}
+		if r.mem.execCalls != 1 || !sameStrings(r.mem.execRest, args) {
+			t.Errorf("%q: exec %d mit %q", args, r.mem.execCalls, r.mem.execRest)
+		}
+		if len(r.asker.asks) != 0 || r.detached != 0 || fileExists(r.layout(t).PrefsPath) {
+			t.Errorf("%q: Angebot ausgeführt (asks %q, detached %d)", args, r.asker.asks, r.detached)
+		}
+	}
+	// Mit Marke ist es der interne Befehl: Frage statt GUI.
+	r := newRig(t)
+	r.markOffer()
+	if code := r.l.run([]string{"--offer-install"}); code != 0 || r.mem.execCalls != 0 || len(r.asker.asks) != 1 {
+		t.Errorf("mit Marke: Exit %d, exec %d, asks %q", code, r.mem.execCalls, r.asker.asks)
+	}
+}
+
+// TestNewOfferCommand prüft den Befehl für den Angebotsprozess: Programm ist
+// die laufende Datei (/proc/self/exe), argv[0] "md-reader", die Argumente
+// unverändert, und die Umgebung trägt die Marke (zuletzt, damit sie gilt).
+func TestNewOfferCommand(t *testing.T) {
+	t.Setenv(offerEnvKey, "")
+	cmd := newOfferCommand(context.Background(), offerInstallFlag, optionDetach)
+	if cmd.Path != runningBinaryPath {
+		t.Errorf("Path = %q", cmd.Path)
+	}
+	if want := []string{"md-reader", "--offer-install", "--detach"}; !reflect.DeepEqual(cmd.Args, want) {
+		t.Errorf("Args = %q, erwartet %q", cmd.Args, want)
+	}
+	if n := len(cmd.Env); n == 0 || cmd.Env[n-1] != offerEnvKey+"="+offerEnvValue {
+		t.Errorf("Env endet nicht mit der Marke: %q", cmd.Env)
 	}
 }
 
@@ -1359,11 +1618,68 @@ func TestTraceMissing_LoaderStderr(t *testing.T) {
 		t.Fatal(err)
 	}
 	missing, err := traceMissing(fd)
-	if len(missing) != 0 || err == nil || isStartError(err) {
-		t.Fatalf("traceMissing = (%q, %v), erwartet Fehler mit Lader-Text", missing, err)
+	var old *systemTooOldError
+	if len(missing) != 0 || !errors.As(err, &old) {
+		t.Fatalf("traceMissing = (%q, %v), erwartet systemTooOldError", missing, err)
 	}
-	if !strings.Contains(err.Error(), "version `MDR_2' not found") {
-		t.Errorf("Lader-Text fehlt: %v", err)
+	if !reflect.DeepEqual(old.versions, []string{"MDR_2"}) {
+		t.Errorf("Versionen %q, erwartet [MDR_2]", old.versions)
+	}
+}
+
+// TestTraceMissing_NoVersionInfoIsHarmless baut mit gcc ein Programm gegen
+// eine Bibliothek mit Symbolversion MDR_2 und ersetzt sie durch eine ohne
+// Versionen. Der Lader meldet dann nur „no version information available“ –
+// harmlos, das Programm läuft. traceMissing liefert (nil, nil): keine
+// Warnung bei jedem Start (Task-6-Nachtrag).
+func TestTraceMissing_NoVersionInfoIsHarmless(t *testing.T) {
+	requireLinux(t)
+	gcc, err := exec.LookPath("gcc")
+	if err != nil {
+		t.Skip("gcc fehlt")
+	}
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	libSrc := write("l.c", "int f(void){return 1;}\n")
+	mainSrc := write("m.c", "int f(void);\nint main(void){return f()-1;}\n")
+	v2 := write("v2.map", "MDR_2 { global: f; local: *; };\n")
+	lib := filepath.Join(dir, "libmdrv.so")
+	bin := filepath.Join(dir, "prog")
+	gccRun := func(args ...string) {
+		if out, err := exec.Command(gcc, args...).CombinedOutput(); err != nil {
+			t.Skipf("gcc %q: %v %s", args, err, out)
+		}
+	}
+	gccRun("-shared", "-fPIC", "-Wl,--version-script="+v2, "-Wl,-soname,libmdrv.so", "-o", lib, libSrc)
+	gccRun("-o", bin, mainSrc, "-L"+dir, "-lmdrv", "-Wl,-rpath,"+dir)
+	gccRun("-shared", "-fPIC", "-Wl,-soname,libmdrv.so", "-o", lib, libSrc)
+
+	// Gegenprobe: der Lader meldet wirklich etwas auf stderr.
+	probe := exec.Command(bin)
+	probe.Env = append(os.Environ(), "LD_TRACE_LOADED_OBJECTS=1")
+	var probeErr bytes.Buffer
+	probe.Stderr = &probeErr
+	_ = probe.Run()
+	if !strings.Contains(probeErr.String(), "no version information available") {
+		t.Skipf("Lader meldet keine fehlende Versionsinformation: %q", probeErr.String())
+	}
+
+	data, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd, err := createMemFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing, err := traceMissing(fd); len(missing) != 0 || err != nil {
+		t.Errorf("traceMissing = (%q, %v), erwartet (nil, nil)", missing, err)
 	}
 }
 

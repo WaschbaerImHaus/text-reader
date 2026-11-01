@@ -6,7 +6,7 @@
 // in einen Puffer, damit die Testausgabe sauber bleibt.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Aufgabe 5: Ablaufsteuerung)
+// Letzte Änderung: 2026-11-01 (NilFields erreicht den Weg ohne Run, Hinweis nur einmal auf stderr – Bug-Runde Build 47)
 package linuxsetup
 
 import (
@@ -469,16 +469,73 @@ func TestHandleMissing_EnglishStderr(t *testing.T) {
 }
 
 // TestHandleMissing_NilFields: ohne Asker, Run und Stderr stürzt nichts ab;
-// ohne Run wird nie etwas installiert.
+// ohne Run wird nie etwas installiert. apt-get und pkexec liegen unter den
+// festen Pfaden (H3), damit der zweite Aufruf wirklich bis zur Frage und zum
+// fehlenden Run kommt (vorher endete er schon an „kein pkexec“).
 func TestHandleMissing_NilFields(t *testing.T) {
-	e := Env{Lang: LangEN, LookPath: fakeLookPath("apt-get")}
+	e := Env{Lang: LangEN, LookPath: fakeLookPath("apt-get", PkexecPath, AptGetPath)}
 	// Ohne Asker gibt es keine Antwort, also auch keine Installation.
 	if HandleMissingLibraries(e, testMissing) {
 		t.Fatal("erwartet false ohne Asker")
 	}
-	e.Asker = &scriptedAsker{answers: []string{"install"}}
+	asker := &scriptedAsker{answers: []string{"install"}}
+	e.Asker = asker
 	if HandleMissingLibraries(e, testMissing) {
 		t.Fatal("erwartet false ohne Run")
+	}
+	// Der Weg „ohne Run“ wurde erreicht: gefragt, „install“ gewählt, Run
+	// fehlt → wie nicht startbar → genau ein Hinweis.
+	if len(asker.asks) != 1 {
+		t.Errorf("Fragen = %d, erwartet 1 (Weg ohne Run nicht erreicht)", len(asker.asks))
+	}
+	hintTitle, _ := Text(LangEN, MsgWebKitHint)
+	if len(asker.informs) != 1 || asker.informs[0].title != hintTitle {
+		t.Errorf("Hinweise = %#v, erwartet genau MsgWebKitHint", asker.informs)
+	}
+}
+
+// TestHandleMissing_StderrAskerHintOnce prüft (Fund 1, Bug-Runde Build 47):
+// Schreibt der Asker selbst nur auf stderr (stderrAsker oder kein Asker),
+// steht der Hinweis genau einmal dort – mit und ohne pkexec. Eine Frage
+// wäre unbeantwortbar; es läuft kein Befehl.
+func TestHandleMissing_StderrAskerHintOnce(t *testing.T) {
+	cases := []struct {
+		name     string
+		tools    []string
+		ownAsker bool
+	}{
+		{"ohne pkexec, stderrAsker", []string{"apt-get"}, true},
+		{"mit pkexec, stderrAsker", []string{"apt-get", PkexecPath, AptGetPath}, true},
+		{"ohne pkexec, kein Asker", []string{"apt-get"}, false},
+		{"mit pkexec, kein Asker", []string{"apt-get", PkexecPath, AptGetPath}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			var calls [][]string
+			e := Env{
+				Lang:     LangEN,
+				Run:      scriptedRun(t, &calls),
+				LookPath: fakeLookPath(c.tools...),
+				Stderr:   &stderr,
+			}
+			if c.ownAsker {
+				e.Asker = &stderrAsker{w: &stderr}
+			}
+			if HandleMissingLibraries(e, testMissing) {
+				t.Fatal("erwartet false")
+			}
+			title, _ := Text(LangEN, MsgWebKitMissing)
+			if n := strings.Count(stderr.String(), title); n != 1 {
+				t.Errorf("Titel %d-mal auf stderr, erwartet 1:\n%s", n, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), InstallHint(PMApt)) || !strings.Contains(stderr.String(), testMissing[1]) {
+				t.Errorf("Befehl oder Bibliothek fehlt:\n%s", stderr.String())
+			}
+			if len(calls) != 0 {
+				t.Errorf("Befehle gestartet: %v", calls)
+			}
+		})
 	}
 }
 

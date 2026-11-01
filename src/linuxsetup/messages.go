@@ -7,7 +7,7 @@
 // wie es ist.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopf-Reihenfolge, „Fehlende Bibliotheken“)
+// Letzte Änderung: 2026-11-01 (MsgSystemTooOld – System zu alt, Bug-Runde Build 47)
 package linuxsetup
 
 import "strings"
@@ -77,6 +77,11 @@ const (
 	// Argument 1: behaltene Pfade, mit "\n" verbunden (ohne Argument die
 	// drei Standardpfade ~/.config, ~/.cache und ~/.local/share je mit md-reader).
 	MsgUninstalled
+	// MsgSystemTooOld: Das System ist zu alt (der Lader vermisst
+	// Symbolversionen, meist der glibc); MD Reader kann nie starten.
+	// Argument 1: verlangte Versionen aus DescribeRequiredVersions,
+	// z. B. "glibc 2.38" (ohne Argument "glibc").
+	MsgSystemTooOld
 
 	// messageCount ist die Anzahl der Nachrichten (nur für Tests und Prüfungen).
 	messageCount
@@ -130,6 +135,11 @@ var messagesDE = map[MessageID]message{
 		"MD Reader entfernt",
 		"Programm, Menüeintrag und Icons wurden entfernt. Ihre Einstellungen und Daten bleiben erhalten:\n{1}",
 	},
+	MsgSystemTooOld: {
+		"MD Reader: Dieses Linux ist zu alt",
+		"MD Reader braucht neuere Systembibliotheken, als dieses Linux mitbringt. " +
+			"Benötigt wird {1} oder neuer.\n\nBitte das System aktualisieren.",
+	},
 }
 
 // messagesEN enthält alle englischen Texte.
@@ -172,6 +182,11 @@ var messagesEN = map[MessageID]message{
 		"MD Reader removed",
 		"The program, menu entry and icons were removed. Your settings and data are kept:\n{1}",
 	},
+	MsgSystemTooOld: {
+		"MD Reader: This Linux is too old",
+		"MD Reader needs newer system libraries than this Linux provides. " +
+			"Required: {1} or newer.\n\nPlease update the system.",
+	},
 }
 
 // defaultArgs sind die Ersatzwerte, wenn der Aufrufer kein Argument übergibt.
@@ -179,14 +194,15 @@ var defaultArgs = map[MessageID]string{
 	MsgWebKitMissing: "libwebkit2gtk-4.1.so.0",
 	MsgWebKitHint:    "sudo apt install " + WebKitPackage,
 	MsgUninstalled:   "~/.config/md-reader\n~/.cache/md-reader\n~/.local/share/md-reader",
+	MsgSystemTooOld:  "glibc",
 }
 
 // Text liefert Titel und Text einer Nachricht in der gewünschten Sprache.
 //
 // Argumente je Nachricht: siehe Kommentar an der jeweiligen MessageID
 // (MsgWebKitMissing: Bibliotheken mit ", " verbunden; MsgWebKitHint: Befehl
-// aus InstallHint; MsgUninstalled: behaltene Pfade mit "\n" verbunden; alle
-// anderen ohne Argument). Fehlt ein nötiges Argument, wird ein sinnvoller
+// aus InstallHint; MsgUninstalled: behaltene Pfade mit "\n" verbunden;
+// MsgSystemTooOld: verlangte Versionen; alle anderen ohne Argument). Fehlt ein nötiges Argument, wird ein sinnvoller
 // Ersatzwert eingesetzt; überzählige Argumente werden ignoriert.
 // Unbekannte Sprachen fallen auf Englisch zurück; eine unbekannte ID liefert
 // den Titel "MD Reader" und einen leeren Text.

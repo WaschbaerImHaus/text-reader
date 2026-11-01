@@ -3,7 +3,7 @@
 // D-Bus-Benachrichtigung gegen einen privaten Session-Bus.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-10-25 (Korrekturrunde 2: Knopfprüfung, kdialog-Maskierung, Zeitwerte)
+// Letzte Änderung: 2026-11-01 (ButtonCount ohne echtes runDialog, zenity-Gegenprobe mit voller Liste, IsTextOnly – Bug-Runde Build 47)
 package linuxsetup
 
 import (
@@ -265,8 +265,10 @@ func TestKDialogRichText(t *testing.T) {
 	calls = nil
 	z := &dialogAsker{tool: "zenity", path: "/usr/bin/zenity", run: fakeRun(&calls, 0, "", nil)}
 	_, _ = z.Ask("A & <B>", "x < y\nz", []Button{{"ok", "OK"}, {"cancel", "Abbrechen"}}, time.Minute)
-	if len(calls) != 1 || calls[0].args[5] != "x < y\nz" || calls[0].args[3] != "A & <B>" {
-		t.Errorf("zenity Argumente = %#v", calls)
+	wantZenity := []string{"--question", "--no-markup", "--title", "A & <B>", "--text", "x < y\nz",
+		"--ok-label", "OK", "--cancel-label", "Abbrechen"}
+	if len(calls) != 1 || !reflect.DeepEqual(calls[0].args, wantZenity) {
+		t.Errorf("zenity Argumente = %#v,\nerwartet %#v", calls, wantZenity)
 	}
 }
 
@@ -705,9 +707,15 @@ func TestDBusAsker(t *testing.T) {
 		if notifies, _ := server.snapshot(); len(notifies) != 0 {
 			t.Errorf("bei ungültigen Knöpfen wurde Notify gerufen: %#v", notifies)
 		}
-		d := &dialogAsker{tool: "zenity", path: "/usr/bin/zenity", run: runDialog}
+		// Nie das echte runDialog: Bei einer Regression öffnete sich sonst
+		// ein echter zenity-Dialog. Der Fake zeichnet nur auf.
+		var calls []dialogCall
+		d := &dialogAsker{tool: "zenity", path: "/usr/bin/zenity", run: fakeRun(&calls, 0, "", nil)}
 		if _, err := d.Ask("T", "B", four, time.Second); !errors.Is(err, errButtonCount) {
 			t.Errorf("dialogAsker: %v, erwartet errButtonCount", err)
+		}
+		if len(calls) != 0 {
+			t.Errorf("dialogAsker hat das Programm gestartet: %#v", calls)
 		}
 	})
 
@@ -799,5 +807,27 @@ func TestProbeNotifications_Timeout(t *testing.T) {
 	}
 	if _, ok := probeNotifications(context.Background(), ""); ok {
 		t.Error("leere Adresse: ok")
+	}
+}
+
+// TestIsTextOnly prüft die Erkennung eines Askers, der nur Text auf stderr
+// ausgibt (Fund 1, Bug-Runde Build 47): stderrAsker ja; dialogAsker,
+// D-Bus-Asker, Test-Asker und nil nein.
+func TestIsTextOnly(t *testing.T) {
+	if !IsTextOnly(&stderrAsker{w: io.Discard}) {
+		t.Error("stderrAsker gilt nicht als reine Textausgabe")
+	}
+	if !IsTextOnly(newStderrAsker()) {
+		t.Error("newStderrAsker gilt nicht als reine Textausgabe")
+	}
+	for _, a := range []Asker{
+		newDialogAsker("zenity", "/usr/bin/zenity"),
+		&dbusAsker{address: "unix:path=/x"},
+		&scriptedAsker{},
+		nil,
+	} {
+		if IsTextOnly(a) {
+			t.Errorf("%T gilt fälschlich als reine Textausgabe", a)
+		}
 	}
 }
