@@ -44,17 +44,31 @@ GOBUILD_CACHE := $(CACHE_ROOT)/gobuild
 # Container-Aufruf für den GUI-Build: Projekt nach /work, eigener Benutzer (Dateien
 # gehören nicht root), kein Netz (Module liegen vorab im Cache, siehe gomod-download).
 # Die Shims in src/pkgconfig*/ werden über den absoluten Containerpfad /work/src/... gefunden.
-DOCKER_RUN = docker run --rm --network none \
+# Gehärtet: kein Nachladen von Images (--pull=never), keine Capabilities, keine
+# Rechteausweitung; das Projekt ist nur lesbar, schreibbar ist allein build/gui.
+DOCKER_RUN = docker run --rm --pull=never --network none \
+	--cap-drop=ALL --security-opt=no-new-privileges \
 	--user $(shell id -u):$(shell id -g) \
-	-v "$(CURDIR)":/work -w /work/src \
+	-v "$(CURDIR)":/work:ro -v "$(CURDIR)/$(GUI_DIR)":/work/$(GUI_DIR) -w /work/src \
 	-e HOME=/tmp -e GOCACHE=/tmp/.cache/go-build \
 	-e GOPROXY=off -e GOFLAGS=-mod=readonly \
 	-v "$(GOMOD_CACHE)":/go/pkg/mod \
 	-v "$(GOBUILD_CACHE)":/tmp/.cache/go-build
 
-# Prüft, dass das Image der Architektur ($(1)) existiert
-CHECK_IMAGE = docker image inspect $(IMAGE_PREFIX)-$(1) > /dev/null 2>&1 || { \
-	echo "FEHLER: Image $(IMAGE_PREFIX)-$(1) fehlt – erst 'make build-images' ausführen." >&2; exit 1; }
+# Hash des Dockerfiles; steckt als Label im Image und zeigt veraltete Images an
+DOCKERFILE_SHA := $(shell sha256sum $(DOCKER_DIR)/Dockerfile 2>/dev/null | cut -d' ' -f1)
+IMAGE_LABEL    := md-reader.dockerfile-sha256
+
+# Prüft Docker und das Image der Architektur ($(1)): Docker vorhanden und erreichbar,
+# Image vorhanden und mit dem aktuellen Dockerfile gebaut (Label-Vergleich)
+CHECK_IMAGE = command -v docker > /dev/null 2>&1 || { \
+		echo "FEHLER: docker nicht gefunden – Linux-GUI wird im Container gebaut (sudo apt-get install docker.io)." >&2; exit 1; }; \
+	docker info > /dev/null 2>&1 || { \
+		echo "FEHLER: Docker-Daemon nicht erreichbar (läuft er? Benutzer in Gruppe docker?)." >&2; exit 1; }; \
+	docker image inspect $(IMAGE_PREFIX)-$(1) > /dev/null 2>&1 || { \
+		echo "FEHLER: Image $(IMAGE_PREFIX)-$(1) fehlt – erst 'make build-images' ausführen." >&2; exit 1; }; \
+	[ "$$(docker image inspect --format '{{index .Config.Labels "$(IMAGE_LABEL)"}}' $(IMAGE_PREFIX)-$(1))" = "$(DOCKERFILE_SHA)" ] || { \
+		echo "FEHLER: Image $(IMAGE_PREFIX)-$(1) veraltet – erst 'make build-images' ausführen." >&2; exit 1; }
 
 # PKG_CONFIG_PATH für WebKit-Shim (nur für Host-Aufrufe wie make test; die
 # Container-Builds setzen den Pfad selbst)
@@ -112,7 +126,7 @@ COPY_ICONS   = mkdir -p $(PAYLOAD_DIR)/icons && \
 FORCE:
 
 .PHONY: FORCE all linux windows linux-arm64 linux-armhf installer macos release test clean increment-build help \
-	deb deb-amd64 deb-arm64 deb-armhf build-images gomod-download
+	deb deb-amd64 deb-arm64 deb-armhf build-images rebuild-images gomod-download
 
 ## all: Kompiliert für Linux x86_64, Windows und Linux ARM64/ARMhf
 all: increment-build test linux windows linux-arm64 linux-armhf installer deb
@@ -225,13 +239,18 @@ $(BUILD_DIR)/$(PROJECT)-linux-armhf: $(GUI_DIR)/$(PROJECT)-arm FORCE
 build-images:
 	@for a in amd64 arm64 armhf; do \
 		echo "→ Image $(IMAGE_PREFIX)-$$a..."; \
-		docker build --build-arg TARGET_ARCH=$$a -t $(IMAGE_PREFIX)-$$a $(DOCKER_DIR) || exit 1; \
+		docker build $(DOCKER_BUILD_OPTS) --label $(IMAGE_LABEL)=$(DOCKERFILE_SHA) \
+			--build-arg TARGET_ARCH=$$a -t $(IMAGE_PREFIX)-$$a $(DOCKER_DIR) || exit 1; \
 	done
+
+## rebuild-images: Wie build-images, aber ohne Cache und mit frischer Basis (Sicherheitsupdates)
+rebuild-images:
+	@$(MAKE) --no-print-directory build-images DOCKER_BUILD_OPTS="--pull --no-cache"
 
 ## gomod-download: Lädt die Go-Module auf dem Host in den Cache (der Container läuft ohne Netz)
 gomod-download:
 	@mkdir -p "$(GOMOD_CACHE)" "$(GOBUILD_CACHE)"
-	cd $(SRC_DIR) && GOMODCACHE="$(GOMOD_CACHE)" GOFLAGS=-mod=mod GOPROXY=https://proxy.golang.org,direct $(GO) mod download
+	cd $(SRC_DIR) && GOMODCACHE="$(GOMOD_CACHE)" GOPROXY=https://proxy.golang.org,direct $(GO) mod download
 
 ## deb: Baut die drei .deb-Pakete (amd64, arm64, armhf; reine GUI ohne Starter)
 deb: deb-amd64 deb-arm64 deb-armhf
@@ -306,7 +325,7 @@ release-notes:
 	@echo "### Requirements"
 	@echo ""
 	@echo "**Windows:** Windows 10 or newer (WebView2 pre-installed)"
-	@echo "**Linux:** Ubuntu 22.04+, Debian 12+, Mint 21+, KDE neon, Raspberry Pi OS Bookworm; WebKitGTK is offered for installation on first start"
+	@echo "**Linux:** Ubuntu 22.04+, Debian 12+, Mint 21+, KDE neon, Raspberry Pi OS Bookworm (Raspberry Pi 2 or newer); WebKitGTK is offered for installation on first start"
 	@echo "**macOS:** macOS 13 or newer; unsigned build – on first start allow it in System Settings → Privacy & Security (\"Open Anyway\")"
 
 ## test: Führt alle Tests aus

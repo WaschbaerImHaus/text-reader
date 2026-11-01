@@ -9,10 +9,13 @@
 #
 # Go wird aus dem offiziellen Tarball installiert, die SHA-256-Summe ist festgeschrieben
 # (Quelle: https://go.dev/dl/?mode=json). Bei einem Go-Update beide ARGs ändern.
+# Das Basisimage ist per Digest festgelegt (reproduzierbar). Aktualisieren:
+#   docker pull ubuntu:22.04 && docker image inspect ubuntu:22.04 --format '{{index .RepoDigests 0}}'
+# den Digest in FROM eintragen, dann 'make rebuild-images'.
 #
 # Autor: Kurt Ingwer
 # Letzte Änderung: 2026-11-01
-FROM ubuntu:22.04
+FROM ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
 
 ARG TARGET_ARCH=amd64
 ARG GO_VERSION=1.27.2

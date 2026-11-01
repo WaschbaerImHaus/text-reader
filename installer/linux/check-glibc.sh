@@ -15,9 +15,9 @@
 # aus (z. B. 2.38). build-deb.sh leitet daraus die Abhängigkeit libc6 ab.
 # Enthält die Datei keine GLIBC-Symbole, endet das Skript mit Exit 1.
 #
-# Grund des Wächters: Die Build-Maschine hat eine neuere glibc als die
-# Zielsysteme (Ubuntu 22.04 hat 2.35; gebaut wird im 22.04-Container). Eine unbedachte Funktion könnte die
-# Untergrenze still anheben.
+# Grund des Wächters: Er schützt davor, dass ein Image-Update oder eine neue
+# Funktion die Untergrenze anhebt (Ubuntu 22.04 hat glibc 2.35; gebaut wird im
+# 22.04-Container).
 #
 # Exit-Codes: 0 = in Ordnung, 1 = zu neu / keine Symbole, 2 = Aufruf- oder Lesefehler.
 #
