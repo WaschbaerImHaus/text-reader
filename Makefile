@@ -8,7 +8,7 @@
 # macOS (Universal) nur auf einem Mac: make macos (sonst GitHub-Workflow macos.yml)
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-11-01 (GUI-Build in Ubuntu-22.04-Containern, Wächter 2.35)
+# Letzte Änderung: 2026-11-07 (Tests scheitern sichtbar, FORCE für Windows, release veraltet)
 
 PROJECT     := md-reader
 BUILD_DIR   := build
@@ -165,7 +165,7 @@ $(BUILD_DIR)/$(PROJECT): $(GUI_DIR)/$(PROJECT)-amd64 FORCE
 ## windows: Kompiliert das Windows x86_64 Binary (Cross-Compilation mit MinGW)
 windows: $(BUILD_DIR)/$(PROJECT).exe
 
-$(BUILD_DIR)/$(PROJECT).exe:
+$(BUILD_DIR)/$(PROJECT).exe: FORCE
 	@echo "→ Kompiliere für Windows x86_64 (Cross-Compilation)..."
 	@mkdir -p $(BUILD_DIR)
 	@if command -v $(WIN_CC) > /dev/null 2>&1; then \
@@ -285,7 +285,8 @@ installer: $(BUILD_DIR)/$(PROJECT).exe
 macos:
 	installer/macos/build-app.sh
 
-## release: Kompiliert alles und erstellt ein GitHub Release
+## release: VERALTET – Veröffentlichen nach .claude/rules/build-release.md (gh release create durch den Lead mit 8 Assets)
+##   Dieses Ziel kennt nur den alten Ablauf und wird nicht mehr verwendet.
 release: all
 	@echo "→ Erstelle GitHub Release v1.0.$(NEXT_BUILD)..."
 	@if [ -z "$$GH_TOKEN" ] && ! gh auth status > /dev/null 2>&1; then \
@@ -322,7 +323,7 @@ release-notes:
 	@echo "| \`md-reader-linux-armhf\` | Linux ARMhf (32-bit) – single file, installs itself on request |"
 	@echo "| \`md-reader_1.0.$(BUILD_NUM)_amd64.deb\` | Debian/Ubuntu/Mint x86_64 package |"
 	@echo "| \`md-reader_1.0.$(BUILD_NUM)_arm64.deb\` | Debian/Ubuntu/Mint ARM64 package |"
-	@echo "| \`md-reader_1.0.$(BUILD_NUM)_armhf.deb\` | Debian/Ubuntu/Mint ARMhf (32-bit) package |"
+	@echo "| \`md-reader_1.0.$(BUILD_NUM)_armhf.deb\` | Debian/Ubuntu/Raspberry Pi OS ARMhf (32-bit) package |"
 	@echo "| \`md-reader-macos.zip\` | macOS 13+ – Apple Silicon and Intel (attached by CI a few minutes after release) |"
 	@echo ""
 	@echo "### Requirements"
@@ -334,8 +335,12 @@ release-notes:
 ## test: Führt alle Tests aus
 test:
 	@echo "→ Führe Tests aus..."
-	cd $(SRC_DIR) && PKG_CONFIG_PATH=$(abspath $(PKG_CONFIG)):$$PKG_CONFIG_PATH \
-		CGO_ENABLED=1 $(GO) test ./... -v 2>&1 | tail -30
+	@# Ausgabe in Datei, damit der Exit-Code von go test (nicht von tail) zählt
+	@out="$$(mktemp)"; \
+	( cd $(SRC_DIR) && PKG_CONFIG_PATH=$(abspath $(PKG_CONFIG)):$$PKG_CONFIG_PATH \
+		CGO_ENABLED=1 $(GO) test ./... -v > "$$out" 2>&1 ); rc=$$?; \
+	tail -30 "$$out"; rm -f "$$out"; \
+	if [ $$rc -ne 0 ]; then echo "FEHLER: Tests fehlgeschlagen (Exit $$rc)" >&2; exit $$rc; fi
 	@echo "✓ Tests abgeschlossen"
 
 ## increment-build: Erhöht die Build-Nummer

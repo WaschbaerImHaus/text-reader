@@ -14,19 +14,23 @@
 #   usr/share/icons/hicolor/{16x16,32x32,48x48,256x256}/apps/md-reader.png
 #   usr/share/icons/hicolor/scalable/apps/md-reader.svg
 #
-# Die Abhängigkeiten werden NICHT mit dpkg-shlibdeps ermittelt: Auf der
-# Build-Maschine (Ubuntu 26.04) würde es die neuen Versionen von libwebkit2gtk
-# eintragen, und das Paket wäre auf Ubuntu 24.04 nicht installierbar. Fest
-# stehen libwebkit2gtk-4.1-0 und libgtk-3-0 im Skript. Nur die Untergrenze von
-# libc6 wird aus der höchsten GLIBC-Symbolversion der GUI-Datei abgeleitet
-# (check-glibc.sh --max), heute 2.34 oder 2.35.
+# Die Abhängigkeiten werden NICHT mit dpkg-shlibdeps ermittelt: Es würde die
+# Paketversionen aus dem Build-Image (Ubuntu 22.04) eintragen, nicht die der
+# Zielsysteme, und das Paket wäre auf neueren Systemen schwer installierbar.
+# Fest stehen libwebkit2gtk-4.1-0 und "libgtk-3-0t64 | libgtk-3-0" im Skript:
+# Seit der time_t-Umstellung (Ubuntu 24.04, Debian 13, Raspberry Pi OS Trixie)
+# heißt das GTK-Paket auf armhf libgtk-3-0t64 und liefert libgtk-3-0 dort nicht
+# mehr als Provides; die Alternative deckt alte und neue Namen ab. libc6 und
+# libwebkit2gtk-4.1-0 behalten ihre Namen (geprüft in noble und trixie).
+# Nur die Untergrenze von libc6 wird aus der höchsten GLIBC-Symbolversion der
+# GUI-Datei abgeleitet (check-glibc.sh --max), heute 2.34 oder 2.35.
 #
 # Die Desktop-Datei kommt aus dem Starter (--print-desktop-entry), damit es nur
 # eine einzige Vorlage gibt. Die Build-Nummer wird dabei mit -ldflags gesetzt,
 # sonst stünde X-MD-Reader-Build=0 in der Datei.
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-11-01 (Build in Ubuntu-22.04-Containern)
+# Letzte Änderung: 2026-11-07 (Depends mit t64-Alternative)
 set -euo pipefail
 
 # Aufruf prüfen
@@ -135,7 +139,7 @@ Version: ${version}
 Architecture: ${arch}
 Maintainer: Kurt Ingwer <WaschbaerImHaus@users.noreply.github.com>
 Installed-Size: ${installed_size}
-Depends: libc6 (>= ${libc_min}), libwebkit2gtk-4.1-0, libgtk-3-0
+Depends: libc6 (>= ${libc_min}), libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0
 Recommends: zenity, poppler-utils, ghostscript
 Section: text
 Priority: optional
