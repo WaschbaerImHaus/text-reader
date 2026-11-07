@@ -21,7 +21,7 @@
 // die Liste mehrerer öffentlicher Schlüssel.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (Review-Runde 1: Verify überspringt kaputte Schlüssel, LoadPrivateKey prüft das geöffnete Handle)
+// Letzte Änderung: 2026-11-07 (Review-Runde 2: LoadPrivateKey ohne Hänger an FIFOs, kein führender Bindestrich im Dateinamen)
 package releasesig
 
 import (
@@ -176,15 +176,16 @@ func validHexSum(sum string) bool {
 }
 
 // validFileName erlaubt nur schlichte Dateinamen (Erlaubnisliste):
-// Buchstaben, Ziffern, Punkt, Binde- und Unterstrich. Kein führender Punkt,
-// kein "..", also keine Pfade, versteckten Dateien, Leer- oder Steuerzeichen.
+// Buchstaben, Ziffern, Punkt, Binde- und Unterstrich. Kein führender Punkt
+// oder Bindestrich, kein "..", also keine Pfade, versteckten Dateien,
+// Optionen-ähnlichen Namen, Leer- oder Steuerzeichen.
 //
 // @param name – Dateiname
 // @return bool – true, wenn gültig
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 2: kein führender Bindestrich)
 func validFileName(name string) bool {
-	if name == "" || name[0] == '.' || strings.Contains(name, "..") {
+	if name == "" || name[0] == '.' || name[0] == '-' || strings.Contains(name, "..") {
 		return false
 	}
 	for i := 0; i < len(name); i++ {
@@ -308,15 +309,26 @@ func GenerateKey(path string) (ed25519.PublicKey, error) {
 
 // LoadPrivateKey lädt den privaten Signaturschlüssel (Seed als Hex).
 // Unter Unix wird ein Schlüssel mit Gruppen- oder Fremdrechten abgelehnt;
-// nur eine reguläre Datei wird angenommen. Geprüft wird das bereits
-// geöffnete Handle (kein Wechsel der Datei zwischen Prüfung und Lesen).
+// nur eine reguläre Datei wird angenommen. Ablauf:
+//  1. os.Stat vor dem Öffnen: nur reguläre Dateien (eine FIFO oder ein
+//     Gerät würde os.Open sonst blockieren lassen),
+//  2. öffnen und f.Stat() auf dem Handle,
+//  3. os.SameFile(vorher, nachher): kein Austausch dazwischen,
+//  4. Rechteprüfung auf dem Handle.
 //
 // @param path – Schlüsseldatei
 // @return ed25519.PrivateKey – privater Schlüssel
 // @return error – Lese-, Rechte- oder Formatfehler (ohne Inhalt der Datei)
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (Review-Runde 1: erst öffnen, dann f.Stat())
+// Letzte Änderung: 2026-11-07 (Review-Runde 2: Stat vor Open gegen FIFO-Hänger, SameFile)
 func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
+	before, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, fmt.Errorf("Schlüsseldatei %s ist keine reguläre Datei", path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -326,8 +338,8 @@ func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("Schlüsseldatei %s ist keine reguläre Datei", path)
+	if !info.Mode().IsRegular() || !os.SameFile(before, info) {
+		return nil, fmt.Errorf("Schlüsseldatei %s wurde während des Ladens ausgetauscht", path)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("Schlüsseldatei %s ist für andere zugänglich (chmod 600)", path)

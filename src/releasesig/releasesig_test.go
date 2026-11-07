@@ -13,7 +13,7 @@
 // in t.TempDir(); es entsteht nie ein echter Release-Schlüssel.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (Review-Runde 1: kaputte Schlüssel werden übersprungen)
+// Letzte Änderung: 2026-11-07 (Review-Runde 2: führender Bindestrich im Namen)
 package releasesig_test
 
 import (
@@ -141,6 +141,7 @@ func TestParseManifest_BadLines(t *testing.T) {
 		"zwei Punkte im Namen":      header + good + "  a..b\n",
 		"nur zwei Punkte":           header + good + "  ..\n",
 		"führender Punkt":           header + good + "  .hidden\n",
+		"führender Bindestrich":     header + good + "  -verify\n",
 		"Großbuchstaben-Hex":        header + strings.ToUpper(good) + "  md-reader\n",
 		"Hex zu kurz":               header + good[:62] + "  md-reader\n",
 		"Hex zu lang":               header + good + "00  md-reader\n",

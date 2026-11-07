@@ -10,7 +10,7 @@
 // Alle Schlüssel entstehen in t.TempDir(); nie ein echter Release-Schlüssel.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (Review-Runde 1: -pubkeys statt überladenem -pub, neue Fehlerfälle)
+// Letzte Änderung: 2026-11-07 (Review-Runde 2: Datei "-verify" ist ein ungültiger Name)
 package main
 
 import (
@@ -253,10 +253,12 @@ func TestRun_PubkeysErrorDoesNotEchoValue(t *testing.T) {
 }
 
 // TestRun_FileNamedVerifyDoesNotSwitchMode: Eine Datei namens "-verify"
-// hinter den Dateiargumenten ist eine Datei, kein Schalter.
+// hinter den Dateiargumenten ist eine Datei, kein Schalter. Sie wird als
+// ungültiger Dateiname abgelehnt (Exit 1, kein Aufruffehler 2), und es
+// entsteht keine Liste.
 func TestRun_FileNamedVerifyDoesNotSwitchMode(t *testing.T) {
 	dir := t.TempDir()
-	keyPath, pubHex := genKey(t, dir)
+	keyPath, _ := genKey(t, dir)
 	assets := makeAssets(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "-verify"), []byte("odd"), 0o644); err != nil {
 		t.Fatal(err)
@@ -267,23 +269,14 @@ func TestRun_FileNamedVerifyDoesNotSwitchMode(t *testing.T) {
 	}
 	t.Chdir(dir)
 	code, _, errOut := runCLI("-key", keyPath, "-tag", "v1.0.48", "-out", out, assets[0], "-verify")
-	if code != 0 {
-		t.Fatalf("Signieren mit Datei -verify: Exit %d, stderr %q", code, errOut)
+	if code != 1 {
+		t.Errorf("Signieren mit Datei -verify: Exit %d, erwartet 1 (stderr %q)", code, errOut)
 	}
-	manifest, err := os.ReadFile(filepath.Join(out, releasesig.ManifestName))
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(errOut, "-verify") {
+		t.Errorf("Meldung %q nennt den abgelehnten Dateinamen nicht", errOut)
 	}
-	sums, err := releasesig.ParseManifest(manifest, "v1.0.48")
-	if err != nil {
-		t.Fatalf("ParseManifest: %v", err)
-	}
-	if _, ok := sums["-verify"]; !ok || len(sums) != 2 {
-		t.Errorf("Liste %v enthält nicht genau md-reader und -verify", sums)
-	}
-	sigPath := filepath.Join(out, releasesig.SignatureName)
-	if code, _, errOut := runCLI("-verify", "-pubkeys", pubHex, "-tag", "v1.0.48", filepath.Join(out, releasesig.ManifestName), sigPath); code != 0 {
-		t.Errorf("Prüfen: Exit %d, stderr %q", code, errOut)
+	if _, err := os.Stat(filepath.Join(out, releasesig.ManifestName)); err == nil {
+		t.Error("trotz ungültigem Dateinamen wurde eine Liste geschrieben")
 	}
 }
 
