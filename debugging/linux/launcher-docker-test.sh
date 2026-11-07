@@ -1,65 +1,104 @@
 #!/usr/bin/env bash
 # Abnahme des Linux-Starters, der Selbst-Installation und des .deb (Build 47).
 #
-# Teil A (Docker, Image ubuntu:24.04 = Basis von KDE neon):
-#   1. Starter ohne WebKit: Exit 1, Hinweis auf stderr (englisch).
+# Teil A (Docker, je Image; Standard ubuntu:22.04, ubuntu:24.04, ubuntu:26.04):
+#   1. Starter ohne WebKit: Exit 1, Hinweis genau einmal auf stderr (englisch).
 #   2. Starter ohne WebKit mit LANG=de_DE.UTF-8: deutsche Meldung.
 #   3. --install / --uninstall in HOME=/tmp/h, desktop-file-validate.
-#   4. .deb installieren (zieht WebKit mit), Paket-GUI unter Xvfb,
-#      WM_CLASS, Bildschirmfoto.
-#   5. Starter mit installiertem WebKit: Fenster, keine Installationsfrage;
+#   4. .deb per apt installieren (zieht WebKit mit), Paket-GUI unter xvfb-run,
+#      WM_CLASS, Prozessname, Bildschirmfoto.
+#   5. Starter mit installiertem Paket: Fenster, keine Installationsfrage;
 #      Gegenprobe ohne Paket-Desktop-Datei (dann muss die Frage kommen).
-# Teil B (LXC unter eigenem Xvfb):
-#   7. Kopie des Starters mit leerem HOME: WM_CLASS, zenity-Frage,
-#      Bildschirmfoto, "Ja" per Return, danach Menüeintrag vorhanden;
-#      zweiter Start ohne Frage.
-# Teil C (nur Beobachtung, bewertet nicht):
-#   8. Starter auf ubuntu:22.04 (glibc 2.35) ohne und mit WebKit.
-#   9. arm64-Starter unter qemu-user (nur wenn qemu-aarch64 vorhanden).
-# Zusätzlich (Teil A, 6.): Kopfdaten und Inhalt aller drei .deb-Pakete.
+# Teil F (Docker, ein Image, Standard ubuntu:24.04): Gegenprobe F1 –
+#   Rechtsklick/Tastatur öffnen kein Kontextmenü, das Fenster navigiert nie
+#   weg (lokaler HTTP-Server an 127.0.0.1 sieht keine Anfrage), Linksklick geht
+#   an den externen Browser (Fake-xdg-open protokolliert).
+# Teil T (Docker, zu altes System, Standard ubuntu:20.04 mit glibc 2.31):
+#   Meldung „zu alt“ (Terminal und Dialog), Exit 1, --install verweigert,
+#   apt lehnt das .deb ab.
+# Teil D: Kopfdaten und Inhalt aller drei .deb-Pakete (ohne Container).
+# Teil B (LXC unter eigenem Xvfb): Kopie des Starters mit leerem HOME:
+#   WM_CLASS, zenity-Frage, „Ja“ per Return, Menüeintrag vorhanden; zweiter
+#   Start ohne Frage.
+# Teil C (nur Beobachtung, bewertet nicht): arm64-Starter unter qemu-user.
 #
 # Aufruf (aus beliebigem Verzeichnis):
-#   debugging/linux/launcher-docker-test.sh [AUSGABEVERZEICHNIS]
+#   debugging/linux/launcher-docker-test.sh [-i IMAGE]… [-o ALT-IMAGE] [-f F1-IMAGE] [AUSGABEVERZEICHNIS]
+#     -i IMAGE   Image für Teil A (mehrfach möglich; ersetzt die Standardliste)
+#     -o IMAGE   zu altes Image für Teil T (Standard ubuntu:20.04)
+#     -f IMAGE   Image für Teil F (Standard ubuntu:24.04)
 # Umgebung:
-#   SKIP_DOCKER=1   Teil A und C überspringen
+#   SKIP_DOCKER=1   Teile A, F, T, C überspringen
+#   SKIP_IMAGES=1   nur Teil A überspringen
+#   SKIP_F1=1       nur Teil F überspringen
+#   SKIP_TOO_OLD=1  nur Teil T überspringen
 #   SKIP_LXC=1      Teil B überspringen
 #   LXC_DISPLAY=87  Nummer des eigenen Xvfb-Displays im LXC
 #
 # build/ wird nur lesend in die Container eingehängt; Protokolle und
 # Bildschirmfotos landen im Ausgabeverzeichnis (Standard: mktemp -d).
-# Gibt je Prüfung PASS/FAIL aus und endet mit Exit 1, wenn eine scheitert.
+# Container laufen mit --rm und ohne veröffentlichte Ports; Server im
+# Container binden nur an 127.0.0.1. Gibt je Prüfung PASS/FAIL aus und endet
+# mit Exit 1, wenn eine scheitert.
 #
 # Autor: Kurt Ingwer
-# Letzte Änderung: 2026-10-28 (Abnahme Aufgabe 9)
+# Letzte Änderung: 2026-11-01 (Endabnahme Build 47: mehrere Images, F1, zu altes System)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
-OUT_DIR="${1:-$(mktemp -d)}"
-mkdir -p "$OUT_DIR/shots"
-OUT_DIR="$(cd "$OUT_DIR" && pwd)"
-IMAGE="ubuntu:24.04"
-OLD_IMAGE="ubuntu:22.04"
 BUILD_NUM="$(tr -d '[:space:]' <"$PROJECT_DIR/src/build.txt")"
 LXC_DISPLAY="${LXC_DISPLAY:-87}"
 
+# Images für Teil A, F und T (per Option änderbar).
+IMAGES=()
+OLD_IMAGE="ubuntu:20.04"
+F1_IMAGE="ubuntu:24.04"
+while getopts "i:o:f:" opt; do
+	case "$opt" in
+		i) IMAGES+=("$OPTARG") ;;
+		o) OLD_IMAGE="$OPTARG" ;;
+		f) F1_IMAGE="$OPTARG" ;;
+		*)
+			echo "Aufruf: $0 [-i IMAGE]… [-o ALT-IMAGE] [-f F1-IMAGE] [AUSGABEVERZEICHNIS]" >&2
+			exit 2
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+if [ "${#IMAGES[@]}" -eq 0 ]; then
+	IMAGES=("ubuntu:22.04" "ubuntu:24.04" "ubuntu:26.04")
+fi
+
+OUT_DIR="${1:-$(mktemp -d)}"
+mkdir -p "$OUT_DIR/shots"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+
+# Text der Meldung „zu alt“ (englisch und deutsch).
+TOO_OLD_EN="MD Reader: This Linux is too old"
+TOO_OLD_DE="MD Reader: Dieses Linux ist zu alt"
+
 # Anzahl gescheiterter Prüfungen.
 FAILS=0
+# Kurzname des gerade geprüften Images (steht vor jeder Prüfung).
+CUR_TAG="-"
 # PIDs eigener Hintergrundprozesse im LXC (werden beim Ende beendet).
 OWN_PIDS=()
+# Ergebnis je Teil für die Zusammenfassung ("Teil: n FAIL").
+SUMMARY=()
 
 # pass/fail/info geben das Ergebnis bzw. eine Beobachtung aus.
 pass() {
-	echo "PASS $1"
+	echo "PASS [$CUR_TAG] $1"
 }
 fail() {
-	echo "FAIL $1"
+	echo "FAIL [$CUR_TAG] $1"
 	FAILS=$((FAILS + 1))
 }
 info() {
-	echo "INFO $*"
+	echo "INFO [$CUR_TAG] $*"
 }
 
 # check NAME BEFEHL… meldet PASS bei Exit 0 von BEFEHL, sonst FAIL.
@@ -73,6 +112,11 @@ check() {
 	fi
 }
 
+# oneline gibt eine Datei einzeilig aus (Zeilenumbrüche als |).
+oneline() {
+	tr '\n' '|' <"$1"
+}
+
 # cleanup beendet nur die eigenen Prozesse (per PID, nie per Muster).
 cleanup() {
 	local pid
@@ -82,31 +126,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# run_stderr BEFEHL… führt BEFEHL aus, schreibt stderr nach $RUN_ERR und den
-# Exit-Code nach $RUN_CODE (bricht wegen set -e nicht ab).
+# tag_of IMAGE liefert den Kurznamen (ubuntu:24.04 → 24.04).
+tag_of() {
+	local tag="${1##*:}"
+	echo "${tag//\//_}"
+}
+
+# run_stderr DATEI BEFEHL… führt BEFEHL aus, schreibt stderr nach DATEI und
+# den Exit-Code nach $RUN_CODE (bricht wegen set -e nicht ab).
 run_stderr() {
-	RUN_ERR="$(mktemp -p "$OUT_DIR")"
+	local file="$1"
+	shift
 	set +e
-	"$@" >/dev/null 2>"$RUN_ERR"
+	"$@" >/dev/null 2>"$file"
 	RUN_CODE=$?
 	set -e
 }
 
-# docker_inner MODUS startet launcher-docker-inner.sh im Container und zählt
-# dessen FAIL-Zeilen mit.
+# docker_inner IMAGE MODUS AUSGABE startet launcher-docker-inner.sh im
+# Container und zählt dessen FAIL-Zeilen mit.
 docker_inner() {
-	local mode="$1" log="$OUT_DIR/inner-$1.log" code
+	local image="$1" mode="$2" out="$3" log code inner_fails
+	log="$out/inner-$mode.log"
+	mkdir -p "$out/$mode"
 	set +e
 	docker run --rm \
+		-e TAG="$CUR_TAG" \
 		-v "$BUILD_DIR:/b:ro" \
 		-v "$PROJECT_DIR/README.md:/doc/README.md:ro" \
 		-v "$SCRIPT_DIR/launcher-docker-inner.sh:/inner.sh:ro" \
-		-v "$OUT_DIR/$mode:/out" \
-		"$IMAGE" bash /inner.sh "$mode" >"$log" 2>&1
+		-v "$out/$mode:/out" \
+		"$image" bash /inner.sh "$mode" >"$log" 2>&1
 	code=$?
 	set -e
 	cat "$log"
-	local inner_fails
 	inner_fails="$(grep -c '^FAIL ' "$log" || true)"
 	FAILS=$((FAILS + inner_fails))
 	if [ "$code" -ne 0 ] && [ "$inner_fails" -eq 0 ]; then
@@ -114,77 +167,158 @@ docker_inner() {
 	fi
 }
 
+# convert_shots VERZEICHNIS PRÄFIX wandelt alle .xwd in VERZEICHNIS nach
+# $OUT_DIR/shots/PRÄFIX-<name>.png.
+convert_shots() {
+	local dir="$1" prefix="$2" xwd name
+	for xwd in "$dir"/*.xwd; do
+		[ -s "$xwd" ] || continue
+		name="$(basename "$xwd" .xwd)"
+		convert "xwd:$xwd" "$OUT_DIR/shots/$prefix-$name.png"
+		info "Bildschirmfoto: $OUT_DIR/shots/$prefix-$name.png"
+	done
+}
+
+# summarize TEIL FAILS_VORHER trägt das Ergebnis eines Teils ein.
+summarize() {
+	SUMMARY+=("$1: $((FAILS - $2)) FAIL")
+}
+
 # ---------------------------------------------------------------------------
-# Teil A: Docker
+# Teil A: ein Image
 # ---------------------------------------------------------------------------
-part_docker() {
-	echo "== Teil A: Docker ($IMAGE) =="
-	docker pull -q "$IMAGE" >/dev/null
+part_image() {
+	local image="$1" out err before="$FAILS"
+	CUR_TAG="$(tag_of "$image")"
+	out="$OUT_DIR/$CUR_TAG"
+	mkdir -p "$out"
+	echo "== Teil A: $image =="
+	docker pull -q "$image" >/dev/null
+	info "$(docker run --rm --network none "$image" bash -c 'grep PRETTY_NAME /etc/os-release; ldd --version | head -n 1' | tr '\n' ' ')"
 
 	# 1. Ohne WebKit (kein Netz nötig), englisch.
-	run_stderr docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$IMAGE" /b/md-reader
-	cp "$RUN_ERR" "$OUT_DIR/1-nowebkit-en.err"
-	info "1: Exit $RUN_CODE, stderr: $(tr '\n' '|' <"$RUN_ERR")"
+	err="$out/1-nowebkit-en.err"
+	run_stderr "$err" docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$image" /b/md-reader
+	info "1: Exit $RUN_CODE, stderr: $(oneline "$err")"
 	check "1.1 ohne WebKit: Exit 1" test "$RUN_CODE" -eq 1
-	check "1.2 stderr enthält WebKitGTK" grep -q 'WebKitGTK' "$RUN_ERR"
-	check "1.3 stderr enthält libwebkit2gtk-4.1.so.0" grep -q 'libwebkit2gtk-4.1.so.0' "$RUN_ERR"
+	check "1.2 stderr enthält WebKitGTK" grep -q 'WebKitGTK' "$err"
+	check "1.3 stderr enthält libwebkit2gtk-4.1.so.0" grep -q 'libwebkit2gtk-4.1.so.0' "$err"
 	check "1.4 stderr enthält 'sudo apt install libwebkit2gtk-4.1-0'" \
-		grep -q 'sudo apt install libwebkit2gtk-4.1-0' "$RUN_ERR"
-	check "1.5 englische Meldung (Missing libraries:)" grep -q '^Missing libraries: ' "$RUN_ERR"
-	# Bekannter Schönheitsfehler: Titel und Hinweis erscheinen zweimal
-	# (writeTerminalHint + stderr-Asker). Nur Warnung, siehe Bericht.
-	if [ "$(grep -c 'WebKitGTK is not installed' "$RUN_ERR")" -ne 1 ]; then
-		info "WARN 1.6 Hinweis steht $(grep -c 'WebKitGTK is not installed' "$RUN_ERR")-mal auf stderr"
-	fi
+		grep -q 'sudo apt install libwebkit2gtk-4.1-0' "$err"
+	check "1.5 englische Meldung (Missing libraries:)" grep -q '^Missing libraries: ' "$err"
+	check "1.6 Hinweis genau einmal" bash -c "
+		test \"\$(grep -c 'WebKitGTK is not installed' '$err')\" -eq 1 &&
+		test \"\$(grep -c 'sudo apt install libwebkit2gtk-4.1-0' '$err')\" -eq 1"
+	check "1.7 keine Meldung „zu alt“" bash -c "! grep -q 'too old' '$err'"
 
 	# 2. Ohne WebKit, deutsch.
-	run_stderr docker run --rm --network none -e LANG=de_DE.UTF-8 -v "$BUILD_DIR:/b:ro" "$IMAGE" /b/md-reader
-	cp "$RUN_ERR" "$OUT_DIR/2-nowebkit-de.err"
-	info "2: Exit $RUN_CODE, stderr: $(tr '\n' '|' <"$RUN_ERR")"
+	err="$out/2-nowebkit-de.err"
+	run_stderr "$err" docker run --rm --network none -e LANG=de_DE.UTF-8 -v "$BUILD_DIR:/b:ro" "$image" /b/md-reader
+	info "2: Exit $RUN_CODE, stderr: $(oneline "$err")"
 	check "2.1 deutsch: Exit 1" test "$RUN_CODE" -eq 1
-	check "2.2 deutsch: 'WebKitGTK ist nicht installiert'" grep -q 'WebKitGTK ist nicht installiert' "$RUN_ERR"
+	check "2.2 deutsch: 'WebKitGTK ist nicht installiert' genau einmal" \
+		test "$(grep -c 'WebKitGTK ist nicht installiert' "$err")" -eq 1
 	check "2.3 deutsch: 'Fehlende Bibliotheken:' mit libwebkit2gtk-4.1.so.0" \
-		grep -q '^Fehlende Bibliotheken: .*libwebkit2gtk-4.1.so.0' "$RUN_ERR"
+		grep -q '^Fehlende Bibliotheken: .*libwebkit2gtk-4.1.so.0' "$err"
 	check "2.4 deutsch: Befehl 'sudo apt install libwebkit2gtk-4.1-0'" \
-		grep -q 'sudo apt install libwebkit2gtk-4.1-0' "$RUN_ERR"
+		grep -q 'sudo apt install libwebkit2gtk-4.1-0' "$err"
 
 	# Versionsabfrage als Rauchtest.
 	check "2.5 --launcher-version = $BUILD_NUM" \
-		test "$(docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$IMAGE" /b/md-reader --launcher-version)" = "$BUILD_NUM"
+		test "$(docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$image" /b/md-reader --launcher-version)" = "$BUILD_NUM"
 
 	# 3. --install / --uninstall (braucht Netz für desktop-file-utils).
-	mkdir -p "$OUT_DIR/install"
-	docker_inner install
+	docker_inner "$image" install "$out"
+	# 4. + 5. Paket, GUI und Starter mit installiertem Paket.
+	docker_inner "$image" deb "$out"
+	convert_shots "$out/deb" "$CUR_TAG"
+	summarize "$image" "$before"
+}
 
-	# 4. + 5. Paket und Starter mit WebKit.
-	mkdir -p "$OUT_DIR/deb"
-	docker_inner deb
-	local xwd
-	for xwd in deb launcher-deb launcher-nodeb; do
-		if [ -s "$OUT_DIR/deb/$xwd.xwd" ]; then
-			convert "xwd:$OUT_DIR/deb/$xwd.xwd" "$OUT_DIR/shots/$xwd.png"
-			info "Bildschirmfoto: $OUT_DIR/shots/$xwd.png"
-		fi
-	done
+# ---------------------------------------------------------------------------
+# Teil F: Gegenprobe F1 (Kontextmenü, Navigation)
+# ---------------------------------------------------------------------------
+part_f1() {
+	local before="$FAILS"
+	CUR_TAG="F1-$(tag_of "$F1_IMAGE")"
+	echo "== Teil F: F1-Gegenprobe in $F1_IMAGE =="
+	docker pull -q "$F1_IMAGE" >/dev/null
+	mkdir -p "$OUT_DIR/f1"
+	docker_inner "$F1_IMAGE" f1 "$OUT_DIR/f1"
+	convert_shots "$OUT_DIR/f1/f1" "$(tag_of "$F1_IMAGE")"
+	summarize "F1 ($F1_IMAGE)" "$before"
+}
 
-	# 6. Kopfdaten und Inhalt aller .deb-Pakete (ohne Container).
-	local arch deb
+# ---------------------------------------------------------------------------
+# Teil T: zu altes System
+# ---------------------------------------------------------------------------
+part_too_old() {
+	local before="$FAILS" out err home
+	CUR_TAG="alt-$(tag_of "$OLD_IMAGE")"
+	out="$OUT_DIR/too-old"
+	mkdir -p "$out"
+	echo "== Teil T: zu altes System $OLD_IMAGE =="
+	docker pull -q "$OLD_IMAGE" >/dev/null
+	info "$(docker run --rm --network none "$OLD_IMAGE" bash -c 'grep PRETTY_NAME /etc/os-release; ldd --version | head -n 1' | tr '\n' ' ')"
+
+	err="$out/start-en.err"
+	run_stderr "$err" docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$OLD_IMAGE" /b/md-reader
+	info "Start: Exit $RUN_CODE, stderr: $(oneline "$err")"
+	check "T.0a Exit 1" test "$RUN_CODE" -eq 1
+	check "T.0b Meldung „$TOO_OLD_EN“ genau einmal" test "$(grep -c "$TOO_OLD_EN" "$err")" -eq 1
+	check "T.0c nennt die nötige glibc-Version" grep -q 'Required: glibc 2\.[0-9]* or newer' "$err"
+	check "T.0d kein WebKit-Hinweis (hülfe nicht)" bash -c "! grep -q 'libwebkit2gtk' '$err'"
+
+	err="$out/start-de.err"
+	run_stderr "$err" docker run --rm --network none -e LANG=de_DE.UTF-8 -v "$BUILD_DIR:/b:ro" "$OLD_IMAGE" /b/md-reader
+	info "Start deutsch: Exit $RUN_CODE, stderr: $(oneline "$err")"
+	check "T.0e deutsch: Exit 1 und „$TOO_OLD_DE“" \
+		bash -c "test '$RUN_CODE' -eq 1 && grep -q '$TOO_OLD_DE' '$err'"
+
+	err="$out/install.err"
+	set +e
+	docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$OLD_IMAGE" bash -c '
+		mkdir -p /tmp/h; HOME=/tmp/h /b/md-reader --install; code=$?
+		echo "FILES=$(find /tmp/h -type f | wc -l)"; exit $code' >"$out/install.out" 2>"$err"
+	RUN_CODE=$?
+	set -e
+	info "--install: Exit $RUN_CODE, stdout: $(oneline "$out/install.out") stderr: $(oneline "$err")"
+	check "T.0f --install verweigert (Exit ≠ 0, „zu alt“, keine Dateien)" bash -c "
+		test '$RUN_CODE' -ne 0 && grep -q '$TOO_OLD_EN' '$err' && grep -qx 'FILES=0' '$out/install.out'"
+
+	docker_inner "$OLD_IMAGE" toold "$out"
+	convert_shots "$out/toold" "too-old"
+	summarize "zu alt ($OLD_IMAGE)" "$before"
+}
+
+# ---------------------------------------------------------------------------
+# Teil D: Kopfdaten und Inhalt aller .deb-Pakete (ohne Container)
+# ---------------------------------------------------------------------------
+part_debs() {
+	local before="$FAILS" arch deb libc
+	CUR_TAG="deb"
+	echo "== Teil D: .deb-Pakete =="
 	for arch in amd64 arm64 armhf; do
 		deb="$BUILD_DIR/md-reader_1.0.${BUILD_NUM}_${arch}.deb"
-		check "6.$arch Kopf: Architecture/Version/Depends" bash -c "
+		libc="$(dpkg-deb -f "$deb" Depends | sed -n 's/.*libc6 (>= \([0-9.]*\)).*/\1/p')"
+		info "$arch: Depends libc6 >= $libc"
+		check "D.$arch Kopf: Package/Version/Architecture/Depends/Recommends/Maintainer" bash -c "
 			f=\$(dpkg-deb -f '$deb' Package Version Architecture Depends Recommends Maintainer)
 			grep -qx 'Package: md-reader' <<<\"\$f\" &&
 			grep -qx 'Version: 1.0.$BUILD_NUM' <<<\"\$f\" &&
 			grep -qx 'Architecture: $arch' <<<\"\$f\" &&
-			grep -qx 'Depends: libc6 (>= 2.38), libwebkit2gtk-4.1-0, libgtk-3-0' <<<\"\$f\" &&
+			grep -Eqx 'Depends: libc6 \(>= 2\.[0-9]+\), libwebkit2gtk-4.1-0, libgtk-3-0' <<<\"\$f\" &&
 			grep -qx 'Recommends: zenity, poppler-utils, ghostscript' <<<\"\$f\" &&
 			grep -qx 'Maintainer: Kurt Ingwer <WaschbaerImHaus@users.noreply.github.com>' <<<\"\$f\""
-		check "6.$arch Inhalt: Programm, Desktop-Datei, 5 Icons" bash -c "
+		check "D.$arch libc6-Grenze ≤ 2.35 (läuft auf Ubuntu 22.04)" \
+			bash -c "test -n '$libc' && test \"\$(printf '%s\n' '$libc' 2.35 | sort -V | tail -n 1)\" = 2.35"
+		check "D.$arch Inhalt: Programm, Desktop-Datei, 5 Icons" bash -c "
 			c=\$(dpkg-deb -c '$deb' | awk '{print \$NF}')
 			grep -qx './usr/bin/md-reader' <<<\"\$c\" &&
 			grep -qx './usr/share/applications/md-reader.desktop' <<<\"\$c\" &&
 			test \$(grep -c '^./usr/share/icons/hicolor/.*/apps/md-reader\.\(png\|svg\)$' <<<\"\$c\") -eq 5"
 	done
+	summarize ".deb-Kopfdaten" "$before"
 }
 
 # ---------------------------------------------------------------------------
@@ -207,19 +341,24 @@ wait_window() {
 }
 
 part_lxc() {
+	local before="$FAILS"
+	CUR_TAG="lxc"
 	echo "== Teil B: LXC unter Xvfb :$LXC_DISPLAY =="
 	if ! command -v zenity >/dev/null; then
 		fail "7.0 zenity fehlt (sudo apt-get install -y zenity)"
+		summarize "LXC" "$before"
 		return
 	fi
 	if [ -e "/tmp/.X11-unix/X$LXC_DISPLAY" ] || [ -e "/tmp/.X$LXC_DISPLAY-lock" ]; then
 		fail "7.0 Display :$LXC_DISPLAY ist schon belegt (LXC_DISPLAY anders setzen)"
+		summarize "LXC" "$before"
 		return
 	fi
 
 	local home="$OUT_DIR/lxc-home" run="$OUT_DIR/lxc-run" exe="$OUT_DIR/md-reader-test"
-	local win zwin pid wmclass app_pid i
-	rm -rf "$home" "$run"
+	local win zwin wmclass app_pid i
+	# Nur Unterordner des eigenen Ausgabeverzeichnisses werden geleert.
+	rm -rf "${OUT_DIR:?}/lxc-home" "${OUT_DIR:?}/lxc-run"
 	mkdir -p "$home" "$run"
 	chmod 700 "$run"
 	cp "$BUILD_DIR/md-reader" "$exe"
@@ -286,7 +425,7 @@ part_lxc() {
 	sleep 1
 	kill "$app_pid" 2>/dev/null || true
 	wait "$app_pid" 2>/dev/null || true
-	info "LXC-Start 1 stderr: $(tr '\n' '|' <"$OUT_DIR/lxc-1.err" | cut -c1-400)"
+	info "LXC-Start 1 stderr: $(oneline "$OUT_DIR/lxc-1.err" | cut -c1-400)"
 
 	# Zweiter Start: installiert, gleiche Version → keine Frage.
 	"${envargs[@]}" "$exe" "$PROJECT_DIR/README.md" >"$OUT_DIR/lxc-2.out" 2>"$OUT_DIR/lxc-2.err" &
@@ -301,41 +440,25 @@ part_lxc() {
 	check "7.8 zweiter Start: keine Frage" test -z "$zwin"
 	kill "$app_pid" 2>/dev/null || true
 	wait "$app_pid" 2>/dev/null || true
+	summarize "LXC" "$before"
 }
 
 # ---------------------------------------------------------------------------
 # Teil C: Beobachtungen (nicht bewertet)
 # ---------------------------------------------------------------------------
 part_observe() {
+	CUR_TAG="qemu"
 	echo "== Teil C: Beobachtungen =="
-	docker pull -q "$OLD_IMAGE" >/dev/null
-	run_stderr docker run --rm --network none -v "$BUILD_DIR:/b:ro" "$OLD_IMAGE" /b/md-reader
-	cp "$RUN_ERR" "$OUT_DIR/8-2204-nowebkit.err"
-	info "8.1 $OLD_IMAGE ohne WebKit: Exit $RUN_CODE, stderr: $(tr '\n' '|' <"$RUN_ERR")"
-
-	set +e
-	docker run --rm -v "$BUILD_DIR:/b:ro" "$OLD_IMAGE" bash -c '
-		export DEBIAN_FRONTEND=noninteractive
-		apt-get update >/dev/null 2>&1 && apt-get install -y libwebkit2gtk-4.1-0 >/dev/null 2>&1 || echo "apt fehlgeschlagen" >&2
-		echo "--- ohne DISPLAY:" >&2
-		/b/md-reader; echo "EXIT=$?" >&2
-		echo "--- --install:" >&2
-		HOME=/tmp/h /b/md-reader --install; echo "EXIT=$?" >&2
-	' >"$OUT_DIR/8-2204-webkit.out" 2>"$OUT_DIR/8-2204-webkit.err"
-	set -e
-	info "8.2 $OLD_IMAGE mit WebKit: stdout: $(tr '\n' '|' <"$OUT_DIR/8-2204-webkit.out") stderr: $(tr '\n' '|' <"$OUT_DIR/8-2204-webkit.err")"
-
 	if command -v qemu-aarch64 >/dev/null; then
+		local h9="$OUT_DIR/qemu-home" out9 code9
 		set +e
 		info "9.1 arm64 --launcher-version: $(qemu-aarch64 "$BUILD_DIR/md-reader-linux-arm64" --launcher-version 2>&1)"
-		local h9="$OUT_DIR/qemu-home"
-		rm -rf "$h9"
+		rm -rf "${OUT_DIR:?}/qemu-home"
 		mkdir -p "$h9"
 		info "9.2 arm64 --install: $(HOME="$h9" qemu-aarch64 "$BUILD_DIR/md-reader-linux-arm64" --install 2>&1 | tr '\n' '|'); Dateien: $(find "$h9" -type f | wc -l)"
-		local out9 code9
 		out9="$(env -u DISPLAY HOME="$h9" qemu-aarch64 "$BUILD_DIR/md-reader-linux-arm64" 2>&1)"
 		code9=$?
-		info "9.3 arm64 Start ohne arm64-WebKit: Exit $code9, $(tr '\n' '|' <<<"$out9" | cut -c1-400)"
+		info "9.3 arm64 Start ohne binfmt: Exit $code9, $(tr '\n' '|' <<<"$out9" | cut -c1-400)"
 		set -e
 	else
 		info "9 qemu-aarch64 nicht vorhanden, übersprungen"
@@ -343,8 +466,19 @@ part_observe() {
 }
 
 if [ "${SKIP_DOCKER:-0}" != "1" ]; then
-	part_docker
+	if [ "${SKIP_IMAGES:-0}" != "1" ]; then
+		for image in "${IMAGES[@]}"; do
+			part_image "$image"
+		done
+	fi
+	if [ "${SKIP_F1:-0}" != "1" ]; then
+		part_f1
+	fi
+	if [ "${SKIP_TOO_OLD:-0}" != "1" ]; then
+		part_too_old
+	fi
 fi
+part_debs
 if [ "${SKIP_LXC:-0}" != "1" ]; then
 	part_lxc
 fi
@@ -352,6 +486,10 @@ if [ "${SKIP_DOCKER:-0}" != "1" ]; then
 	part_observe
 fi
 
+echo "== Zusammenfassung =="
+for line in "${SUMMARY[@]+"${SUMMARY[@]}"}"; do
+	echo "  $line"
+done
 echo "== Ergebnis: $FAILS FAIL, Ausgabe in $OUT_DIR =="
 if [ "$FAILS" -gt 0 ]; then
 	exit 1
