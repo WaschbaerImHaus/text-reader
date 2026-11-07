@@ -4,6 +4,10 @@
 
 - **Windows ohne WebView2** (entdeckt Build 47, unbestätigt): In `src/main.go` ist die Prüfung `w == nil` nach `webview.New` unter Windows toter Code – fehlt die WebView2-Runtime, könnte das Programm abstürzen statt eine Meldung zu zeigen. Unter Linux ist der Fall (kein Display) seit Build 47 behandelt. Nicht auf einem Windows-System ohne Runtime überprüft. Fundstelle: `src/main.go` (Prüfung nach `webview.New`), `src/platform_windows.go`.
 - **F1-Rest (Windows/macOS)**: Das Kontextmenü ist dort nur per JavaScript gesperrt, eine native Navigations-Erlaubnisliste gibt es nur unter Linux. Das macOS-Menü „Link öffnen“ könnte kurz vor dem Laden der Skripte erreichbar sein. Siehe RISK-013 in `SECURITY_RISKS.md`.
+- **Meldung ohne Display nur deutsch** (Schlussprüfung Build 47, M3, für Build 48): `src/platform_linux.go` (ensureDisplayAvailable) gibt die Meldung auch bei `LANG=en_US` deutsch aus. Lösung: `linuxsetup.DetectLang` nutzen.
+- **Menüfrage auch ohne Display** (M4, für Build 48): `src/launcher/main.go` (maybeSpawnOffer) startet den Angebotsprozess auch, wenn die GUI ohne DISPLAY/WAYLAND_DISPLAY sofort scheitert; er speichert dann „later“. Lösung: nur mit gesetztem DISPLAY oder WAYLAND_DISPLAY starten.
+- **memfd in `missingVersions` nicht geschlossen** (M7, für Build 48): `src/launcher/main.go`, ohne Folgen (kurzlebiger Prozess); `syscall.Close(fd)` ergänzen.
+- **„Zu alt“-Dialog unter zenity 3.32 sehr schmal** (Endabnahme Build 47, kosmetisch): fast jedes Wort in eigener Zeile; dem zenity-Aufruf `--width=420` mitgeben (`src/linuxsetup/asker_dialog.go`).
 
 ## Behoben ✅
 
