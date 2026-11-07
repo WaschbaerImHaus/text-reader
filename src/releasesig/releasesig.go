@@ -21,7 +21,7 @@
 // die Liste mehrerer öffentlicher Schlüssel.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu – Auto-Update Build 48, Aufgabe 1)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: Verify überspringt kaputte Schlüssel, LoadPrivateKey prüft das geöffnete Handle)
 package releasesig
 
 import (
@@ -82,12 +82,16 @@ func ValidTag(tag string) bool {
 }
 
 // BuildManifest erzeugt die Prüfsummenliste eines Releases.
+// Die Eingaben werden hier NICHT geprüft: Der Aufrufer muss einen gültigen
+// Tag (ValidTag), gültige Dateinamen und 64-stellige kleine Hexwerte
+// übergeben – sonst entsteht eine Liste, die ParseManifest ablehnt.
+// SignFiles prüft das vorher; neue Aufrufer sollten SignFiles verwenden.
 //
-// @param tag – Release-Tag (z. B. "v1.0.48")
-// @param sums – Dateiname → SHA-256 (Hex, klein)
+// @param tag – Release-Tag (z. B. "v1.0.48"), muss gültig sein
+// @param sums – Dateiname → SHA-256 (Hex, klein), müssen gültig sein
 // @return []byte – Inhalt der Liste (deterministisch sortiert)
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: Vorbedingungen dokumentiert)
 func BuildManifest(tag string, sums map[string]string) []byte {
 	names := make([]string, 0, len(sums))
 	for name := range sums {
@@ -208,23 +212,25 @@ func Sign(priv ed25519.PrivateKey, manifest []byte) []byte {
 
 // Verify prüft die Signatur einer Prüfsummenliste gegen eine Liste
 // öffentlicher Schlüssel. Gültig ist sie, wenn einer der Schlüssel passt.
-// Eine leere Liste oder ein Schlüssel falscher Länge ist ein Fehler
-// (fail closed – ein kaputter eingetragener Schlüssel soll auffallen).
+// Schlüssel falscher Länge werden übersprungen (ed25519.Verify würde
+// sonst abstürzen); bleibt kein brauchbarer Schlüssel übrig, ist das ein
+// Fehler. So sperrt ein kaputter Notfallschlüssel nicht alle Updates.
 //
 // @param pubs – öffentliche Schlüssel (Haupt- und Notfallschlüssel)
 // @param manifest – Inhalt der Liste
 // @param sig – Inhalt der Signaturdatei (genau eine Base64-Zeile)
 // @return error – nil nur bei gültiger Signatur
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: kaputte Schlüssel überspringen)
 func Verify(pubs []ed25519.PublicKey, manifest, sig []byte) error {
-	if len(pubs) == 0 {
-		return errors.New("keine Signaturschlüssel angegeben")
-	}
+	usable := make([]ed25519.PublicKey, 0, len(pubs))
 	for _, pub := range pubs {
-		if len(pub) != ed25519.PublicKeySize {
-			return errors.New("Signaturschlüssel ungültig")
+		if len(pub) == ed25519.PublicKeySize {
+			usable = append(usable, pub)
 		}
+	}
+	if len(usable) == 0 {
+		return errors.New("kein brauchbarer Signaturschlüssel")
 	}
 	if len(sig) > MaxManifestBytes {
 		return errors.New("Signatur der Prüfsummenliste ist zu groß")
@@ -240,7 +246,7 @@ func Verify(pubs []ed25519.PublicKey, manifest, sig []byte) error {
 		return errors.New("Signatur der Prüfsummenliste unlesbar")
 	}
 	message := signedMessage(manifest)
-	for _, pub := range pubs {
+	for _, pub := range usable {
 		if ed25519.Verify(pub, message, raw) {
 			return nil
 		}
@@ -302,15 +308,21 @@ func GenerateKey(path string) (ed25519.PublicKey, error) {
 
 // LoadPrivateKey lädt den privaten Signaturschlüssel (Seed als Hex).
 // Unter Unix wird ein Schlüssel mit Gruppen- oder Fremdrechten abgelehnt;
-// nur eine reguläre Datei wird angenommen.
+// nur eine reguläre Datei wird angenommen. Geprüft wird das bereits
+// geöffnete Handle (kein Wechsel der Datei zwischen Prüfung und Lesen).
 //
 // @param path – Schlüsseldatei
 // @return ed25519.PrivateKey – privater Schlüssel
 // @return error – Lese-, Rechte- oder Formatfehler (ohne Inhalt der Datei)
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: erst öffnen, dann f.Stat())
 func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
-	info, err := os.Stat(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
@@ -320,11 +332,6 @@ func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("Schlüsseldatei %s ist für andere zugänglich (chmod 600)", path)
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxKeyFileBytes))
 	if err != nil {
 		return nil, err
@@ -342,13 +349,17 @@ func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
 // über eine Temp-Datei und Umbenennen, damit nie eine halbe Datei entsteht.
 // Bei ungültigen Angaben wird nichts geschrieben.
 //
+// Achtung: Scheitert das Schreiben (Fehler zurück), kann die neue Liste
+// schon neben der alten Signatur liegen – das Paar ist dann ungültig.
+// In diesem Fall neu signieren und NICHT hochladen.
+//
 // @param priv – privater Schlüssel
 // @param tag – Release-Tag (v1.0.<n>)
 // @param outDir – Zielordner für Liste und Signatur
 // @param files – zu signierende Dateien (Dateinamen müssen eindeutig sein)
 // @return error – Prüf-, Lese- oder Schreibfehler
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: Hinweis auf ungültiges Paar)
 func SignFiles(priv ed25519.PrivateKey, tag, outDir string, files []string) error {
 	if !ValidTag(tag) {
 		return fmt.Errorf("ungültiger Release-Tag %q", tag)

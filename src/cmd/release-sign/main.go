@@ -15,16 +15,17 @@
 //
 // Liste und Signatur prüfen (gültig, wenn einer der Schlüssel passt):
 //
-//	release-sign -verify -pub <hex>[,<hex>] -tag v1.0.<n> <SUMS> <SIG>
+//	release-sign -verify -pubkeys <hex>[,<hex>] -tag v1.0.<n> <SUMS> <SIG>
 //
-// Hinweis: -pub ist im Prüfmodus eine Liste öffentlicher Schlüssel (Hex),
-// sonst ein Schalter. Der Prüfmodus gilt, sobald vor "--" ein -verify steht.
+// Die Modi schließen sich aus (sonst Exit 2): -verify nicht zusammen mit
+// -key, -genkey, -pub oder -out; -pubkeys nur mit -verify; -pub nur mit -key.
+// Wie beim flag-Paket üblich enden die Optionen beim ersten Dateiargument.
 //
 // Exit-Codes: 0 ok, 1 Fehler, 2 Aufruf falsch.
 // Der private Schlüssel wird nie ausgegeben.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu – Auto-Update Build 48, Aufgabe 2)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: -pubkeys statt überladenem -pub)
 package main
 
 import (
@@ -56,28 +57,43 @@ func main() {
 }
 
 // run wertet die Argumente aus und führt den gewählten Modus aus.
+// Ein einziger Optionssatz; die Modi schließen sich gegenseitig aus:
+// -verify nicht mit -key/-genkey/-pub/-out, -pubkeys nur mit -verify,
+// -pub (Schalter) nur mit -key.
 //
 // @param args – Argumente ohne Programmnamen
 // @param stdout – Ausgabe für Ergebnisse (öffentlicher Schlüssel, Meldung)
 // @param stderr – Ausgabe für Fehlermeldungen
 // @return int – Exit-Code (0 ok, 1 Fehler, 2 Aufruf falsch)
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: -pubkeys statt überladenem -pub, ein Optionssatz)
 func run(args []string, stdout, stderr io.Writer) int {
-	if verifyRequested(args) {
-		return runVerify(args, stdout, stderr)
-	}
-
 	fs := flag.NewFlagSet("release-sign", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	keyPath := fs.String("key", "", "Datei des privaten Signaturschlüssels")
 	tag := fs.String("tag", "", "Release-Tag, z. B. v1.0.48")
 	outDir := fs.String("out", ".", "Zielordner für Prüfsummenliste und Signatur")
 	genKey := fs.Bool("genkey", false, "neuen Schlüssel erzeugen (überschreibt nie)")
-	showPub := fs.Bool("pub", false, "öffentlichen Schlüssel eines vorhandenen Schlüssels ausgeben")
-	fs.Bool("verify", false, "Liste und Signatur prüfen (-pub <hex>[,<hex>] -tag … <SUMS> <SIG>)")
+	showPub := fs.Bool("pub", false, "öffentlichen Schlüssel eines vorhandenen Schlüssels ausgeben (mit -key)")
+	verify := fs.Bool("verify", false, "Liste und Signatur prüfen (mit -pubkeys, -tag, <SUMS> <SIG>)")
+	pubKeys := fs.String("pubkeys", "", "öffentliche Schlüssel als Hex, durch Komma getrennt (nur mit -verify)")
 	if code, done := parseFlags(fs, args); done {
 		return code
+	}
+	// Welche Optionen wurden ausdrücklich angegeben (auch mit Standardwert)?
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
+	if *verify {
+		for _, name := range []string{"key", "genkey", "pub", "out"} {
+			if given[name] {
+				return usage(stderr, "-verify schließt -"+name+" aus")
+			}
+		}
+		return runVerify(*pubKeys, *tag, fs.Args(), stdout, stderr)
+	}
+	if given["pubkeys"] {
+		return usage(stderr, "-pubkeys gibt es nur mit -verify")
 	}
 
 	switch {
@@ -129,69 +145,42 @@ func run(args []string, stdout, stderr io.Writer) int {
 // runVerify prüft Liste und Signatur gegen die angegebenen öffentlichen
 // Schlüssel und den erwarteten Tag (Aufruf aus dem Release-Skript).
 //
-// @param args – Argumente ohne Programmnamen
+// @param pubList – Wert von -pubkeys ("<hex>[,<hex>…]")
+// @param tag – erwarteter Release-Tag
+// @param files – genau zwei Dateien: <SUMS> <SIG>
 // @param stdout – Ausgabe für die Erfolgsmeldung
 // @param stderr – Ausgabe für Fehlermeldungen
 // @return int – 0 gültig, 1 ungültig/Lesefehler, 2 Aufruf falsch
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
-func runVerify(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("release-sign -verify", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Bool("verify", true, "Liste und Signatur prüfen")
-	pubList := fs.String("pub", "", "öffentliche Schlüssel als Hex, durch Komma getrennt")
-	tag := fs.String("tag", "", "erwarteter Release-Tag, z. B. v1.0.48")
-	if code, done := parseFlags(fs, args); done {
-		return code
-	}
-
-	pubs, err := parsePublicKeys(*pubList)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: Werte aus dem gemeinsamen Optionssatz)
+func runVerify(pubList, tag string, files []string, stdout, stderr io.Writer) int {
+	pubs, err := parsePublicKeys(pubList)
 	if err != nil {
 		return usage(stderr, err.Error())
 	}
-	if !releasesig.ValidTag(*tag) {
-		return usage(stderr, fmt.Sprintf("-tag %q ist nicht v1.0.<zahl>", *tag))
+	if !releasesig.ValidTag(tag) {
+		return usage(stderr, fmt.Sprintf("-tag %q ist nicht v1.0.<zahl>", tag))
 	}
-	if fs.NArg() != 2 {
+	if len(files) != 2 {
 		return usage(stderr, "-verify braucht genau zwei Dateien: <SUMS> <SIG>")
 	}
-	manifest, err := readLimited(fs.Arg(0))
+	manifest, err := readLimited(files[0])
 	if err != nil {
 		return fail(stderr, err)
 	}
-	sig, err := readLimited(fs.Arg(1))
+	sig, err := readLimited(files[1])
 	if err != nil {
 		return fail(stderr, err)
 	}
 	if err := releasesig.Verify(pubs, manifest, sig); err != nil {
 		return fail(stderr, err)
 	}
-	sums, err := releasesig.ParseManifest(manifest, *tag)
+	sums, err := releasesig.ParseManifest(manifest, tag)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "gültig: %d Dateien für %s\n", len(sums), *tag)
+	fmt.Fprintf(stdout, "gültig: %d Dateien für %s\n", len(sums), tag)
 	return exitOK
-}
-
-// verifyRequested erkennt den Prüfmodus: ein Argument -verify (auch
-// --verify oder =true) vor "--". Nötig, weil -pub dort einen Wert trägt.
-//
-// @param args – Argumente ohne Programmnamen
-// @return bool – true im Prüfmodus
-// Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
-func verifyRequested(args []string) bool {
-	for _, arg := range args {
-		if arg == "--" {
-			return false
-		}
-		switch arg {
-		case "-verify", "--verify", "-verify=true", "--verify=true":
-			return true
-		}
-	}
-	return false
 }
 
 // parseFlags liest die Optionen. Bei Fehler oder Hilfe ist done = true.
@@ -216,21 +205,24 @@ func parseFlags(fs *flag.FlagSet, args []string) (int, bool) {
 }
 
 // parsePublicKeys wandelt "<hex>[,<hex>…]" in öffentliche Schlüssel um.
+// Ein ungültiger Eintrag wird nur mit Position und Länge gemeldet, nie mit
+// seinem Wert (falls versehentlich ein privater Seed übergeben wurde).
 //
-// @param list – Schlüsselliste aus -pub
+// @param list – Schlüsselliste aus -pubkeys
 // @return []ed25519.PublicKey – Schlüssel (mindestens einer)
-// @return error – leerer Eintrag, kein Hex oder falsche Länge
+// @return error – fehlende Liste, leerer Eintrag, kein Hex oder falsche Länge
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: Wert nie in der Meldung)
 func parsePublicKeys(list string) ([]ed25519.PublicKey, error) {
 	if list == "" {
-		return nil, errors.New("-pub <hex>[,<hex>] fehlt")
+		return nil, errors.New("-pubkeys <hex>[,<hex>] fehlt")
 	}
 	var pubs []ed25519.PublicKey
-	for _, item := range strings.Split(list, ",") {
+	for i, item := range strings.Split(list, ",") {
 		raw, err := hex.DecodeString(item)
 		if err != nil || len(raw) != ed25519.PublicKeySize {
-			return nil, fmt.Errorf("-pub: %q ist kein öffentlicher Schlüssel (64 Hex-Zeichen)", item)
+			return nil, fmt.Errorf("-pubkeys: Eintrag %d ungültig (Länge %d, erwartet %d Hex-Zeichen)",
+				i+1, len(item), ed25519.PublicKeySize*2)
 		}
 		pubs = append(pubs, ed25519.PublicKey(raw))
 	}

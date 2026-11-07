@@ -13,7 +13,7 @@
 // in t.TempDir(); es entsteht nie ein echter Release-Schlüssel.
 //
 // Autor: Kurt Ingwer
-// Letzte Änderung: 2026-11-07 (neu – Auto-Update Build 48, Aufgabe 1)
+// Letzte Änderung: 2026-11-07 (Review-Runde 1: kaputte Schlüssel werden übersprungen)
 package releasesig_test
 
 import (
@@ -219,9 +219,20 @@ func TestVerify_EitherKey(t *testing.T) {
 	if err := releasesig.Verify([]ed25519.PublicKey{pubB[:31]}, manifest, sig); err == nil {
 		t.Error("zu kurzer Schlüssel wurde angenommen")
 	}
-	// Ein kaputter Schlüssel in der Liste darf nicht abstürzen (fail closed)
-	if err := releasesig.Verify([]ed25519.PublicKey{nil, pubB}, manifest, sig); err == nil {
-		t.Error("Liste mit ungültigem Schlüssel wurde angenommen")
+	// Ein kaputter Schlüssel wird übersprungen (kein Absturz); gültig bleibt
+	// die Signatur, wenn ein brauchbarer Schlüssel passt
+	if err := releasesig.Verify([]ed25519.PublicKey{nil, pubB}, manifest, sig); err != nil {
+		t.Errorf("[kaputt, B] mit Signatur von B: %v", err)
+	}
+	if err := releasesig.Verify([]ed25519.PublicKey{pubB[:31], pubB}, manifest, sig); err != nil {
+		t.Errorf("[B gekürzt, B] mit Signatur von B: %v", err)
+	}
+	// Bleibt kein brauchbarer Schlüssel übrig, ist das ein Fehler
+	if err := releasesig.Verify([]ed25519.PublicKey{nil}, manifest, sig); err == nil {
+		t.Error("[nil] wurde angenommen")
+	}
+	if err := releasesig.Verify([]ed25519.PublicKey{nil, pubA}, manifest, sig); err == nil {
+		t.Error("[kaputt, A] mit Signatur von B wurde angenommen")
 	}
 }
 
