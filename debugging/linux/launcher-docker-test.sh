@@ -307,7 +307,7 @@ part_debs() {
 			grep -qx 'Package: md-reader' <<<\"\$f\" &&
 			grep -qx 'Version: 1.0.$BUILD_NUM' <<<\"\$f\" &&
 			grep -qx 'Architecture: $arch' <<<\"\$f\" &&
-			grep -Eqx 'Depends: libc6 \(>= 2\.[0-9]+\), libwebkit2gtk-4.1-0, libgtk-3-0' <<<\"\$f\" &&
+			grep -Eqx 'Depends: libc6 \(>= 2\.[0-9]+\), libwebkit2gtk-4.1-0, libgtk-3-0t64 \| libgtk-3-0' <<<\"\$f\" &&
 			grep -qx 'Recommends: zenity, poppler-utils, ghostscript' <<<\"\$f\" &&
 			grep -qx 'Maintainer: Kurt Ingwer <WaschbaerImHaus@users.noreply.github.com>' <<<\"\$f\""
 		check "D.$arch libc6-Grenze ≤ 2.35 (läuft auf Ubuntu 22.04)" \

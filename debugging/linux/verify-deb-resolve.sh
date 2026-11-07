@@ -25,6 +25,7 @@ if [ "${ID}" = "debian" ]; then
 	cat > /etc/apt/sources.list <<SRC
 deb http://deb.debian.org/debian ${VERSION_CODENAME} main
 deb http://deb.debian.org/debian ${VERSION_CODENAME}-updates main
+deb http://security.debian.org/debian-security ${VERSION_CODENAME}-security main
 SRC
 else
 	cat > /etc/apt/sources.list <<SRC

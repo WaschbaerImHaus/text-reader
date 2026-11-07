@@ -26,7 +26,9 @@ All notable changes to MD Reader are documented here.
   your settings. A newer downloaded file offers to replace the installed one.
 - Three `.deb` packages (`md-reader_1.0.47_amd64|arm64|armhf.deb`):
   `sudo apt install ./md-reader_1.0.47_amd64.deb` – installs system-wide, WebKitGTK and GTK
-  come in as dependencies, no install question on start.
+  come in as dependencies, no install question on start. GTK is declared as
+  `libgtk-3-0t64 | libgtk-3-0`, so the armhf package also installs on Ubuntu 24.04+ and Debian 13
+  (64-bit time_t package names); resolution verified on Ubuntu 22.04/24.04 and Debian 13 for all three architectures.
 - Linux binaries are now built on Ubuntu 22.04 (glibc >= 2.34) in containers (amd64, arm64,
   armhf) with a glibc guard: they run on Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Raspberry Pi OS
   Bookworm (Raspberry Pi 2 or newer) and KDE neon (glibc 2.34 or newer; before: glibc 2.38, i.e. Ubuntu 24.04+).
