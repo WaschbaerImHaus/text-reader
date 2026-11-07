@@ -107,6 +107,11 @@ ob die nötigen Bibliotheken vorhanden sind.
 sudo apt install ./md-reader_1.0.<build>_amd64.deb
 ```
 
+Existieren das `.deb`-Paket und die Benutzerinstallation nebeneinander, verdeckt der
+Menüeintrag des Benutzers (`~/.local/share/applications/md-reader.desktop`) den Paketeintrag,
+weil beide dieselbe Desktop-ID haben. Vor dem Wechsel zum `.deb` also `md-reader --uninstall`
+(aus der heruntergeladenen Datei) ausführen.
+
 **Unterstützte Systeme:** Ubuntu 22.04 oder neuer, Linux Mint 21 oder neuer, Debian 12
 oder neuer, Raspberry Pi OS Bookworm (Raspberry Pi 2 oder neuer; armhf = ARMv7), KDE neon (glibc 2.34 oder neuer). Ältere Systeme
 bekommen eine verständliche Meldung statt einer Lader-Fehlermeldung.
